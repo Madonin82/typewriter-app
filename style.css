@@ -186,20 +186,8 @@ html, body {
   min-height: 80vh;
   background: var(--paper);
   position: relative;
+  padding-top: 20px;
   padding-bottom: 60px;
-}
-
-.page-number {
-  position: sticky;
-  top: -40px;
-  left: 0;
-  font-size: 11px;
-  color: var(--ink-faded);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  margin-bottom: 24px;
-  font-family: var(--font-family);
-  user-select: none;
 }
 
 .ink-stream {
@@ -286,10 +274,36 @@ html, body {
   margin-top: 8px;
   padding-top: 10px;
   border-top: 1px solid rgba(0, 0, 0, 0.08);
+  gap: 12px;
 }
 
 body.theme-dark .draft-footer {
   border-top-color: rgba(255, 255, 255, 0.1);
+}
+
+.draft-footer-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
+}
+
+.page-meta-info {
+  font-size: 11px;
+  color: var(--ink-faded);
+  letter-spacing: 0.05em;
+  font-family: var(--font-family);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  max-width: 280px;
+}
+
+.meta-separator {
+  font-size: 10px;
+  color: #999999;
+  opacity: 0.6;
 }
 
 .char-counter {
@@ -298,6 +312,7 @@ body.theme-dark .draft-footer {
   letter-spacing: 0.05em;
   font-family: 'Inter', sans-serif;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .char-counter.near {

@@ -34,7 +34,6 @@
   <!-- ── MAIN WRITING SURFACE ── -->
   <div id="writing-surface" class="writing-surface">
     <div class="page" id="page-sheet">
-      <div class="page-number" id="page-header-info">Page 1 of 1</div>
       <div class="ink-stream" id="ink-stream">
         <!-- Chunks are rendered here -->
         <span class="ink-cursor" id="ink-cursor"></span>
@@ -44,18 +43,24 @@
 
   <!-- ── FLOATING DRAFT BOX ── -->
   <div id="draft-overlay">
-    <div id="draft-box">
-      <textarea 
-        id="draft-input" 
-        placeholder="Write your next thought... then commit to ink." 
-        rows="2" 
-        autofocus
-      ></textarea>
-      <div class="draft-footer">
-        <span class="char-counter" id="char-counter">0 / 200</span>
-        <div class="draft-footer-actions">
-          <span class="commit-hint" id="commit-hint">Commit with <kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
-          <button id="btn-commit" class="btn-commit-mini" title="Commit to Ink">🖋️ Commit</button>
+    <div id="draft-container">
+      <div id="draft-box">
+        <textarea 
+          id="draft-input" 
+          placeholder="Write your next thought... then commit to ink." 
+          rows="2" 
+          autofocus
+        ></textarea>
+        <div class="draft-footer">
+          <div class="draft-footer-left">
+            <span class="page-meta-info" id="page-header-info">Page 1 of 1</span>
+            <span class="meta-separator">•</span>
+            <span class="char-counter" id="char-counter">0 / 200</span>
+          </div>
+          <div class="draft-footer-actions">
+            <span class="commit-hint" id="commit-hint">Commit with <kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
+            <button id="btn-commit" class="btn-commit-mini" title="Commit to Ink">🖋️ Commit</button>
+          </div>
         </div>
       </div>
     </div>

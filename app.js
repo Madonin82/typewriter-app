@@ -740,7 +740,7 @@ function renderActivePage() {
 
   const totalPages = book.pages.length;
   if (DOM.pageHeaderInfo) {
-    DOM.pageHeaderInfo.textContent = `Page ${page.number} of ${totalPages} • ${book.title.toUpperCase()} ${page.locked ? '(LOCKED)' : ''}`;
+    DOM.pageHeaderInfo.textContent = `Page ${page.number}/${totalPages} • ${book.title}${page.locked ? ' (Locked)' : ''}`;
   }
 
   if (DOM.inkStream) {
