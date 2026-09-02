@@ -8,11 +8,6 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Special+Elite&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
-  
-  <!-- Firebase SDKs (v10 Compat) -->
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
-  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 </head>
 <body class="theme-cream font-courier">
   <div class="app-container">
@@ -46,17 +41,17 @@
       </div>
       
       <div class="header-actions">
-        <!-- Firebase Account Button / Status -->
+        <!-- Cloud Login Button -->
         <div class="auth-container">
           <button id="btn-account-modal" class="btn-primary">
-            <span>🔑 Author Cloud Login</span>
+            <span>🔑 Cloud Sync</span>
           </button>
           
           <div id="user-profile" class="user-profile hidden">
-            <span class="cloud-badge">☁️ Cloud Active</span>
+            <span class="cloud-badge">☁️ Connected</span>
             <div class="user-info">
               <span id="user-name" class="user-name">Author</span>
-              <span id="sync-status" class="sync-status">☁️ Realtime Cloud Sync</span>
+              <span id="sync-status" class="sync-status">☁️ Synced</span>
             </div>
             <button id="btn-logout" class="btn-icon" title="Sign Out">🚪</button>
           </div>
@@ -202,27 +197,26 @@
     </div>
   </div>
 
-  <!-- Firebase Account Modal -->
+  <!-- Cloud Sync Modal -->
   <div id="auth-modal" class="modal-overlay hidden">
     <div class="modal-box">
       <div class="modal-header">
         <h3>Private Cloud Sync</h3>
         <button id="btn-close-auth-modal" class="btn-close">×</button>
       </div>
-      <p class="modal-desc">Sign in or create a private account to automatically sync your books across all your devices.</p>
+      <p class="modal-desc">Enter your Author Name or Email to enable seamless cloud sync across all your devices.</p>
       
       <div class="auth-form">
         <div class="form-group">
-          <label for="auth-email">Author Email:</label>
-          <input type="email" id="auth-email" placeholder="you@gmail.com">
+          <label for="auth-email">Author Name or Email:</label>
+          <input type="text" id="auth-email" placeholder="e.g. jkeovichith@gmail.com">
         </div>
         <div class="form-group">
-          <label for="auth-password">Password:</label>
+          <label for="auth-password">Secret Password / Key:</label>
           <input type="password" id="auth-password" placeholder="••••••••">
         </div>
         <div class="auth-buttons">
-          <button id="btn-auth-signin" class="btn-primary">Sign In</button>
-          <button id="btn-auth-signup" class="btn-secondary">Create Account</button>
+          <button id="btn-auth-signin" class="btn-primary">Connect Cloud</button>
         </div>
       </div>
     </div>

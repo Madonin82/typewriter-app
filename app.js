@@ -1,6 +1,6 @@
 /**
  * Typewriter Studio - Application Core
- * Forward-Only Micro-Drafting Engine with Firebase Realtime Cloud Sync
+ * Forward-Only Micro-Drafting Engine
  */
 
 // Global State
@@ -9,7 +9,7 @@ let state = {
   activeBookId: null,  // ID of currently open book
   currentPageId: null, // ID of currently open page
   buffer: '',
-  user: null,          // Firebase user object
+  user: null,          // Author user object
   settings: {
     maxChars: 200,
     wordsPerPage: 300,
@@ -25,7 +25,9 @@ let audioCtx = null;
 
 function initAudio() {
   if (!audioCtx) {
-    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    try {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {}
   }
 }
 
@@ -33,6 +35,7 @@ function playKeyClickSound() {
   if (!state.settings.soundEnabled || state.settings.volume === 0) return;
   try {
     initAudio();
+    if (!audioCtx) return;
     const volume = (state.settings.volume / 100) * 0.4;
     const bufferSize = audioCtx.sampleRate * 0.03;
     const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
@@ -58,15 +61,14 @@ function playKeyClickSound() {
     gainNode.connect(audioCtx.destination);
 
     whiteNoise.start();
-  } catch (e) {
-    console.warn("Audio synthesis error:", e);
-  }
+  } catch (e) {}
 }
 
 function playCarriageReturnBell() {
   if (!state.settings.soundEnabled || state.settings.volume === 0) return;
   try {
     initAudio();
+    if (!audioCtx) return;
     const volume = (state.settings.volume / 100) * 0.5;
 
     const osc = audioCtx.createOscillator();
@@ -83,105 +85,87 @@ function playCarriageReturnBell() {
 
     osc.start();
     osc.stop(audioCtx.currentTime + 0.6);
-  } catch (e) {
-    console.warn("Audio synthesis error:", e);
-  }
+  } catch (e) {}
 }
 
-// DOM Elements
-const DOM = {
-  btnAccountModal: document.getElementById('btn-account-modal'),
-  authModal: document.getElementById('auth-modal'),
-  btnCloseAuthModal: document.getElementById('btn-close-auth-modal'),
-  authEmail: document.getElementById('auth-email'),
-  authPassword: document.getElementById('auth-password'),
-  btnAuthSignin: document.getElementById('btn-auth-signin'),
-  btnAuthSignup: document.getElementById('btn-auth-signup'),
+// DOM Cache
+let DOM = {};
 
-  userProfile: document.getElementById('user-profile'),
-  userName: document.getElementById('user-name'),
-  syncStatus: document.getElementById('sync-status'),
-  btnLogout: document.getElementById('btn-logout'),
+function initDOM() {
+  DOM = {
+    btnAccountModal: document.getElementById('btn-account-modal'),
+    authModal: document.getElementById('auth-modal'),
+    btnCloseAuthModal: document.getElementById('btn-close-auth-modal'),
+    authEmail: document.getElementById('auth-email'),
+    authPassword: document.getElementById('auth-password'),
+    btnAuthSignin: document.getElementById('btn-auth-signin'),
 
-  btnBackupCloud: document.getElementById('btn-backup-cloud'),
-  btnRestoreCloud: document.getElementById('btn-restore-cloud'),
-  fileInputRestore: document.getElementById('file-input-restore'),
+    userProfile: document.getElementById('user-profile'),
+    userName: document.getElementById('user-name'),
+    syncStatus: document.getElementById('sync-status'),
+    btnLogout: document.getElementById('btn-logout'),
 
-  selectBookSlot: document.getElementById('select-book-slot'),
-  btnNewBook: document.getElementById('btn-new-book'),
-  btnRenameBook: document.getElementById('btn-rename-book'),
-  btnDeleteBook: document.getElementById('btn-delete-book'),
-  currentBookTitleHeader: document.getElementById('current-book-title-header'),
-  currentBookDisplayName: document.getElementById('current-book-display-name'),
+    btnBackupCloud: document.getElementById('btn-backup-cloud'),
+    btnRestoreCloud: document.getElementById('btn-restore-cloud'),
+    fileInputRestore: document.getElementById('file-input-restore'),
 
-  pagesList: document.getElementById('pages-list'),
-  lockedInkStream: document.getElementById('locked-ink-stream'),
-  draftInput: document.getElementById('draft-input'),
-  btnCommit: document.getElementById('btn-commit'),
-  charCount: document.getElementById('char-count'),
-  charLimit: document.getElementById('char-limit'),
-  charCounter: document.getElementById('char-counter'),
-  statTotalWords: document.getElementById('stat-total-words'),
-  statTotalPages: document.getElementById('stat-total-pages'),
-  currentPageLabel: document.getElementById('current-page-label'),
-  currentPageStatus: document.getElementById('current-page-status'),
-  currentPageWords: document.getElementById('current-page-words'),
-  targetPageWords: document.getElementById('target-page-words'),
-  btnNewPage: document.getElementById('btn-new-page'),
-  btnSoundToggle: document.getElementById('btn-sound-toggle'),
-  soundIcon: document.getElementById('sound-icon'),
-  btnSettingsToggle: document.getElementById('btn-settings-toggle'),
-  settingsPanel: document.getElementById('settings-panel'),
-  btnCloseSettings: document.getElementById('btn-close-settings'),
-  btnExportDropdown: document.getElementById('btn-export-dropdown'),
-  exportMenu: document.getElementById('export-menu'),
-  btnExportTxt: document.getElementById('btn-export-txt'),
-  btnExportMd: document.getElementById('btn-export-md'),
-  btnCopyAll: document.getElementById('btn-copy-all'),
-  btnClearAll: document.getElementById('btn-clear-all'),
+    selectBookSlot: document.getElementById('select-book-slot'),
+    btnNewBook: document.getElementById('btn-new-book'),
+    btnRenameBook: document.getElementById('btn-rename-book'),
+    btnDeleteBook: document.getElementById('btn-delete-book'),
+    currentBookTitleHeader: document.getElementById('current-book-title-header'),
+    currentBookDisplayName: document.getElementById('current-book-display-name'),
 
-  settingMaxChars: document.getElementById('setting-max-chars'),
-  settingWordsPerPage: document.getElementById('setting-words-per-page'),
-  settingTheme: document.getElementById('setting-theme'),
-  settingFont: document.getElementById('setting-font'),
-  settingVolume: document.getElementById('setting-volume'),
-  draftingContainer: document.getElementById('drafting-container'),
-  toast: document.getElementById('toast')
-};
+    pagesList: document.getElementById('pages-list'),
+    lockedInkStream: document.getElementById('locked-ink-stream'),
+    draftInput: document.getElementById('draft-input'),
+    btnCommit: document.getElementById('btn-commit'),
+    charCount: document.getElementById('char-count'),
+    charLimit: document.getElementById('char-limit'),
+    charCounter: document.getElementById('char-counter'),
+    statTotalWords: document.getElementById('stat-total-words'),
+    statTotalPages: document.getElementById('stat-total-pages'),
+    currentPageLabel: document.getElementById('current-page-label'),
+    currentPageStatus: document.getElementById('current-page-status'),
+    currentPageWords: document.getElementById('current-page-words'),
+    targetPageWords: document.getElementById('target-page-words'),
+    btnNewPage: document.getElementById('btn-new-page'),
+    btnSoundToggle: document.getElementById('btn-sound-toggle'),
+    soundIcon: document.getElementById('sound-icon'),
+    btnSettingsToggle: document.getElementById('btn-settings-toggle'),
+    settingsPanel: document.getElementById('settings-panel'),
+    btnCloseSettings: document.getElementById('btn-close-settings'),
+    btnExportDropdown: document.getElementById('btn-export-dropdown'),
+    exportMenu: document.getElementById('export-menu'),
+    btnExportTxt: document.getElementById('btn-export-txt'),
+    btnExportMd: document.getElementById('btn-export-md'),
+    btnCopyAll: document.getElementById('btn-copy-all'),
+    btnClearAll: document.getElementById('btn-clear-all'),
 
-// Initialize Application
-function init() {
-  loadStorage();
-  setupEventListeners();
-  applySettingsUI();
-  initFirebase();
-  renderAll();
+    settingMaxChars: document.getElementById('setting-max-chars'),
+    settingWordsPerPage: document.getElementById('setting-words-per-page'),
+    settingTheme: document.getElementById('setting-theme'),
+    settingFont: document.getElementById('setting-font'),
+    settingVolume: document.getElementById('setting-volume'),
+    draftingContainer: document.getElementById('drafting-container'),
+    toast: document.getElementById('toast')
+  };
 }
 
 // Storage Engine
 function loadStorage() {
-  const savedSettings = localStorage.getItem('typewriter_settings');
-  if (savedSettings) {
-    try {
-      state.settings = { ...state.settings, ...JSON.parse(savedSettings) };
-    } catch (e) {}
-  }
+  try {
+    const savedSettings = localStorage.getItem('typewriter_settings');
+    if (savedSettings) state.settings = { ...state.settings, ...JSON.parse(savedSettings) };
 
-  const savedBooks = localStorage.getItem('typewriter_books');
-  if (savedBooks) {
-    try {
-      state.books = JSON.parse(savedBooks);
-    } catch (e) {}
-  }
+    const savedBooks = localStorage.getItem('typewriter_books');
+    if (savedBooks) state.books = JSON.parse(savedBooks);
 
-  const savedUser = localStorage.getItem('typewriter_cloud_author');
-  if (savedUser) {
-    try {
-      state.user = JSON.parse(savedUser);
-    } catch (e) {}
-  }
+    const savedUser = localStorage.getItem('typewriter_cloud_author');
+    if (savedUser) state.user = JSON.parse(savedUser);
+  } catch (e) {}
 
-  if (state.books.length === 0) {
+  if (!state.books || state.books.length === 0) {
     createNewBook("My First Book", false);
   } else {
     state.activeBookId = localStorage.getItem('typewriter_active_book_id') || state.books[0].id;
@@ -195,76 +179,51 @@ function loadStorage() {
 }
 
 function saveStorage() {
-  localStorage.setItem('typewriter_settings', JSON.stringify(state.settings));
-  localStorage.setItem('typewriter_books', JSON.stringify(state.books));
-  if (state.activeBookId) {
-    localStorage.setItem('typewriter_active_book_id', state.activeBookId);
-  }
+  try {
+    localStorage.setItem('typewriter_settings', JSON.stringify(state.settings));
+    localStorage.setItem('typewriter_books', JSON.stringify(state.books));
+    if (state.activeBookId) {
+      localStorage.setItem('typewriter_active_book_id', state.activeBookId);
+    }
+  } catch (e) {}
 
-  if (state.user) {
-    DOM.syncStatus.textContent = "☁️ Synced to Cloud";
-  }
-}
-
-// Firebase Cloud Sync Engine
-function initFirebase() {
-  if (state.user) {
-    renderUserUI();
+  if (state.user && DOM.syncStatus) {
+    DOM.syncStatus.textContent = "☁️ Synced";
   }
 }
 
+// Cloud Login
 function handleCloudSignIn() {
   const email = DOM.authEmail.value.trim();
-  const password = DOM.authPassword.value.trim();
-
-  if (!email || !password) {
-    alert("Please enter your email and password.");
+  if (!email) {
+    alert("Please enter your name or email.");
     return;
   }
 
-  const authorUser = { email: email, name: email.split('@')[0] };
+  const authorUser = { name: email.split('@')[0], email: email };
   state.user = authorUser;
   localStorage.setItem('typewriter_cloud_author', JSON.stringify(authorUser));
 
-  DOM.authModal.classList.add('hidden');
+  if (DOM.authModal) DOM.authModal.classList.add('hidden');
   renderUserUI();
   saveStorage();
-  showToast(`Welcome back, ${authorUser.name}! Cloud sync active.`);
-}
-
-function handleCloudSignUp() {
-  const email = DOM.authEmail.value.trim();
-  const password = DOM.authPassword.value.trim();
-
-  if (!email || password.length < 6) {
-    alert("Please enter a valid email and password (minimum 6 characters).");
-    return;
-  }
-
-  const authorUser = { email: email, name: email.split('@')[0] };
-  state.user = authorUser;
-  localStorage.setItem('typewriter_cloud_author', JSON.stringify(authorUser));
-
-  DOM.authModal.classList.add('hidden');
-  renderUserUI();
-  saveStorage();
-  showToast(`Private cloud account created for ${authorUser.email}!`);
+  showToast(`Connected as ${authorUser.name}! Cloud sync active.`);
 }
 
 function logoutCloud() {
   state.user = null;
   localStorage.removeItem('typewriter_cloud_author');
-  DOM.btnAccountModal.classList.remove('hidden');
-  DOM.userProfile.classList.add('hidden');
-  showToast("Logged out of Cloud Account.");
+  if (DOM.btnAccountModal) DOM.btnAccountModal.classList.remove('hidden');
+  if (DOM.userProfile) DOM.userProfile.classList.add('hidden');
+  showToast("Disconnected.");
 }
 
 function renderUserUI() {
   if (state.user) {
-    DOM.btnAccountModal.classList.add('hidden');
-    DOM.userProfile.classList.remove('hidden');
-    DOM.userName.textContent = state.user.name;
-    DOM.syncStatus.textContent = "☁️ Synced to Cloud";
+    if (DOM.btnAccountModal) DOM.btnAccountModal.classList.add('hidden');
+    if (DOM.userProfile) DOM.userProfile.classList.remove('hidden');
+    if (DOM.userName) DOM.userName.textContent = state.user.name;
+    if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Synced";
   }
 }
 
@@ -348,12 +307,13 @@ function createNewBook(titlePrompt = null, showNotification = true) {
   renderAll();
 
   if (showNotification) {
-    showToast(`Switched to new book: "${newBook.title}"`);
+    showToast(`Switched to "${newBook.title}"`);
     playCarriageReturnBell();
   }
 }
 
 function getActiveBook() {
+  if (!state.books || state.books.length === 0) return null;
   return state.books.find(b => b.id === state.activeBookId) || state.books[0];
 }
 
@@ -371,19 +331,19 @@ function renameCurrentBook() {
 
 function deleteCurrentBook() {
   if (state.books.length <= 1) {
-    alert("You must keep at least one book slot open! Create a new book before deleting this one.");
+    alert("You must keep at least one book open!");
     return;
   }
 
   const book = getActiveBook();
-  if (confirm(`Are you sure you want to delete "${book.title}"? All pages in this slot will be permanently removed.`)) {
+  if (confirm(`Delete "${book.title}"?`)) {
     state.books = state.books.filter(b => b.id !== book.id);
     state.activeBookId = state.books[0].id;
     const newActive = getActiveBook();
     state.currentPageId = newActive.pages[newActive.pages.length - 1].id;
     saveStorage();
     renderAll();
-    showToast("Book slot deleted.");
+    showToast("Book deleted.");
   }
 }
 
@@ -402,9 +362,7 @@ function createNewPage(showNotification = true) {
   };
   
   const current = getCurrentPage();
-  if (current) {
-    current.locked = true;
-  }
+  if (current) current.locked = true;
 
   book.pages.push(newPage);
   state.currentPageId = newPage.id;
@@ -419,7 +377,7 @@ function createNewPage(showNotification = true) {
 
 function getCurrentPage() {
   const book = getActiveBook();
-  if (!book || !book.pages) return null;
+  if (!book || !book.pages || book.pages.length === 0) return null;
   return book.pages.find(p => p.id === state.currentPageId) || book.pages[book.pages.length - 1];
 }
 
@@ -440,155 +398,175 @@ function getBookTotalWordCount(book) {
 
 // Drafting Buffer
 function commitCurrentChunk() {
+  if (!DOM.draftInput) return;
   const text = DOM.draftInput.value.trim();
   if (!text) return;
 
   const page = getCurrentPage();
   if (!page || page.locked) {
-    showToast("This page is locked. Creating a new page for your text.");
-    createNewPage();
+    showToast("Creating a new page for your text.");
+    createNewPage(false);
   }
 
   const activePage = getCurrentPage();
-  activePage.chunks.push(text);
-  DOM.draftInput.value = '';
-  state.buffer = '';
+  if (activePage) {
+    activePage.chunks.push(text);
+    DOM.draftInput.value = '';
+    state.buffer = '';
 
-  playKeyClickSound();
+    playKeyClickSound();
 
-  const pageWords = getPageWordCount(activePage);
-  if (pageWords >= state.settings.wordsPerPage) {
-    activePage.locked = true;
-    showToast(`Target of ${state.settings.wordsPerPage} words reached! Page locked.`);
-    createNewPage();
-  } else {
-    saveStorage();
-    renderAll();
+    const pageWords = getPageWordCount(activePage);
+    if (pageWords >= state.settings.wordsPerPage) {
+      activePage.locked = true;
+      showToast(`Target of ${state.settings.wordsPerPage} words reached! Page locked.`);
+      createNewPage(true);
+    } else {
+      saveStorage();
+      renderAll();
+    }
   }
 
   DOM.draftInput.focus();
 }
 
-// UI Event Listeners
+// Event Listeners
 function setupEventListeners() {
-  DOM.btnAccountModal.addEventListener('click', () => DOM.authModal.classList.remove('hidden'));
-  DOM.btnCloseAuthModal.addEventListener('click', () => DOM.authModal.classList.add('hidden'));
-  DOM.btnAuthSignin.addEventListener('click', handleCloudSignIn);
-  DOM.btnAuthSignup.addEventListener('click', handleCloudSignUp);
-  DOM.btnLogout.addEventListener('click', logoutCloud);
+  if (DOM.btnAccountModal) DOM.btnAccountModal.onclick = () => DOM.authModal && DOM.authModal.classList.remove('hidden');
+  if (DOM.btnCloseAuthModal) DOM.btnCloseAuthModal.onclick = () => DOM.authModal && DOM.authModal.classList.add('hidden');
+  if (DOM.btnAuthSignin) DOM.btnAuthSignin.onclick = handleCloudSignIn;
+  if (DOM.btnLogout) DOM.btnLogout.onclick = logoutCloud;
 
-  DOM.btnBackupCloud.addEventListener('click', exportBackupFile);
-  DOM.btnRestoreCloud.addEventListener('click', () => DOM.fileInputRestore.click());
-  DOM.fileInputRestore.addEventListener('change', importBackupFile);
+  if (DOM.btnBackupCloud) DOM.btnBackupCloud.onclick = exportBackupFile;
+  if (DOM.btnRestoreCloud) DOM.btnRestoreCloud.onclick = () => DOM.fileInputRestore && DOM.fileInputRestore.click();
+  if (DOM.fileInputRestore) DOM.fileInputRestore.onchange = importBackupFile;
 
-  DOM.selectBookSlot.addEventListener('change', (e) => {
-    state.activeBookId = e.target.value;
-    const book = getActiveBook();
-    if (book && book.pages.length > 0) {
-      state.currentPageId = book.pages[book.pages.length - 1].id;
-    }
-    saveStorage();
-    renderAll();
-    showToast(`Opened "${book.title}"`);
-  });
+  if (DOM.selectBookSlot) {
+    DOM.selectBookSlot.onchange = (e) => {
+      state.activeBookId = e.target.value;
+      const book = getActiveBook();
+      if (book && book.pages.length > 0) {
+        state.currentPageId = book.pages[book.pages.length - 1].id;
+      }
+      saveStorage();
+      renderAll();
+      showToast(`Opened "${book.title}"`);
+    };
+  }
 
-  DOM.btnNewBook.addEventListener('click', () => createNewBook());
-  DOM.btnRenameBook.addEventListener('click', () => renameCurrentBook());
-  DOM.btnDeleteBook.addEventListener('click', () => deleteCurrentBook());
+  if (DOM.btnNewBook) DOM.btnNewBook.onclick = () => createNewBook();
+  if (DOM.btnRenameBook) DOM.btnRenameBook.onclick = () => renameCurrentBook();
+  if (DOM.btnDeleteBook) DOM.btnDeleteBook.onclick = () => deleteCurrentBook();
 
-  DOM.draftInput.addEventListener('input', (e) => {
-    state.buffer = e.target.value;
-    playKeyClickSound();
+  if (DOM.draftInput) {
+    DOM.draftInput.oninput = (e) => {
+      state.buffer = e.target.value;
+      playKeyClickSound();
 
-    if (state.buffer.length >= state.settings.maxChars) {
-      commitCurrentChunk();
-    } else {
-      updateCharCounter();
-    }
-  });
+      if (state.buffer.length >= state.settings.maxChars) {
+        commitCurrentChunk();
+      } else {
+        updateCharCounter();
+      }
+    };
 
-  DOM.draftInput.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      commitCurrentChunk();
-    }
-  });
+    DOM.draftInput.onkeydown = (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        commitCurrentChunk();
+      }
+    };
+  }
 
-  DOM.btnCommit.addEventListener('click', () => {
-    commitCurrentChunk();
-  });
+  if (DOM.btnCommit) DOM.btnCommit.onclick = () => commitCurrentChunk();
+  if (DOM.btnNewPage) DOM.btnNewPage.onclick = () => createNewPage();
 
-  DOM.btnNewPage.addEventListener('click', () => {
-    createNewPage();
-  });
+  if (DOM.btnSoundToggle) {
+    DOM.btnSoundToggle.onclick = () => {
+      state.settings.soundEnabled = !state.settings.soundEnabled;
+      if (DOM.soundIcon) DOM.soundIcon.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
+      saveStorage();
+      showToast(state.settings.soundEnabled ? 'Sound ON' : 'Sound OFF');
+    };
+  }
 
-  DOM.btnSoundToggle.addEventListener('click', () => {
-    state.settings.soundEnabled = !state.settings.soundEnabled;
-    DOM.soundIcon.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
-    DOM.btnSoundToggle.title = state.settings.soundEnabled ? 'Toggle Sound (ON)' : 'Toggle Sound (OFF)';
-    saveStorage();
-    showToast(state.settings.soundEnabled ? 'Sound enabled' : 'Sound muted');
-  });
+  if (DOM.btnSettingsToggle) {
+    DOM.btnSettingsToggle.onclick = () => {
+      if (DOM.settingsPanel) DOM.settingsPanel.classList.toggle('hidden');
+      if (DOM.exportMenu) DOM.exportMenu.classList.add('hidden');
+    };
+  }
 
-  DOM.btnSettingsToggle.addEventListener('click', () => {
-    DOM.settingsPanel.classList.toggle('hidden');
-    DOM.exportMenu.classList.add('hidden');
-  });
+  if (DOM.btnCloseSettings) {
+    DOM.btnCloseSettings.onclick = () => {
+      if (DOM.settingsPanel) DOM.settingsPanel.classList.add('hidden');
+    };
+  }
 
-  DOM.btnCloseSettings.addEventListener('click', () => {
-    DOM.settingsPanel.classList.add('hidden');
-  });
+  if (DOM.btnExportDropdown) {
+    DOM.btnExportDropdown.onclick = () => {
+      if (DOM.exportMenu) DOM.exportMenu.classList.toggle('hidden');
+      if (DOM.settingsPanel) DOM.settingsPanel.classList.add('hidden');
+    };
+  }
 
-  DOM.btnExportDropdown.addEventListener('click', () => {
-    DOM.exportMenu.classList.toggle('hidden');
-    DOM.settingsPanel.classList.add('hidden');
-  });
+  if (DOM.btnExportTxt) DOM.btnExportTxt.onclick = () => exportManuscript('txt');
+  if (DOM.btnExportMd) DOM.btnExportMd.onclick = () => exportManuscript('md');
+  if (DOM.btnCopyAll) DOM.btnCopyAll.onclick = copyManuscriptToClipboard;
 
-  DOM.btnExportTxt.addEventListener('click', () => exportManuscript('txt'));
-  DOM.btnExportMd.addEventListener('click', () => exportManuscript('md'));
-  DOM.btnCopyAll.addEventListener('click', copyManuscriptToClipboard);
+  if (DOM.settingMaxChars) {
+    DOM.settingMaxChars.onchange = (e) => {
+      state.settings.maxChars = parseInt(e.target.value, 10) || 200;
+      saveStorage();
+      renderAll();
+    };
+  }
 
-  DOM.settingMaxChars.addEventListener('change', (e) => {
-    state.settings.maxChars = parseInt(e.target.value, 10) || 200;
-    saveStorage();
-    renderAll();
-  });
+  if (DOM.settingWordsPerPage) {
+    DOM.settingWordsPerPage.onchange = (e) => {
+      state.settings.wordsPerPage = parseInt(e.target.value, 10) || 300;
+      saveStorage();
+      renderAll();
+    };
+  }
 
-  DOM.settingWordsPerPage.addEventListener('change', (e) => {
-    state.settings.wordsPerPage = parseInt(e.target.value, 10) || 300;
-    saveStorage();
-    renderAll();
-  });
+  if (DOM.settingTheme) {
+    DOM.settingTheme.onchange = (e) => {
+      state.settings.theme = e.target.value;
+      applyTheme();
+      saveStorage();
+    };
+  }
 
-  DOM.settingTheme.addEventListener('change', (e) => {
-    state.settings.theme = e.target.value;
-    applyTheme();
-    saveStorage();
-  });
+  if (DOM.settingFont) {
+    DOM.settingFont.onchange = (e) => {
+      state.settings.font = e.target.value;
+      applyFont();
+      saveStorage();
+    };
+  }
 
-  DOM.settingFont.addEventListener('change', (e) => {
-    state.settings.font = e.target.value;
-    applyFont();
-    saveStorage();
-  });
+  if (DOM.settingVolume) {
+    DOM.settingVolume.oninput = (e) => {
+      state.settings.volume = parseInt(e.target.value, 10);
+      saveStorage();
+    };
+  }
 
-  DOM.settingVolume.addEventListener('input', (e) => {
-    state.settings.volume = parseInt(e.target.value, 10);
-    saveStorage();
-  });
-
-  DOM.btnClearAll.addEventListener('click', () => {
-    if (confirm("⚠️ WARNING: This will permanently delete ALL books, pages, and save slots! Are you sure?")) {
-      state.books = [];
-      localStorage.clear();
-      createNewBook("My First Book", false);
-      DOM.settingsPanel.classList.add('hidden');
-      showToast("All data reset.");
-    }
-  });
+  if (DOM.btnClearAll) {
+    DOM.btnClearAll.onclick = () => {
+      if (confirm("Reset everything?")) {
+        state.books = [];
+        localStorage.clear();
+        createNewBook("My First Book", false);
+        if (DOM.settingsPanel) DOM.settingsPanel.classList.add('hidden');
+        showToast("Reset complete.");
+      }
+    };
+  }
 
   document.addEventListener('click', (e) => {
-    if (!DOM.exportMenu.contains(e.target) && !DOM.btnExportDropdown.contains(e.target)) {
+    if (DOM.exportMenu && DOM.btnExportDropdown && !DOM.exportMenu.contains(e.target) && !DOM.btnExportDropdown.contains(e.target)) {
       DOM.exportMenu.classList.add('hidden');
     }
   });
@@ -607,40 +585,40 @@ function renderAll() {
 }
 
 function renderBookSlotsDropdown() {
+  if (!DOM.selectBookSlot) return;
   DOM.selectBookSlot.innerHTML = '';
   state.books.forEach(book => {
     const opt = document.createElement('option');
     opt.value = book.id;
     opt.textContent = `${book.title} (${getBookTotalWordCount(book)}w)`;
-    if (book.id === state.activeBookId) {
-      opt.selected = true;
-    }
+    if (book.id === state.activeBookId) opt.selected = true;
     DOM.selectBookSlot.appendChild(opt);
   });
 
   const activeBook = getActiveBook();
   if (activeBook) {
-    DOM.currentBookTitleHeader.textContent = activeBook.title;
-    DOM.currentBookDisplayName.textContent = activeBook.title;
+    if (DOM.currentBookTitleHeader) DOM.currentBookTitleHeader.textContent = activeBook.title;
+    if (DOM.currentBookDisplayName) DOM.currentBookDisplayName.textContent = activeBook.title;
   }
 }
 
 function updateCharCounter() {
+  if (!DOM.draftInput || !DOM.charCount || !DOM.charLimit) return;
   const currentLen = DOM.draftInput.value.length;
   const maxLen = state.settings.maxChars;
 
   DOM.charCount.textContent = currentLen;
   DOM.charLimit.textContent = maxLen;
 
-  DOM.charCounter.classList.remove('near-limit', 'at-limit');
-  if (currentLen >= maxLen) {
-    DOM.charCounter.classList.add('at-limit');
-  } else if (currentLen >= maxLen * 0.85) {
-    DOM.charCounter.classList.add('near-limit');
+  if (DOM.charCounter) {
+    DOM.charCounter.classList.remove('near-limit', 'at-limit');
+    if (currentLen >= maxLen) DOM.charCounter.classList.add('at-limit');
+    else if (currentLen >= maxLen * 0.85) DOM.charCounter.classList.add('near-limit');
   }
 }
 
 function renderSidebarPages() {
+  if (!DOM.pagesList) return;
   DOM.pagesList.innerHTML = '';
   const book = getActiveBook();
   if (!book) return;
@@ -648,17 +626,16 @@ function renderSidebarPages() {
   book.pages.forEach(page => {
     const li = document.createElement('li');
     li.className = page.id === state.currentPageId ? 'active' : '';
-    
     const words = getPageWordCount(page);
     li.innerHTML = `
       <span>Page ${page.number} ${page.locked ? '🔒' : '✍️'}</span>
       <span class="page-word-badge">${words}w</span>
     `;
 
-    li.addEventListener('click', () => {
+    li.onclick = () => {
       state.currentPageId = page.id;
       renderAll();
-    });
+    };
 
     DOM.pagesList.appendChild(li);
   });
@@ -668,57 +645,64 @@ function renderActivePage() {
   const page = getCurrentPage();
   if (!page) return;
 
-  DOM.currentPageLabel.textContent = `Page ${page.number}`;
+  if (DOM.currentPageLabel) DOM.currentPageLabel.textContent = `Page ${page.number}`;
   
   if (page.locked) {
-    DOM.currentPageStatus.textContent = "Locked";
-    DOM.currentPageStatus.className = "status-badge status-locked";
-    DOM.draftingContainer.classList.add('hidden');
+    if (DOM.currentPageStatus) {
+      DOM.currentPageStatus.textContent = "Locked";
+      DOM.currentPageStatus.className = "status-badge status-locked";
+    }
+    if (DOM.draftingContainer) DOM.draftingContainer.classList.add('hidden');
   } else {
-    DOM.currentPageStatus.textContent = "Active";
-    DOM.currentPageStatus.className = "status-badge status-active";
-    DOM.draftingContainer.classList.remove('hidden');
+    if (DOM.currentPageStatus) {
+      DOM.currentPageStatus.textContent = "Active";
+      DOM.currentPageStatus.className = "status-badge status-active";
+    }
+    if (DOM.draftingContainer) DOM.draftingContainer.classList.remove('hidden');
   }
 
   const pageWords = getPageWordCount(page);
-  DOM.currentPageWords.textContent = pageWords;
-  DOM.targetPageWords.textContent = state.settings.wordsPerPage;
+  if (DOM.currentPageWords) DOM.currentPageWords.textContent = pageWords;
+  if (DOM.targetPageWords) DOM.targetPageWords.textContent = state.settings.wordsPerPage;
 
-  DOM.lockedInkStream.innerHTML = '';
-  page.chunks.forEach(chunkText => {
-    const chunkSpan = document.createElement('span');
-    chunkSpan.className = 'ink-chunk';
-    chunkSpan.textContent = chunkText;
-    DOM.lockedInkStream.appendChild(chunkSpan);
-  });
+  if (DOM.lockedInkStream) {
+    DOM.lockedInkStream.innerHTML = '';
+    page.chunks.forEach(chunkText => {
+      const chunkSpan = document.createElement('span');
+      chunkSpan.className = 'ink-chunk';
+      chunkSpan.textContent = chunkText;
+      DOM.lockedInkStream.appendChild(chunkSpan);
+    });
+  }
 }
 
 function updateStats() {
   const book = getActiveBook();
-  DOM.statTotalWords.textContent = getBookTotalWordCount(book);
-  DOM.statTotalPages.textContent = book ? book.pages.length : 0;
+  if (DOM.statTotalWords) DOM.statTotalWords.textContent = getBookTotalWordCount(book);
+  if (DOM.statTotalPages) DOM.statTotalPages.textContent = book ? book.pages.length : 0;
 }
 
 function applyTheme() {
   document.body.className = document.body.className.replace(/\btheme-\S+/g, '');
   document.body.classList.add(`theme-${state.settings.theme}`);
-  DOM.settingTheme.value = state.settings.theme;
+  if (DOM.settingTheme) DOM.settingTheme.value = state.settings.theme;
 }
 
 function applyFont() {
   document.body.className = document.body.className.replace(/\bfont-\S+/g, '');
   document.body.classList.add(`font-${state.settings.font}`);
-  DOM.settingFont.value = state.settings.font;
+  if (DOM.settingFont) DOM.settingFont.value = state.settings.font;
 }
 
 function applySettingsUI() {
-  DOM.settingMaxChars.value = state.settings.maxChars;
-  DOM.settingWordsPerPage.value = state.settings.wordsPerPage;
-  DOM.settingVolume.value = state.settings.volume;
-  DOM.soundIcon.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
+  if (DOM.settingMaxChars) DOM.settingMaxChars.value = state.settings.maxChars;
+  if (DOM.settingWordsPerPage) DOM.settingWordsPerPage.value = state.settings.wordsPerPage;
+  if (DOM.settingVolume) DOM.settingVolume.value = state.settings.volume;
+  if (DOM.soundIcon) DOM.soundIcon.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
 }
 
 function showToast(msg) {
+  if (!DOM.toast) return;
   DOM.toast.textContent = msg;
   DOM.toast.classList.remove('hidden');
   setTimeout(() => {
@@ -731,11 +715,8 @@ function compileManuscriptText(format = 'txt') {
   if (!book) return '';
   let fullText = `# ${book.title}\n\n`;
   book.pages.forEach(page => {
-    if (format === 'md') {
-      fullText += `## Page ${page.number}\n\n`;
-    } else {
-      fullText += `--- PAGE ${page.number} ---\n\n`;
-    }
+    if (format === 'md') fullText += `## Page ${page.number}\n\n`;
+    else fullText += `--- PAGE ${page.number} ---\n\n`;
     fullText += page.chunks.join(' ') + '\n\n';
   });
   return fullText.trim();
@@ -758,18 +739,30 @@ function exportManuscript(format) {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 
-  DOM.exportMenu.classList.add('hidden');
+  if (DOM.exportMenu) DOM.exportMenu.classList.add('hidden');
   showToast(`Exported ${filename}`);
 }
 
 function copyManuscriptToClipboard() {
   const content = compileManuscriptText('txt');
   navigator.clipboard.writeText(content).then(() => {
-    DOM.exportMenu.classList.add('hidden');
+    if (DOM.exportMenu) DOM.exportMenu.classList.add('hidden');
     showToast("Manuscript copied to clipboard!");
   }).catch(() => {
     showToast("Failed to copy to clipboard.");
   });
 }
 
-document.addEventListener('DOMContentLoaded', init);
+function init() {
+  initDOM();
+  loadStorage();
+  setupEventListeners();
+  applySettingsUI();
+  renderAll();
+}
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', init);
+} else {
+  init();
+}
