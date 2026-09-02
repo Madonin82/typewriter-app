@@ -166,12 +166,19 @@ html, body {
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: flex-start;
-  justify-content: center;
-  padding: 60px 30px 180px;
+  flex-direction: column;
+  align-items: center;
+  padding: 40px 30px 220px;
   overflow-y: auto;
   transition: filter 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+@media (max-width: 600px) {
+  #writing-surface {
+    padding: 30px 16px 210px;
+  }
 }
 
 #writing-surface.blurred {
@@ -183,10 +190,19 @@ html, body {
 .page {
   width: 100%;
   max-width: 700px;
-  min-height: 80vh;
+  min-height: 100%;
   background: var(--paper);
   position: relative;
-  padding-top: 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 20px 0 10px;
+  transition: background-color 0.25s ease;
+}
+
+.page.is-locked {
+  justify-content: flex-start;
+  min-height: auto;
   padding-bottom: 60px;
 }
 
@@ -199,6 +215,12 @@ html, body {
   tab-size: 4;
   -moz-tab-size: 4;
   font-family: var(--font-family);
+  margin-top: auto;
+  transition: transform 0.2s ease;
+}
+
+.page.is-locked .ink-stream {
+  margin-top: 0;
 }
 
 .ink-chunk {
@@ -208,6 +230,28 @@ html, body {
 
 .ink-chunk::after {
   content: ' ';
+}
+
+@keyframes typewriterStrike {
+  0% {
+    opacity: 0;
+    transform: translateY(10px);
+    filter: blur(0.5px);
+  }
+  60% {
+    opacity: 0.95;
+    transform: translateY(-1px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.ink-chunk.new-strike {
+  display: inline;
+  animation: typewriterStrike 0.24s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 /* Blinking Typewriter Cursor */
@@ -232,7 +276,7 @@ html, body {
   display: flex;
   align-items: flex-end;
   justify-content: center;
-  padding-bottom: 36px;
+  padding-bottom: 30px;
   pointer-events: none;
   z-index: 50;
 }

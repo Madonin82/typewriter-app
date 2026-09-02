@@ -1023,14 +1023,16 @@ function commitDraft() {
       createNewPage(true);
     } else {
       saveStorage();
-      renderAll();
+      renderAll(true);
     }
   }
 
   if (DOM.writingSurface) {
-    DOM.writingSurface.scrollTo({
-      top: DOM.writingSurface.scrollHeight,
-      behavior: 'smooth'
+    requestAnimationFrame(() => {
+      DOM.writingSurface.scrollTo({
+        top: DOM.writingSurface.scrollHeight,
+        behavior: 'smooth'
+      });
     });
   }
 
@@ -1054,13 +1056,13 @@ function updateCharCounter() {
 
 // ─── RENDERING & UI SYNC ────────────────────────────────────
 
-function renderAll() {
+function renderAll(lastChunkIsNew = false) {
   applyTheme();
   applyFont();
   updateCommitHint();
   renderBookSlotsDropdown();
   renderSidebarPages();
-  renderActivePage();
+  renderActivePage(lastChunkIsNew);
   updateStats();
   updateCharCounter();
   renderUserUI();
@@ -1095,7 +1097,7 @@ function renderSidebarPages() {
 
     li.onclick = () => {
       state.currentPageId = page.id;
-      renderAll();
+      renderAll(false);
       closeOverlay();
     };
 
@@ -1103,7 +1105,7 @@ function renderSidebarPages() {
   });
 }
 
-function renderActivePage() {
+function renderActivePage(lastChunkIsNew = false) {
   const book = getActiveBook();
   const page = getCurrentPage();
   if (!page || !book) return;
@@ -1113,12 +1115,20 @@ function renderActivePage() {
     DOM.pageHeaderInfo.textContent = `Page ${page.number}/${totalPages} • ${book.title}${page.locked ? ' (Locked)' : ''}`;
   }
 
+  if (DOM.pageSheet) {
+    DOM.pageSheet.classList.toggle('is-locked', Boolean(page.locked));
+  }
+
   if (DOM.inkStream) {
     DOM.inkStream.innerHTML = '';
 
-    page.chunks.forEach(chunkText => {
+    const count = page.chunks.length;
+    page.chunks.forEach((chunkText, idx) => {
       const span = document.createElement('span');
       span.className = 'ink-chunk';
+      if (lastChunkIsNew && idx === count - 1) {
+        span.classList.add('new-strike');
+      }
       span.textContent = chunkText;
       DOM.inkStream.appendChild(span);
     });
@@ -1129,6 +1139,16 @@ function renderActivePage() {
       cursor.id = 'ink-cursor';
       DOM.inkStream.appendChild(cursor);
     }
+  }
+
+  if (DOM.writingSurface) {
+    requestAnimationFrame(() => {
+      if (page.locked) {
+        DOM.writingSurface.scrollTo({ top: 0, behavior: 'smooth' });
+      } else {
+        DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'smooth' });
+      }
+    });
   }
 
   const draftOverlay = document.getElementById('draft-overlay');
