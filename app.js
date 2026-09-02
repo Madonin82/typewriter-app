@@ -1,22 +1,29 @@
 /**
  * Typewriter Studio - Application Core
- * Forward-Only Micro-Drafting Engine with Firebase Auth & Firestore Sync
- * Firebase Project: typewriter-app-6e624
+ * Forward-Only Micro-Drafting Engine with Google Drive & Firebase Sync
+ * Firebase Project: gen-lang-client-0081756947
  */
 
-// Firebase Configuration for Project: typewriter-app-6e624
+// Firebase Configuration for Project: gen-lang-client-0081756947
 const firebaseConfig = {
-  apiKey: "AIzaSyB5UvSiArIv_YnmbWyjSG0so6MJc5S1A9E",
-  authDomain: "typewriter-app-6e624.firebaseapp.com",
-  projectId: "typewriter-app-6e624",
-  storageBucket: "typewriter-app-6e624.firebasestorage.app",
-  messagingSenderId: "1010879061490",
-  appId: "1:1010879061490:web:83c43a410788f62d401f6b"
+  projectId: "gen-lang-client-0081756947",
+  appId: "1:757537539472:web:f4cd43fd3f2d55f16d5f15",
+  apiKey: "AIzaSyBlYBw9rVhOSCAFNco2tK7iu7TWvGnv3wk",
+  authDomain: "gen-lang-client-0081756947.firebaseapp.com",
+  storageBucket: "gen-lang-client-0081756947.firebasestorage.app",
+  messagingSenderId: "757537539472",
+  oAuthClientId: "757537539472-ms0a6ga5a47vd8jhbpfsntva2c6ilctf.apps.googleusercontent.com"
 };
 
 let auth = null;
 let db = null;
 let currentUser = null;
+let cachedAccessToken = null; // In-memory OAuth access token for Google Drive API
+
+const DRIVE_SCOPES = [
+  'https://www.googleapis.com/auth/drive',
+  'https://www.googleapis.com/auth/drive.file'
+];
 
 // Global State
 let state = {
@@ -138,6 +145,23 @@ function initDOM() {
     btnRestoreCloud: document.getElementById('btn-restore-cloud'),
     fileInputRestore: document.getElementById('file-input-restore'),
 
+    // Google Drive Left Panel & Modal triggers
+    btnDriveSaveBook: document.getElementById('btn-drive-save-book'),
+    btnDriveSaveBackup: document.getElementById('btn-drive-save-backup'),
+    btnDriveBrowserToggle: document.getElementById('btn-drive-browser-toggle'),
+
+    // Google Drive Cloud Explorer Modal
+    driveModal: document.getElementById('drive-modal'),
+    btnCloseDriveModal: document.getElementById('btn-close-drive-modal'),
+    driveAuthBox: document.getElementById('drive-auth-box'),
+    driveStatusDot: document.getElementById('drive-status-dot'),
+    driveAuthStatusText: document.getElementById('drive-auth-status-text'),
+    btnDriveLogin: document.getElementById('btn-drive-login'),
+    btnDriveUploadCurrent: document.getElementById('btn-drive-upload-current'),
+    btnDriveUploadBackup: document.getElementById('btn-drive-upload-backup'),
+    btnDriveRefresh: document.getElementById('btn-drive-refresh'),
+    driveFilesList: document.getElementById('drive-files-list'),
+
     btnGoogleSignIn: document.getElementById('btn-google-signin'),
     userProfile: document.getElementById('user-profile'),
     userAvatar: document.getElementById('user-avatar'),
@@ -161,9 +185,13 @@ function initDOM() {
     exportModal: document.getElementById('export-modal'),
     btnExportModalToggle: document.getElementById('btn-export-modal-toggle'),
     btnCloseExportModal: document.getElementById('btn-close-export-modal'),
+    btnExportPdf: document.getElementById('btn-export-pdf'),
+    btnExportDocx: document.getElementById('btn-export-docx'),
     btnExportTxt: document.getElementById('btn-export-txt'),
     btnExportMd: document.getElementById('btn-export-md'),
     btnCopyAll: document.getElementById('btn-copy-all'),
+    btnExportDriveTxt: document.getElementById('btn-export-drive-txt'),
+    btnExportDriveMd: document.getElementById('btn-export-drive-md'),
 
     toast: document.getElementById('toast')
   };
@@ -217,10 +245,13 @@ function initFirebase() {
         if (user) {
           currentUser = user;
           renderUserUI();
+          updateDriveAuthUI();
           loadFromFirestore(user.uid);
         } else {
           currentUser = null;
+          cachedAccessToken = null;
           renderUserUI();
+          updateDriveAuthUI();
         }
       });
     } catch (e) {
@@ -229,24 +260,40 @@ function initFirebase() {
   }
 }
 
-function handleGoogleSignIn() {
+function handleGoogleSignIn(callback) {
   if (!auth) initFirebase();
   if (auth) {
     const provider = new firebase.auth.GoogleAuthProvider();
-    auth.signInWithPopup(provider).then((result) => {
-      showToast(`Welcome, ${result.user.displayName || 'Author'}! Synced to Firestore.`);
+    provider.addScope('https://www.googleapis.com/auth/drive.file');
+    provider.addScope('https://www.googleapis.com/auth/drive');
+
+    return auth.signInWithPopup(provider).then((result) => {
+      currentUser = result.user;
+      const credential = result.credential;
+      if (credential && credential.accessToken) {
+        cachedAccessToken = credential.accessToken;
+      }
+      renderUserUI();
+      updateDriveAuthUI();
+      showToast(`Connected as ${result.user.displayName || 'Author'} with Google Drive!`);
+      if (typeof callback === 'function') callback(cachedAccessToken);
+      return cachedAccessToken;
     }).catch((error) => {
       console.error("Auth error:", error);
       showToast(`Sign in error: ${error.message}`);
+      return null;
     });
   } else {
     showToast("Firebase Auth initializing...");
+    return Promise.resolve(null);
   }
 }
 
 function handleSignOut() {
   if (auth) {
     auth.signOut().then(() => {
+      cachedAccessToken = null;
+      updateDriveAuthUI();
       showToast("Signed out.");
     });
   }
@@ -258,10 +305,328 @@ function renderUserUI() {
     if (DOM.userProfile) DOM.userProfile.classList.remove('hidden');
     if (DOM.userName) DOM.userName.textContent = currentUser.displayName || currentUser.email.split('@')[0];
     if (DOM.userAvatar && currentUser.photoURL) DOM.userAvatar.src = currentUser.photoURL;
-    if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Firestore Synced";
+    if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Google Drive & Firestore";
   } else {
     if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.classList.remove('hidden');
     if (DOM.userProfile) DOM.userProfile.classList.add('hidden');
+  }
+}
+
+// ─── GOOGLE DRIVE INTEGRATION ───────────────────────────────
+
+function getDriveAccessToken() {
+  if (cachedAccessToken) return Promise.resolve(cachedAccessToken);
+  return handleGoogleSignIn();
+}
+
+function updateDriveAuthUI() {
+  if (!DOM.driveStatusDot || !DOM.driveAuthStatusText) return;
+  if (currentUser && cachedAccessToken) {
+    DOM.driveStatusDot.className = 'drive-status-indicator connected';
+    DOM.driveAuthStatusText.textContent = `Connected: ${currentUser.email || currentUser.displayName || 'Active'}`;
+    if (DOM.btnDriveLogin) DOM.btnDriveLogin.textContent = 'Re-authenticate';
+  } else if (currentUser) {
+    DOM.driveStatusDot.className = 'drive-status-indicator disconnected';
+    DOM.driveAuthStatusText.textContent = `Signed in (${currentUser.email}) - Drive permission needed`;
+    if (DOM.btnDriveLogin) DOM.btnDriveLogin.textContent = 'Grant Drive Access';
+  } else {
+    DOM.driveStatusDot.className = 'drive-status-indicator disconnected';
+    DOM.driveAuthStatusText.textContent = 'Not connected to Google Drive';
+    if (DOM.btnDriveLogin) DOM.btnDriveLogin.textContent = 'Connect Google Drive';
+  }
+}
+
+async function uploadToGoogleDrive({ name, content, mimeType = 'text/plain', isBackup = false }) {
+  const token = await getDriveAccessToken();
+  if (!token) {
+    showToast("Google Drive connection required.");
+    return false;
+  }
+
+  showToast(`Uploading "${name}" to Google Drive...`);
+
+  const boundary = '-------314159265358979323846';
+  const delimiter = "\r\n--" + boundary + "\r\n";
+  const close_delim = "\r\n--" + boundary + "--";
+
+  const metadata = {
+    name: name,
+    mimeType: mimeType,
+    description: isBackup ? 'Typewriter Studio Manuscript Backup' : 'Typewriter Studio Draft',
+    appProperties: {
+      app: 'typewriter-studio',
+      type: isBackup ? 'backup' : 'manuscript'
+    }
+  };
+
+  const multipartRequestBody =
+    delimiter +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(metadata) +
+    delimiter +
+    `Content-Type: ${mimeType}; charset=UTF-8\r\n\r\n` +
+    content +
+    close_delim;
+
+  try {
+    const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': `multipart/related; boundary=${boundary}`
+      },
+      body: multipartRequestBody
+    });
+
+    if (response.ok) {
+      const data = await response.json();
+      showToast(`☁️ Saved "${name}" to Google Drive!`);
+      if (DOM.driveModal && !DOM.driveModal.classList.contains('hidden')) {
+        listGoogleDriveFiles();
+      }
+      return data;
+    } else if (response.status === 401) {
+      cachedAccessToken = null;
+      updateDriveAuthUI();
+      showToast("Drive session expired. Please sign in again.");
+      return false;
+    } else {
+      const errData = await response.json().catch(() => ({}));
+      console.error("Drive upload error:", errData);
+      showToast(`Drive upload failed: ${errData.error?.message || 'Unknown error'}`);
+      return false;
+    }
+  } catch (err) {
+    console.error("Drive network error:", err);
+    showToast(`Network error saving to Google Drive.`);
+    return false;
+  }
+}
+
+async function saveCurrentBookToDrive(format = 'txt') {
+  const book = getActiveBook();
+  if (!book) return;
+  const ext = format === 'md' ? 'md' : 'txt';
+  const mimeType = format === 'md' ? 'text/markdown' : 'text/plain';
+  const cleanTitle = book.title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  const fileName = `${cleanTitle}_draft_${new Date().toISOString().slice(0, 10)}.${ext}`;
+  const content = compileManuscriptText(format);
+
+  const res = await uploadToGoogleDrive({
+    name: fileName,
+    content: content,
+    mimeType: mimeType,
+    isBackup: false
+  });
+
+  if (res && DOM.exportModal) DOM.exportModal.classList.add('hidden');
+}
+
+async function saveStudioBackupToDrive() {
+  const backupData = JSON.stringify({
+    version: 1,
+    exportDate: new Date().toISOString(),
+    books: state.books,
+    settings: state.settings
+  }, null, 2);
+
+  const fileName = `typewriter_backup_${new Date().toISOString().slice(0, 10)}.json`;
+  return await uploadToGoogleDrive({
+    name: fileName,
+    content: backupData,
+    mimeType: 'application/json',
+    isBackup: true
+  });
+}
+
+async function listGoogleDriveFiles() {
+  if (!DOM.driveFilesList) return;
+  const token = await getDriveAccessToken();
+  if (!token) {
+    DOM.driveFilesList.innerHTML = '<div class="drive-empty-notice">Sign in above to browse your Google Drive manuscripts.</div>';
+    return;
+  }
+
+  DOM.driveFilesList.innerHTML = '<div class="drive-empty-notice">Fetching files from Google Drive...</div>';
+
+  try {
+    const query = encodeURIComponent("trashed = false and (name contains 'typewriter' or name contains 'draft' or name contains 'backup' or mimeType = 'text/plain' or mimeType = 'text/markdown' or mimeType = 'application/json')");
+    const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,mimeType,size,modifiedTime,createdTime,webViewLink)&orderBy=modifiedTime desc&pageSize=25`;
+
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        cachedAccessToken = null;
+        updateDriveAuthUI();
+      }
+      DOM.driveFilesList.innerHTML = '<div class="drive-empty-notice">Failed to load files from Google Drive. Please reconnect.</div>';
+      return;
+    }
+
+    const data = await response.json();
+    const files = data.files || [];
+
+    if (files.length === 0) {
+      DOM.driveFilesList.innerHTML = '<div class="drive-empty-notice">No Typewriter manuscripts found on Google Drive. Click "Save to Drive" above to create one!</div>';
+      return;
+    }
+
+    DOM.driveFilesList.innerHTML = '';
+    files.forEach(file => {
+      const isJson = file.name.endsWith('.json') || file.mimeType === 'application/json';
+      const isMd = file.name.endsWith('.md') || file.mimeType === 'text/markdown';
+      const icon = isJson ? '🛡️' : (isMd ? '📝' : '📄');
+      const dateStr = file.modifiedTime ? new Date(file.modifiedTime).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '';
+      const sizeStr = file.size ? `${(file.size / 1024).toFixed(1)} KB` : '';
+
+      const card = document.createElement('div');
+      card.className = 'drive-file-card';
+      card.innerHTML = `
+        <div class="drive-file-meta">
+          <span class="drive-file-icon">${icon}</span>
+          <div class="drive-file-details">
+            <span class="drive-file-title" title="${file.name}">${file.name}</span>
+            <span class="drive-file-sub">${dateStr} ${sizeStr ? '• ' + sizeStr : ''}</span>
+          </div>
+        </div>
+        <div class="drive-file-actions">
+          <button class="btn-drive-action primary" data-id="${file.id}" data-name="${file.name}" data-json="${isJson}" title="Import into Typewriter Studio">📥 Load</button>
+          ${file.webViewLink ? `<a href="${file.webViewLink}" target="_blank" class="btn-drive-action" title="Open in Google Drive Web">↗ View</a>` : ''}
+          <button class="btn-drive-action danger" data-del-id="${file.id}" data-del-name="${file.name}" title="Delete file from Google Drive">🗑️</button>
+        </div>
+      `;
+
+      const loadBtn = card.querySelector('.btn-drive-action.primary');
+      if (loadBtn) {
+        loadBtn.onclick = () => loadFileFromDrive(file.id, file.name, isJson);
+      }
+
+      const delBtn = card.querySelector('.btn-drive-action.danger');
+      if (delBtn) {
+        delBtn.onclick = () => deleteFileFromDrive(file.id, file.name);
+      }
+
+      DOM.driveFilesList.appendChild(card);
+    });
+
+  } catch (err) {
+    console.error("List files error:", err);
+    DOM.driveFilesList.innerHTML = '<div class="drive-empty-notice">Error loading files from Google Drive.</div>';
+  }
+}
+
+async function loadFileFromDrive(fileId, fileName, isJson) {
+  const token = await getDriveAccessToken();
+  if (!token) return;
+
+  const confirmed = confirm(`Load "${fileName}" from Google Drive into Typewriter Studio?`);
+  if (!confirmed) return;
+
+  showToast(`Downloading "${fileName}"...`);
+
+  try {
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (!response.ok) {
+      showToast("Failed to download file from Google Drive.");
+      return;
+    }
+
+    if (isJson) {
+      const importedData = await response.json();
+      if (importedData && importedData.books && importedData.books.length > 0) {
+        state.books = importedData.books;
+        if (importedData.settings) {
+          state.settings = { ...state.settings, ...importedData.settings };
+        }
+        state.activeBookId = state.books[0].id;
+        state.currentPageId = state.books[0].pages[state.books[0].pages.length - 1].id;
+        saveStorage();
+        renderAll();
+        closeDriveModal();
+        closeOverlay();
+        showToast(`Loaded backup with ${state.books.length} book(s) from Google Drive!`);
+      } else {
+        alert("The selected JSON file does not have valid Typewriter Studio data.");
+      }
+    } else {
+      const rawText = await response.text();
+      const bookTitle = fileName.replace(/\.[^/.]+$/, "").replace(/[_-]/g, " ");
+      const newBook = {
+        id: 'book_' + Date.now(),
+        title: bookTitle || "Drive Manuscript",
+        pages: [],
+        createdAt: Date.now()
+      };
+
+      const paragraphs = rawText.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+      const page = {
+        id: 'page_' + Date.now(),
+        number: 1,
+        chunks: paragraphs.length > 0 ? paragraphs : [rawText.trim() || ''],
+        locked: false,
+        createdAt: Date.now()
+      };
+      newBook.pages.push(page);
+
+      state.books.push(newBook);
+      state.activeBookId = newBook.id;
+      state.currentPageId = page.id;
+
+      saveStorage();
+      renderAll();
+      closeDriveModal();
+      closeOverlay();
+      showToast(`Created book "${newBook.title}" from Google Drive text!`);
+    }
+  } catch (err) {
+    console.error("Load drive file error:", err);
+    showToast("Error importing file from Google Drive.");
+  }
+}
+
+async function deleteFileFromDrive(fileId, fileName) {
+  // Explicit confirmation dialog for deleting data via Workspace API
+  const confirmed = confirm(`Are you sure you want to permanently delete "${fileName}" from your Google Drive? This action cannot be undone.`);
+  if (!confirmed) return;
+
+  const token = await getDriveAccessToken();
+  if (!token) return;
+
+  try {
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (response.ok || response.status === 204) {
+      showToast(`🗑️ Deleted "${fileName}" from Google Drive.`);
+      listGoogleDriveFiles();
+    } else {
+      showToast("Failed to delete file from Google Drive.");
+    }
+  } catch (err) {
+    console.error("Delete drive file error:", err);
+    showToast("Error communicating with Google Drive.");
+  }
+}
+
+function openDriveModal() {
+  if (DOM.driveModal) {
+    DOM.driveModal.classList.remove('hidden');
+    updateDriveAuthUI();
+    listGoogleDriveFiles();
+  }
+}
+
+function closeDriveModal() {
+  if (DOM.driveModal) {
+    DOM.driveModal.classList.add('hidden');
   }
 }
 
@@ -707,7 +1072,223 @@ function compileManuscriptText(format = 'txt') {
   return fullText.trim();
 }
 
+function exportManuscriptPDF() {
+  const book = getActiveBook();
+  if (!book) return;
+  const cleanTitle = (book.title || 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  const filename = `${cleanTitle}_${new Date().toISOString().slice(0, 10)}.pdf`;
+
+  if (window.jspdf && window.jspdf.jsPDF) {
+    try {
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'letter'
+      });
+
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
+      const margin = 54; // 0.75 in margin
+      const maxWidth = pageWidth - margin * 2;
+      let isFirstPage = true;
+
+      book.pages.forEach((page, index) => {
+        if (!isFirstPage) {
+          doc.addPage();
+        }
+        isFirstPage = false;
+
+        // Page Header
+        doc.setFont('courier', 'bold');
+        doc.setFontSize(14);
+        doc.setTextColor(40, 40, 40);
+
+        if (index === 0) {
+          doc.text(book.title, margin, margin + 10);
+          doc.setFont('courier', 'normal');
+          doc.setFontSize(10);
+          doc.setTextColor(100, 100, 100);
+          doc.text(`Typewriter Studio Manuscript • ${new Date().toLocaleDateString()}`, margin, margin + 26);
+          doc.setDrawColor(200, 200, 200);
+          doc.line(margin, margin + 34, pageWidth - margin, margin + 34);
+        }
+
+        // Subhead Page Number
+        const headerY = index === 0 ? margin + 55 : margin + 15;
+        doc.setFont('courier', 'bold');
+        doc.setFontSize(11);
+        doc.setTextColor(70, 70, 70);
+        doc.text(`— PAGE ${page.number} OF ${book.pages.length} —`, margin, headerY);
+
+        // Body Text
+        doc.setFont('courier', 'normal');
+        doc.setFontSize(11.5);
+        doc.setTextColor(20, 20, 20);
+
+        const pageText = page.chunks.join('\n\n');
+        const splitLines = doc.splitTextToSize(pageText, maxWidth);
+
+        let cursorY = headerY + 24;
+        const lineHeight = 16;
+
+        for (let i = 0; i < splitLines.length; i++) {
+          if (cursorY + lineHeight > pageHeight - margin) {
+            doc.addPage();
+            cursorY = margin + 20;
+          }
+          doc.text(splitLines[i], margin, cursorY);
+          cursorY += lineHeight;
+        }
+
+        // Footer
+        doc.setFont('courier', 'italic');
+        doc.setFontSize(9);
+        doc.setTextColor(140, 140, 140);
+        doc.text(`${book.title} • Page ${page.number}`, margin, pageHeight - 30);
+      });
+
+      doc.save(filename);
+      if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+      showToast(`Exported PDF: ${filename}`);
+      return;
+    } catch (err) {
+      console.error("jsPDF generation failed:", err);
+      showToast("PDF generation error. Falling back to print export.");
+    }
+  }
+
+  // Graceful fallback for printing / PDF saving
+  const printWindow = window.open('', '_blank');
+  if (printWindow) {
+    let pagesHtml = '';
+    book.pages.forEach(page => {
+      pagesHtml += `
+        <div class="print-page" style="page-break-after: always; padding: 40px; font-family: 'Courier New', monospace; max-width: 700px; margin: auto;">
+          <div style="font-size: 13px; color: #666; border-bottom: 1px solid #ccc; padding-bottom: 8px; margin-bottom: 24px; text-transform: uppercase;">
+            ${book.title} — Page ${page.number} of ${book.pages.length}
+          </div>
+          <div style="font-size: 15px; line-height: 1.8; color: #111; white-space: pre-wrap;">${page.chunks.join('\n\n')}</div>
+        </div>
+      `;
+    });
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <title>${book.title}</title>
+        <style>
+          @media print {
+            body { margin: 0; background: #fff; }
+            .print-page { page-break-after: always; }
+          }
+        </style>
+      </head>
+      <body>
+        ${pagesHtml}
+        <script>
+          window.onload = function() { window.print(); }
+        </script>
+      </body>
+      </html>
+    `);
+    printWindow.document.close();
+    if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+  }
+}
+
+function exportManuscriptDOCX() {
+  const book = getActiveBook();
+  if (!book) return;
+  const cleanTitle = (book.title || 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  const filename = `${cleanTitle}_${new Date().toISOString().slice(0, 10)}.docx`;
+
+  let pagesContent = '';
+  book.pages.forEach((page, index) => {
+    const pageBreak = index > 0 ? `<br clear=all style='mso-special-character:line-break;page-break-before:always'>` : '';
+    const paragraphs = page.chunks.map(chunk => `<p class="MsoNormal" style="margin-bottom: 14pt; line-height: 1.5; font-family: 'Courier New', Courier, monospace; font-size: 12pt;">${chunk.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>`).join('');
+
+    pagesContent += `
+      ${pageBreak}
+      <div class="Section1">
+        <p style="font-family: 'Courier New', Courier, monospace; font-size: 10pt; color: #666666; border-bottom: 1pt solid #dddddd; padding-bottom: 4pt; margin-bottom: 18pt;">
+          <strong>${book.title}</strong> &bull; PAGE ${page.number} OF ${book.pages.length}
+        </p>
+        ${paragraphs}
+      </div>
+    `;
+  });
+
+  const wordHtml = `
+    <html xmlns:o='urn:schemas-microsoft-com:office:office'
+          xmlns:w='urn:schemas-microsoft-com:office:word'
+          xmlns='http://www.w3.org/TR/REC-html40'>
+    <head>
+      <meta charset="utf-8">
+      <title>${book.title}</title>
+      <!--[if gte mso 9]>
+      <xml>
+        <w:WordDocument>
+          <w:View>Print</w:View>
+          <w:Zoom>100</w:Zoom>
+          <w:DoNotOptimizeForBrowser/>
+        </w:WordDocument>
+      </xml>
+      <![endif]-->
+      <style>
+        @page Section1 {
+          size: 8.5in 11.0in;
+          margin: 1.0in 1.0in 1.0in 1.0in;
+          mso-header-margin: 0.5in;
+          mso-footer-margin: 0.5in;
+          mso-paper-source: 0;
+        }
+        div.Section1 { page: Section1; }
+        body {
+          font-family: 'Courier New', Courier, monospace;
+          color: #111111;
+        }
+        h1 {
+          font-family: 'Courier New', Courier, monospace;
+          font-size: 18pt;
+          font-weight: bold;
+          margin-bottom: 24pt;
+        }
+      </style>
+    </head>
+    <body>
+      <h1>${book.title}</h1>
+      <p style="font-size: 10pt; color: #888888; margin-bottom: 24pt;">Typewriter Studio Manuscript &bull; ${new Date().toLocaleDateString()}</p>
+      ${pagesContent}
+    </body>
+    </html>
+  `;
+
+  const blob = new Blob([wordHtml], { type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+
+  if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+  showToast(`Exported Word Document: ${filename}`);
+}
+
 function exportManuscript(format) {
+  if (format === 'pdf') {
+    exportManuscriptPDF();
+    return;
+  }
+  if (format === 'docx') {
+    exportManuscriptDOCX();
+    return;
+  }
+
   const book = getActiveBook();
   const content = compileManuscriptText(format);
   const ext = format === 'md' ? 'md' : 'txt';
@@ -744,7 +1325,9 @@ function setupEventListeners() {
   // ESC Key Listener & Global Keyboard Shortcuts
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
-      if (DOM.exportModal && !DOM.exportModal.classList.contains('hidden')) {
+      if (DOM.driveModal && !DOM.driveModal.classList.contains('hidden')) {
+        closeDriveModal();
+      } else if (DOM.exportModal && !DOM.exportModal.classList.contains('hidden')) {
         DOM.exportModal.classList.add('hidden');
       } else {
         if (overlayOpen) closeOverlay();
@@ -870,6 +1453,12 @@ function setupEventListeners() {
   if (DOM.settingTheme) {
     DOM.settingTheme.onchange = (e) => {
       state.settings.theme = e.target.value;
+      if (state.settings.theme === 'matrix') {
+        state.settings.font = 'courier';
+        if (DOM.settingFont) DOM.settingFont.value = 'courier';
+        applyFont();
+        showToast("Matrix theme activated (Courier font defaulted).");
+      }
       applyTheme();
       saveStorage();
     };
@@ -928,9 +1517,31 @@ function setupEventListeners() {
     };
   }
 
+  if (DOM.btnExportPdf) DOM.btnExportPdf.onclick = () => exportManuscript('pdf');
+  if (DOM.btnExportDocx) DOM.btnExportDocx.onclick = () => exportManuscript('docx');
   if (DOM.btnExportTxt) DOM.btnExportTxt.onclick = () => exportManuscript('txt');
   if (DOM.btnExportMd) DOM.btnExportMd.onclick = () => exportManuscript('md');
   if (DOM.btnCopyAll) DOM.btnCopyAll.onclick = copyManuscriptToClipboard;
+  if (DOM.btnExportDriveTxt) DOM.btnExportDriveTxt.onclick = () => saveCurrentBookToDrive('txt');
+  if (DOM.btnExportDriveMd) DOM.btnExportDriveMd.onclick = () => saveCurrentBookToDrive('md');
+
+  // Google Drive Left Panel & Explorer Modal Listeners
+  if (DOM.btnDriveSaveBook) DOM.btnDriveSaveBook.onclick = () => saveCurrentBookToDrive('txt');
+  if (DOM.btnDriveSaveBackup) DOM.btnDriveSaveBackup.onclick = saveStudioBackupToDrive;
+  if (DOM.btnDriveBrowserToggle) DOM.btnDriveBrowserToggle.onclick = openDriveModal;
+  if (DOM.btnCloseDriveModal) DOM.btnCloseDriveModal.onclick = closeDriveModal;
+  if (DOM.btnDriveLogin) DOM.btnDriveLogin.onclick = () => handleGoogleSignIn(() => listGoogleDriveFiles());
+  if (DOM.btnDriveUploadCurrent) DOM.btnDriveUploadCurrent.onclick = () => saveCurrentBookToDrive('txt');
+  if (DOM.btnDriveUploadBackup) DOM.btnDriveUploadBackup.onclick = saveStudioBackupToDrive;
+  if (DOM.btnDriveRefresh) DOM.btnDriveRefresh.onclick = listGoogleDriveFiles;
+
+  if (DOM.driveModal) {
+    DOM.driveModal.onclick = (e) => {
+      if (e.target === DOM.driveModal) {
+        closeDriveModal();
+      }
+    };
+  }
 }
 
 // ─── INITIALIZATION ─────────────────────────────────────────
