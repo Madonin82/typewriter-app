@@ -6,11 +6,12 @@
 
 // Firebase Configuration for Project: typewriter-app-6e624
 const firebaseConfig = {
+  apiKey: "AIzaSyB5UvSiArIv_YnmbWyjSG0so6MJc5S1A9E",
   authDomain: "typewriter-app-6e624.firebaseapp.com",
   projectId: "typewriter-app-6e624",
   storageBucket: "typewriter-app-6e624.firebasestorage.app",
-  messagingSenderId: "965412497672",
-  appId: "1:965412497672:web:typewriter-app"
+  messagingSenderId: "1010879061490",
+  appId: "1:1010879061490:web:83c43a410788f62d401f6b"
 };
 
 let auth = null;
