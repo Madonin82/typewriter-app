@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html>
+<style>
+  .wrapper { position: relative; width: 300px; }
+  .backdrop {
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    pointer-events: none;
+    font-family: monospace; font-size: 16px; line-height: 1.5;
+    white-space: pre-wrap; word-wrap: break-word;
+    border: 1px solid transparent; padding: 2px;
+  }
+  .over { background: rgba(255,0,0,0.2); color: red; }
+  textarea {
+    width: 100%; height: 60px;
+    font-family: monospace; font-size: 16px; line-height: 1.5;
+    padding: 2px;
+    background: transparent;
+    color: transparent;
+    caret-color: black;
+  }
+  textarea::placeholder { color: #999; }
+</style>
+<body>
+<div class="wrapper">
+  <div class="backdrop" id="bg"></div>
+  <textarea id="tx" placeholder="Type here..."></textarea>
+</div>
+<script>
+  const tx = document.getElementById('tx');
+  const bg = document.getElementById('bg');
+  tx.oninput = () => {
+    let val = tx.value;
+    if (val.length > 10) {
+      bg.innerHTML = val.substring(0,10).replace(/</g, '&lt;') + '<span class="over">' + val.substring(10).replace(/</g, '&lt;') + '</span>';
+    } else {
+      bg.innerHTML = val.replace(/</g, '&lt;');
+    }
+    tx.style.color = val ? 'transparent' : 'inherit';
+  };
+</script>
+</body>
+</html>

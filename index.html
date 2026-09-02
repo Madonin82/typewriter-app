@@ -45,12 +45,15 @@
   <div id="draft-overlay">
     <div id="draft-container">
       <div id="draft-box">
-        <textarea 
-          id="draft-input" 
-          placeholder="Write your next thought... then commit to ink." 
-          rows="2" 
-          autofocus
-        ></textarea>
+        <div class="draft-input-wrapper" style="position: relative; width: 100%;">
+          <div id="draft-input-backdrop"></div>
+          <textarea 
+            id="draft-input" 
+            placeholder="Write..." 
+            rows="2" 
+            autofocus
+          ></textarea>
+        </div>
         <div class="draft-footer">
           <div class="draft-footer-left">
             <span class="page-meta-info" id="page-header-info">Page 1 of 1</span>

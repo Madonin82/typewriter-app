@@ -155,6 +155,7 @@ function initDOM() {
     inkStream: document.getElementById('ink-stream'),
     draftBox: document.getElementById('draft-box'),
     draftInput: document.getElementById('draft-input'),
+    draftInputBackdrop: document.getElementById('draft-input-backdrop'),
     charCounter: document.getElementById('char-counter'),
     commitHint: document.getElementById('commit-hint'),
     btnCommit: document.getElementById('btn-commit'),
@@ -1036,6 +1037,11 @@ function commitDraft() {
   if (!rawText) return;
   if (rawText.trim().length === 0 && !rawText.includes('\t')) return;
 
+  if (rawText.length > state.settings.maxChars) {
+    showToast(`Draft exceeds maximum character limit (${state.settings.maxChars}).`);
+    return;
+  }
+
   const text = rawText.replace(/\s+$/, '');
   if (!text) return;
 
@@ -1055,6 +1061,7 @@ function commitDraft() {
     activePage.chunks.push(newChunk);
     DOM.draftInput.value = '';
     state.buffer = '';
+    if (DOM.draftInputBackdrop) DOM.draftInputBackdrop.innerHTML = '';
 
     playKeyClickSound();
 
@@ -1089,10 +1096,32 @@ function updateCharCounter() {
   DOM.charCounter.textContent = `${len} / ${max}`;
   DOM.charCounter.className = 'char-counter';
 
-  if (len >= max) {
+  if (len > max) {
     DOM.charCounter.classList.add('full');
-  } else if (len >= max * 0.85) {
-    DOM.charCounter.classList.add('near');
+    DOM.charCounter.style.color = '#ff6b6b';
+    if (DOM.btnCommit) DOM.btnCommit.disabled = true;
+  } else {
+    DOM.charCounter.style.color = '';
+    if (DOM.btnCommit) DOM.btnCommit.disabled = false;
+    if (len === max) {
+      DOM.charCounter.classList.add('full');
+    } else if (len >= max * 0.85) {
+      DOM.charCounter.classList.add('near');
+    }
+  }
+
+  if (DOM.draftInputBackdrop) {
+    const rawVal = DOM.draftInput.value;
+    if (len > max) {
+      let validPart = rawVal.substring(0, max);
+      let overPart = rawVal.substring(max);
+      validPart = validPart.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      overPart = overPart.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      DOM.draftInputBackdrop.innerHTML = validPart + '<span class="over-limit">' + overPart + '</span>';
+    } else {
+      let val = rawVal.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      DOM.draftInputBackdrop.innerHTML = val;
+    }
   }
 }
 
@@ -1262,6 +1291,10 @@ function updateDraftInputCursorAlignment() {
 
   DOM.draftInput.style.textIndent = `${indentPx}px`;
   DOM.draftInput.style.paddingLeft = '0px';
+  if (DOM.draftInputBackdrop) {
+    DOM.draftInputBackdrop.style.textIndent = `${indentPx}px`;
+    DOM.draftInputBackdrop.style.paddingLeft = '0px';
+  }
 }
 
 function updatePageWordCounter() {
@@ -1678,8 +1711,8 @@ function setupEventListeners() {
         state.buffer = DOM.draftInput.value;
         playKeyClickSound();
 
-        if (state.buffer.length >= state.settings.maxChars) {
-          commitDraft();
+        if (state.buffer.length > state.settings.maxChars) {
+          updateCharCounter();
         } else {
           updateCharCounter();
         }
@@ -1730,15 +1763,16 @@ function setupEventListeners() {
       updateDraftInputCursorAlignment();
     });
 
+    DOM.draftInput.addEventListener('scroll', () => {
+      if (DOM.draftInputBackdrop) {
+        DOM.draftInputBackdrop.scrollTop = DOM.draftInput.scrollTop;
+      }
+    });
+
     DOM.draftInput.oninput = (e) => {
       state.buffer = e.target.value;
       playKeyClickSound();
-
-      if (state.buffer.length >= state.settings.maxChars) {
-        commitDraft();
-      } else {
-        updateCharCounter();
-      }
+      updateCharCounter();
     };
   }
 
