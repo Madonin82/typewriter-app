@@ -464,11 +464,14 @@ input:checked + .toggle-slider:before {
   font-family: var(--font-family);
   font-size: 17px;
   line-height: 1.85;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
   color: transparent !important;
   caret-color: var(--draft-text);
   background: transparent;
   min-height: 58px;
-  max-height: 150px;
+  max-height: 180px;
   tab-size: 4;
   -moz-tab-size: 4;
   box-sizing: border-box;
@@ -1472,20 +1475,27 @@ body.theme-dark #esc-hint:hover {
   #esc-overlay {
     flex-direction: column;
     overflow-y: auto;
+    justify-content: flex-start;
   }
-  #panel-left, #panel-right {
+  #panel-left, #panel-center, #panel-right {
     width: 100%;
     transform: none !important;
     border: none;
-  }
-  #panel-left {
-    border-bottom: 1px solid #333;
-  }
-  #panel-right {
-    border-top: 1px solid #333;
+    overflow-y: visible;
+    flex: none;
   }
   #panel-center {
-    padding: 36px 20px;
+    order: -1;
+    padding: 64px 20px 48px;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  #panel-left {
+    order: 0;
+    border-bottom: 1px solid var(--panel-border);
+  }
+  #panel-right {
+    order: 1;
+    padding-bottom: 64px;
   }
   #draft-overlay {
     padding-bottom: 20px;

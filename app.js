@@ -1058,6 +1058,7 @@ function commitDraft() {
     DOM.draftInput.value = '';
     state.buffer = '';
     if (DOM.draftInputBackdrop) DOM.draftInputBackdrop.innerHTML = '';
+    adjustDraftInputHeight();
 
     playKeyClickSound();
 
@@ -1084,6 +1085,17 @@ function commitDraft() {
   DOM.draftInput.focus();
 }
 
+function adjustDraftInputHeight() {
+  if (!DOM.draftInput) return;
+  DOM.draftInput.style.height = 'auto';
+  const newHeight = Math.min(Math.max(DOM.draftInput.scrollHeight, 58), 180);
+  DOM.draftInput.style.height = `${newHeight}px`;
+
+  if (DOM.draftInputBackdrop) {
+    DOM.draftInputBackdrop.scrollTop = DOM.draftInput.scrollTop;
+  }
+}
+
 function updateCharCounter() {
   if (!DOM.draftInput || !DOM.charCounter) return;
   const len = DOM.draftInput.value.length;
@@ -1108,17 +1120,23 @@ function updateCharCounter() {
 
   if (DOM.draftInputBackdrop) {
     const rawVal = DOM.draftInput.value;
+    let htmlVal = '';
     if (len > max) {
       let validPart = rawVal.substring(0, max);
       let overPart = rawVal.substring(max);
       validPart = validPart.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       overPart = overPart.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      DOM.draftInputBackdrop.innerHTML = validPart + '<span class="over-limit">' + overPart + '</span>';
+      htmlVal = validPart + '<span class="over-limit">' + overPart + '</span>';
     } else {
-      let val = rawVal.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-      DOM.draftInputBackdrop.innerHTML = val;
+      htmlVal = rawVal.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
     }
+    if (rawVal.endsWith('\n')) {
+      htmlVal += '\n&#8203;';
+    }
+    DOM.draftInputBackdrop.innerHTML = htmlVal;
   }
+
+  adjustDraftInputHeight();
 }
 
 // ─── RENDERING & UI SYNC ────────────────────────────────────
