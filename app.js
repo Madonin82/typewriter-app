@@ -63,7 +63,8 @@ let state = {
     commitKey: 'ctrl-enter', // 'ctrl-enter' | 'enter'
     volume: 50,
     soundEnabled: true,
-    showTimestamps: false
+    showTimestamps: false,
+    typewriterAnim: true
   }
 };
 
@@ -198,6 +199,7 @@ function initDOM() {
     settingCommitKey: document.getElementById('setting-commit-key'),
     settingVolume: document.getElementById('setting-volume'),
     btnSoundToggle: document.getElementById('btn-sound-toggle'),
+    settingTypewriterAnim: document.getElementById('setting-typewriter-anim'),
     settingShowTimestamps: document.getElementById('setting-show-timestamps'),
     btnToggleTimestamps: document.getElementById('btn-toggle-timestamps'),
 
@@ -1027,6 +1029,37 @@ function getBookTotalWordCount(book) {
 
 // ─── DRAFTING BUFFER & FORWARD-ONLY INK STREAM ──────────────
 
+let currentKeystrokeSession = {
+  snapshots: [],
+  startTime: null,
+  lastTime: null
+};
+
+let lastCommittedReplay = {
+  snapshots: [],
+  wpm: 0
+};
+
+function recordKeystroke(val) {
+  const now = Date.now();
+  if (!val || val.length === 0) {
+    currentKeystrokeSession = { snapshots: [], startTime: null, lastTime: null };
+    return;
+  }
+
+  if (!currentKeystrokeSession.startTime || currentKeystrokeSession.snapshots.length === 0) {
+    currentKeystrokeSession.startTime = now;
+    currentKeystrokeSession.lastTime = now;
+    currentKeystrokeSession.snapshots.push({ text: val, delay: 0 });
+  } else {
+    // delay since last keystroke, capped at 450ms so idle pauses don't stall replay
+    const rawDiff = now - currentKeystrokeSession.lastTime;
+    const delay = Math.max(15, Math.min(rawDiff, 450));
+    currentKeystrokeSession.lastTime = now;
+    currentKeystrokeSession.snapshots.push({ text: val, delay });
+  }
+}
+
 function commitDraft() {
   if (!DOM.draftInput) return;
   const rawText = DOM.draftInput.value;
@@ -1040,6 +1073,28 @@ function commitDraft() {
 
   const text = rawText;
   if (!text) return;
+
+  // Calculate WPM
+  let commitWPM = 0;
+  if (currentKeystrokeSession.startTime && currentKeystrokeSession.lastTime && currentKeystrokeSession.snapshots.length > 0) {
+    const totalDurationSec = (currentKeystrokeSession.lastTime - currentKeystrokeSession.startTime) / 1000;
+    if (totalDurationSec >= 0.2) {
+      commitWPM = Math.round((text.length / 5) / (totalDurationSec / 60));
+    }
+  }
+
+  if (!commitWPM || commitWPM < 1 || commitWPM > 350) {
+    const wordCount = text.trim().split(/\s+/).filter(Boolean).length;
+    const estTimeSec = Math.max(0.6, text.length * 0.08);
+    commitWPM = Math.round((wordCount / estTimeSec) * 60);
+  }
+
+  lastCommittedReplay = {
+    snapshots: [...currentKeystrokeSession.snapshots],
+    wpm: commitWPM
+  };
+
+  currentKeystrokeSession = { snapshots: [], startTime: null, lastTime: null };
 
   const page = getCurrentPage();
   if (!page || page.locked) {
@@ -1190,7 +1245,17 @@ function renderSidebarPages() {
   });
 }
 
+let activeTypewriterTimer = null;
+
+function cancelTypewriterAnimation() {
+  if (activeTypewriterTimer) {
+    clearTimeout(activeTypewriterTimer);
+    activeTypewriterTimer = null;
+  }
+}
+
 function renderActivePage(lastChunkIsNew = false) {
+  cancelTypewriterAnimation();
   const book = getActiveBook();
   const page = getCurrentPage();
   if (!page || !book) return;
@@ -1215,10 +1280,15 @@ function renderActivePage(lastChunkIsNew = false) {
     DOM.inkStream.classList.toggle('has-timestamps', showTS);
 
     const count = page.chunks.length;
+    const isAnimated = lastChunkIsNew && state.settings.typewriterAnim !== false && count > 0;
+    let animatedTextElem = null;
+    let animatedFullText = '';
+
     page.chunks.forEach((chunkItem, idx) => {
       const text = getChunkText(chunkItem);
       const ts = getChunkTimestamp(chunkItem);
       const timeStr = formatChunkTime(ts);
+      const isLastNewChunk = isAnimated && (idx === count - 1);
 
       if (showTS) {
         const row = document.createElement('div');
@@ -1237,7 +1307,13 @@ function renderActivePage(lastChunkIsNew = false) {
 
         const textSpan = document.createElement('span');
         textSpan.className = 'ink-chunk';
-        textSpan.textContent = text;
+        if (isLastNewChunk) {
+          textSpan.textContent = '';
+          animatedTextElem = textSpan;
+          animatedFullText = text;
+        } else {
+          textSpan.textContent = text;
+        }
         row.appendChild(textSpan);
 
         DOM.inkStream.appendChild(row);
@@ -1247,7 +1323,13 @@ function renderActivePage(lastChunkIsNew = false) {
         if (lastChunkIsNew && idx === count - 1) {
           span.classList.add('new-strike');
         }
-        span.textContent = text;
+        if (isLastNewChunk) {
+          span.textContent = '';
+          animatedTextElem = span;
+          animatedFullText = text;
+        } else {
+          span.textContent = text;
+        }
         DOM.inkStream.appendChild(span);
       }
     });
@@ -1267,6 +1349,75 @@ function renderActivePage(lastChunkIsNew = false) {
       cursor.className = 'ink-cursor';
       cursor.id = 'ink-cursor';
       DOM.inkStream.appendChild(cursor);
+    }
+
+    if (isAnimated && animatedTextElem && animatedFullText) {
+      const snapshots = (lastCommittedReplay.snapshots && lastCommittedReplay.snapshots.length > 0)
+        ? lastCommittedReplay.snapshots
+        : null;
+      const wpm = lastCommittedReplay.wpm || 0;
+
+      if (snapshots && snapshots.length > 0) {
+        let stepIdx = 0;
+
+        function replayNextSnapshot() {
+          if (stepIdx < snapshots.length) {
+            const snap = snapshots[stepIdx];
+            stepIdx++;
+            animatedTextElem.textContent = snap.text;
+            playKeyClickSound();
+
+            if (DOM.writingSurface) {
+              DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'auto' });
+            }
+            updateDraftInputCursorAlignment();
+
+            const nextDelay = (stepIdx < snapshots.length) ? snapshots[stepIdx].delay : 0;
+            activeTypewriterTimer = setTimeout(replayNextSnapshot, nextDelay);
+          } else {
+            activeTypewriterTimer = null;
+            playCarriageReturnBell();
+            if (DOM.writingSurface) {
+              DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'smooth' });
+            }
+            if (wpm > 0) {
+              showToast(`⚡ Committed at ${wpm} WPM!`);
+            }
+          }
+        }
+
+        replayNextSnapshot();
+      } else {
+        let charIndex = 0;
+        const totalChars = animatedFullText.length;
+
+        function typeNextChar() {
+          if (charIndex < totalChars) {
+            charIndex++;
+            animatedTextElem.textContent = animatedFullText.substring(0, charIndex);
+            playKeyClickSound();
+
+            if (DOM.writingSurface) {
+              DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'auto' });
+            }
+            updateDraftInputCursorAlignment();
+
+            const delay = 35 + Math.floor(Math.random() * 25);
+            activeTypewriterTimer = setTimeout(typeNextChar, delay);
+          } else {
+            activeTypewriterTimer = null;
+            playCarriageReturnBell();
+            if (DOM.writingSurface) {
+              DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'smooth' });
+            }
+            if (wpm > 0) {
+              showToast(`⚡ Committed at ${wpm} WPM!`);
+            }
+          }
+        }
+
+        typeNextChar();
+      }
     }
   }
 
@@ -1364,6 +1515,7 @@ function applySettingsUI() {
   if (DOM.settingCommitKey) DOM.settingCommitKey.value = state.settings.commitKey;
   if (DOM.settingVolume) DOM.settingVolume.value = state.settings.volume;
   if (DOM.btnSoundToggle) DOM.btnSoundToggle.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
+  if (DOM.settingTypewriterAnim) DOM.settingTypewriterAnim.checked = state.settings.typewriterAnim !== false;
   if (DOM.settingShowTimestamps) DOM.settingShowTimestamps.checked = Boolean(state.settings.showTimestamps);
   if (DOM.btnToggleTimestamps) DOM.btnToggleTimestamps.classList.toggle('active', Boolean(state.settings.showTimestamps));
   updateCommitHint();
@@ -1733,6 +1885,7 @@ function setupEventListeners() {
         DOM.draftInput.value = val.substring(0, start) + tabChar + val.substring(end);
         DOM.draftInput.selectionStart = DOM.draftInput.selectionEnd = start + tabChar.length;
         state.buffer = DOM.draftInput.value;
+        recordKeystroke(state.buffer);
         playKeyClickSound();
 
         updateCharCounter();
@@ -1823,6 +1976,7 @@ function setupEventListeners() {
 
     DOM.draftInput.oninput = (e) => {
       state.buffer = e.target.value;
+      recordKeystroke(state.buffer);
       playKeyClickSound();
       updateCharCounter();
       const ghost = document.getElementById('ink-ghost');
@@ -2023,6 +2177,14 @@ function setupEventListeners() {
       DOM.btnSoundToggle.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
       saveStorage();
       showToast(state.settings.soundEnabled ? 'Sound ON' : 'Sound Muted');
+    };
+  }
+
+  if (DOM.settingTypewriterAnim) {
+    DOM.settingTypewriterAnim.onchange = (e) => {
+      state.settings.typewriterAnim = e.target.checked;
+      saveStorage();
+      showToast(state.settings.typewriterAnim ? "100 WPM Typewriter animation ON" : "100 WPM Typewriter animation OFF");
     };
   }
 
