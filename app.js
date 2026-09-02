@@ -1,6 +1,7 @@
 /**
  * Typewriter Studio - Application Core
  * Forward-Only Micro-Drafting Engine
+ * Pure Local Storage + Direct File Save/Open
  */
 
 // Global State
@@ -9,7 +10,6 @@ let state = {
   activeBookId: null,  // ID of currently open book
   currentPageId: null, // ID of currently open page
   buffer: '',
-  user: null,          // Author user object
   settings: {
     maxChars: 200,
     wordsPerPage: 300,
@@ -93,18 +93,6 @@ let DOM = {};
 
 function initDOM() {
   DOM = {
-    btnAccountModal: document.getElementById('btn-account-modal'),
-    authModal: document.getElementById('auth-modal'),
-    btnCloseAuthModal: document.getElementById('btn-close-auth-modal'),
-    authEmail: document.getElementById('auth-email'),
-    authPassword: document.getElementById('auth-password'),
-    btnAuthSignin: document.getElementById('btn-auth-signin'),
-
-    userProfile: document.getElementById('user-profile'),
-    userName: document.getElementById('user-name'),
-    syncStatus: document.getElementById('sync-status'),
-    btnLogout: document.getElementById('btn-logout'),
-
     btnBackupCloud: document.getElementById('btn-backup-cloud'),
     btnRestoreCloud: document.getElementById('btn-restore-cloud'),
     fileInputRestore: document.getElementById('file-input-restore'),
@@ -160,9 +148,6 @@ function loadStorage() {
 
     const savedBooks = localStorage.getItem('typewriter_books');
     if (savedBooks) state.books = JSON.parse(savedBooks);
-
-    const savedUser = localStorage.getItem('typewriter_cloud_author');
-    if (savedUser) state.user = JSON.parse(savedUser);
   } catch (e) {}
 
   if (!state.books || state.books.length === 0) {
@@ -186,49 +171,10 @@ function saveStorage() {
       localStorage.setItem('typewriter_active_book_id', state.activeBookId);
     }
   } catch (e) {}
-
-  if (state.user && DOM.syncStatus) {
-    DOM.syncStatus.textContent = "☁️ Synced";
-  }
 }
 
-// Cloud Login
-function handleCloudSignIn() {
-  const email = DOM.authEmail.value.trim();
-  if (!email) {
-    alert("Please enter your name or email.");
-    return;
-  }
-
-  const authorUser = { name: email.split('@')[0], email: email };
-  state.user = authorUser;
-  localStorage.setItem('typewriter_cloud_author', JSON.stringify(authorUser));
-
-  if (DOM.authModal) DOM.authModal.classList.add('hidden');
-  renderUserUI();
-  saveStorage();
-  showToast(`Connected as ${authorUser.name}! Cloud sync active.`);
-}
-
-function logoutCloud() {
-  state.user = null;
-  localStorage.removeItem('typewriter_cloud_author');
-  if (DOM.btnAccountModal) DOM.btnAccountModal.classList.remove('hidden');
-  if (DOM.userProfile) DOM.userProfile.classList.add('hidden');
-  showToast("Disconnected.");
-}
-
-function renderUserUI() {
-  if (state.user) {
-    if (DOM.btnAccountModal) DOM.btnAccountModal.classList.add('hidden');
-    if (DOM.userProfile) DOM.userProfile.classList.remove('hidden');
-    if (DOM.userName) DOM.userName.textContent = state.user.name;
-    if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Synced";
-  }
-}
-
-// Backup & Restore
-function exportBackupFile() {
+// Direct File Save & Open (Save directly to PC / Google Drive / iCloud)
+function saveFileBackup() {
   const backupData = JSON.stringify({
     version: 1,
     exportDate: new Date().toISOString(),
@@ -236,7 +182,7 @@ function exportBackupFile() {
     settings: state.settings
   }, null, 2);
 
-  const filename = `typewriter_backup_${new Date().toISOString().slice(0,10)}.json`;
+  const filename = `typewriter_books_backup_${new Date().toISOString().slice(0,10)}.json`;
   const blob = new Blob([backupData], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -247,10 +193,10 @@ function exportBackupFile() {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 
-  showToast("Saved backup file!");
+  showToast("💾 File saved! (Save it in your Google Drive or iCloud folder)");
 }
 
-function importBackupFile(event) {
+function loadFileBackup(event) {
   const file = event.target.files[0];
   if (!file) return;
 
@@ -258,7 +204,7 @@ function importBackupFile(event) {
   reader.onload = (e) => {
     try {
       const importedData = JSON.parse(e.target.result);
-      if (importedData && importedData.books) {
+      if (importedData && importedData.books && importedData.books.length > 0) {
         state.books = importedData.books;
         if (importedData.settings) {
           state.settings = { ...state.settings, ...importedData.settings };
@@ -267,12 +213,12 @@ function importBackupFile(event) {
         state.currentPageId = state.books[0].pages[state.books[0].pages.length - 1].id;
         saveStorage();
         renderAll();
-        showToast("Backup restored successfully!");
+        showToast("📂 All books loaded successfully!");
       } else {
-        alert("Invalid backup file format.");
+        alert("Invalid file. Please select a valid typewriter backup .json file.");
       }
     } catch (err) {
-      alert("Error reading backup file.");
+      alert("Error reading file.");
     }
   };
   reader.readAsText(file);
@@ -404,7 +350,6 @@ function commitCurrentChunk() {
 
   const page = getCurrentPage();
   if (!page || page.locked) {
-    showToast("Creating a new page for your text.");
     createNewPage(false);
   }
 
@@ -432,14 +377,9 @@ function commitCurrentChunk() {
 
 // Event Listeners
 function setupEventListeners() {
-  if (DOM.btnAccountModal) DOM.btnAccountModal.onclick = () => DOM.authModal && DOM.authModal.classList.remove('hidden');
-  if (DOM.btnCloseAuthModal) DOM.btnCloseAuthModal.onclick = () => DOM.authModal && DOM.authModal.classList.add('hidden');
-  if (DOM.btnAuthSignin) DOM.btnAuthSignin.onclick = handleCloudSignIn;
-  if (DOM.btnLogout) DOM.btnLogout.onclick = logoutCloud;
-
-  if (DOM.btnBackupCloud) DOM.btnBackupCloud.onclick = exportBackupFile;
+  if (DOM.btnBackupCloud) DOM.btnBackupCloud.onclick = saveFileBackup;
   if (DOM.btnRestoreCloud) DOM.btnRestoreCloud.onclick = () => DOM.fileInputRestore && DOM.fileInputRestore.click();
-  if (DOM.fileInputRestore) DOM.fileInputRestore.onchange = importBackupFile;
+  if (DOM.fileInputRestore) DOM.fileInputRestore.onchange = loadFileBackup;
 
   if (DOM.selectBookSlot) {
     DOM.selectBookSlot.onchange = (e) => {
@@ -581,7 +521,6 @@ function renderAll() {
   renderActivePage();
   updateStats();
   updateCharCounter();
-  renderUserUI();
 }
 
 function renderBookSlotsDropdown() {
