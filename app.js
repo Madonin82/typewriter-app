@@ -250,6 +250,7 @@ function handleGoogleSignIn() {
   if (auth) {
     const provider = new firebase.auth.GoogleAuthProvider();
     provider.addScope('https://www.googleapis.com/auth/drive.file');
+    provider.setCustomParameters({ prompt: 'consent' });
     auth.signInWithPopup(provider).then((result) => {
       if (result.credential && result.credential.accessToken) {
         googleAccessToken = result.credential.accessToken;
@@ -283,6 +284,7 @@ async function getGoogleDriveToken() {
   if (!auth) initFirebase();
   const provider = new firebase.auth.GoogleAuthProvider();
   provider.addScope('https://www.googleapis.com/auth/drive.file');
+  provider.setCustomParameters({ prompt: 'consent' });
 
   try {
     const result = await auth.signInWithPopup(provider);
@@ -292,10 +294,10 @@ async function getGoogleDriveToken() {
       renderUserUI();
       return googleAccessToken;
     }
-    throw new Error("No Google Drive token returned from authorization.");
+    throw new Error("Google Drive access token was not provided by Google. Please check your project's OAuth configuration.");
   } catch (err) {
     console.error("Google Drive Auth error:", err);
-    showToast("Google Drive authorization was not completed.");
+    showToast(`Google Drive Auth: ${err.message || 'Authorization failed'}`);
     throw err;
   }
 }
