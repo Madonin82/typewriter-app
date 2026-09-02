@@ -630,7 +630,11 @@ function getBookTotalWordCount(book) {
 
 function commitDraft() {
   if (!DOM.draftInput) return;
-  const text = DOM.draftInput.value.trim();
+  const rawText = DOM.draftInput.value;
+  if (!rawText) return;
+  if (rawText.trim().length === 0 && !rawText.includes('\t')) return;
+
+  const text = rawText.replace(/\s+$/, '');
   if (!text) return;
 
   const page = getCurrentPage();
@@ -1140,6 +1144,26 @@ function setupEventListeners() {
     }
 
     if (!overlayOpen && document.activeElement === DOM.draftInput) {
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const start = DOM.draftInput.selectionStart;
+        const end = DOM.draftInput.selectionEnd;
+        const val = DOM.draftInput.value;
+        const tabChar = '\t';
+
+        DOM.draftInput.value = val.substring(0, start) + tabChar + val.substring(end);
+        DOM.draftInput.selectionStart = DOM.draftInput.selectionEnd = start + tabChar.length;
+        state.buffer = DOM.draftInput.value;
+        playKeyClickSound();
+
+        if (state.buffer.length >= state.settings.maxChars) {
+          commitDraft();
+        } else {
+          updateCharCounter();
+        }
+        return;
+      }
+
       const isCtrlMode = state.settings.commitKey === 'ctrl-enter';
       const commitTriggered = isCtrlMode
         ? (e.key === 'Enter' && (e.ctrlKey || e.metaKey))
