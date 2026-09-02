@@ -1,6 +1,6 @@
 /**
  * Typewriter Studio - Application Core
- * Forward-Only Micro-Drafting Engine with Real Google Drive Cloud Sync
+ * Forward-Only Micro-Drafting Engine with Backup/Restore Sync
  */
 
 // Global State
@@ -9,7 +9,6 @@ let state = {
   activeBookId: null,  // ID of currently open book
   currentPageId: null, // ID of currently open page
   buffer: '',
-  googleAccessToken: null, // OAuth 2.0 token
   settings: {
     maxChars: 200,
     wordsPerPage: 300,
@@ -19,8 +18,6 @@ let state = {
     soundEnabled: true
   }
 };
-
-let tokenClient = null;
 
 // Web Audio API Context for Typewriter Sound Effects
 let audioCtx = null;
@@ -95,12 +92,9 @@ function playCarriageReturnBell() {
 
 // DOM Elements
 const DOM = {
-  btnGoogleLogin: document.getElementById('btn-google-login'),
-  userProfile: document.getElementById('user-profile'),
-  userName: document.getElementById('user-name'),
-  syncStatus: document.getElementById('sync-status'),
-  btnSyncNow: document.getElementById('btn-sync-now'),
-  btnLogout: document.getElementById('btn-logout'),
+  btnBackupCloud: document.getElementById('btn-backup-cloud'),
+  btnRestoreCloud: document.getElementById('btn-restore-cloud'),
+  fileInputRestore: document.getElementById('file-input-restore'),
 
   selectBookSlot: document.getElementById('select-book-slot'),
   btnNewBook: document.getElementById('btn-new-book'),
@@ -149,7 +143,6 @@ function init() {
   loadStorage();
   setupEventListeners();
   applySettingsUI();
-  initGoogleAuthSDK();
   renderAll();
 }
 
@@ -168,8 +161,6 @@ function loadStorage() {
       state.books = JSON.parse(savedBooks);
     } catch (e) {}
   }
-
-  state.googleAccessToken = sessionStorage.getItem('typewriter_g_token') || null;
 
   if (state.books.length === 0) {
     createNewBook("My First Book", false);
@@ -190,106 +181,57 @@ function saveStorage() {
   if (state.activeBookId) {
     localStorage.setItem('typewriter_active_book_id', state.activeBookId);
   }
-
-  if (state.googleAccessToken) {
-    syncToGoogleDrive();
-  }
 }
 
-// Real Google OAuth 2.0 Integration via GIS
-function initGoogleAuthSDK() {
-  if (window.google && window.google.accounts) {
-    tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: '965412497672-881h50m4585e1p9n8e3a2o32616a2m5e.apps.googleusercontent.com', // Google Drive Public Scope ID
-      scope: 'https://www.googleapis.com/auth/drive.file',
-      callback: (response) => {
-        if (response.error) {
-          showToast("Google Login cancelled or failed.");
-          return;
+// Backup & Restore for Cloud Drives / Multi-Device
+function exportBackupFile() {
+  const backupData = JSON.stringify({
+    version: 1,
+    exportDate: new Date().toISOString(),
+    books: state.books,
+    settings: state.settings
+  }, null, 2);
+
+  const filename = `typewriter_backup_${new Date().toISOString().slice(0,10)}.json`;
+  const blob = new Blob([backupData], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+
+  showToast("Saved backup file! Store in Google Drive/iCloud.");
+}
+
+function importBackupFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const importedData = JSON.parse(e.target.result);
+      if (importedData && importedData.books) {
+        state.books = importedData.books;
+        if (importedData.settings) {
+          state.settings = { ...state.settings, ...importedData.settings };
         }
-        state.googleAccessToken = response.access_token;
-        sessionStorage.setItem('typewriter_g_token', response.access_token);
-        renderUserUI();
-        showToast("Connected to Google Drive! Syncing manuscript...");
-        syncToGoogleDrive();
+        state.activeBookId = state.books[0].id;
+        state.currentPageId = state.books[0].pages[state.books[0].pages.length - 1].id;
+        saveStorage();
+        renderAll();
+        showToast("Backup restored successfully!");
+      } else {
+        alert("Invalid backup file format.");
       }
-    });
-  }
-
-  if (state.googleAccessToken) {
-    renderUserUI();
-  }
-}
-
-function connectGoogleDrive() {
-  if (tokenClient) {
-    tokenClient.requestAccessToken({ prompt: 'consent' });
-  } else if (window.google && window.google.accounts) {
-    initGoogleAuthSDK();
-    tokenClient.requestAccessToken({ prompt: 'consent' });
-  } else {
-    showToast("Google Identity SDK loading... Click again in a moment.");
-  }
-}
-
-function disconnectGoogleDrive() {
-  state.googleAccessToken = null;
-  sessionStorage.removeItem('typewriter_g_token');
-  DOM.btnGoogleLogin.classList.remove('hidden');
-  DOM.userProfile.classList.add('hidden');
-  showToast("Disconnected from Google Drive.");
-}
-
-function renderUserUI() {
-  if (state.googleAccessToken) {
-    DOM.btnGoogleLogin.classList.add('hidden');
-    DOM.userProfile.classList.remove('hidden');
-    DOM.userName.textContent = "Google Connected";
-    DOM.syncStatus.textContent = "☁️ Synced to Drive";
-  }
-}
-
-// Sync Backup JSON File to Google Drive API
-async function syncToGoogleDrive() {
-  if (!state.googleAccessToken) return;
-  
-  DOM.syncStatus.textContent = "🔄 Syncing...";
-
-  try {
-    const backupData = JSON.stringify({
-      books: state.books,
-      settings: state.settings,
-      lastSynced: new Date().toISOString()
-    }, null, 2);
-
-    const fileMetadata = {
-      name: 'typewriter_manuscripts_backup.json',
-      mimeType: 'application/json'
-    };
-
-    // Create multipart form body for Drive API
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
-    form.append('file', new Blob([backupData], { type: 'application/json' }));
-
-    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${state.googleAccessToken}`
-      },
-      body: form
-    });
-
-    if (res.ok) {
-      DOM.syncStatus.textContent = "☁️ Synced to Drive";
-      showToast("Synced to Google Drive!");
-    } else {
-      DOM.syncStatus.textContent = "⚠️ Sync Error";
+    } catch (err) {
+      alert("Error reading backup file.");
     }
-  } catch (e) {
-    console.warn("Drive sync error:", e);
-    DOM.syncStatus.textContent = "⚠️ Sync Error";
-  }
+  };
+  reader.readAsText(file);
 }
 
 // Book Slot Management
@@ -444,9 +386,9 @@ function commitCurrentChunk() {
 
 // UI Event Listeners
 function setupEventListeners() {
-  DOM.btnGoogleLogin.addEventListener('click', connectGoogleDrive);
-  DOM.btnLogout.addEventListener('click', disconnectGoogleDrive);
-  DOM.btnSyncNow.addEventListener('click', syncToGoogleDrive);
+  DOM.btnBackupCloud.addEventListener('click', exportBackupFile);
+  DOM.btnRestoreCloud.addEventListener('click', () => DOM.fileInputRestore.click());
+  DOM.fileInputRestore.addEventListener('change', importBackupFile);
 
   DOM.selectBookSlot.addEventListener('change', (e) => {
     state.activeBookId = e.target.value;
@@ -570,7 +512,6 @@ function renderAll() {
   renderActivePage();
   updateStats();
   updateCharCounter();
-  renderUserUI();
 }
 
 function renderBookSlotsDropdown() {
