@@ -236,10 +236,6 @@ html, body {
   color: var(--ink-locked);
 }
 
-.ink-chunk::after {
-  content: ' ';
-}
-
 @keyframes typewriterStrike {
   0% {
     opacity: 0;
@@ -488,6 +484,8 @@ input:checked + .toggle-slider:before {
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-wrap: break-word;
+  tab-size: 4;
+  -moz-tab-size: 4;
   padding-left: 0;
   text-indent: 0;
   transition: text-indent 0.18s cubic-bezier(0.16, 1, 0.3, 1);
@@ -680,6 +678,7 @@ body.theme-dark .commit-hint kbd {
 
 .book-strip select {
   flex: 1;
+  min-width: 0;
   background: #111111;
   border: 1px solid #333333;
   border-radius: 4px;
@@ -689,6 +688,9 @@ body.theme-dark .commit-hint kbd {
   padding: 6px 8px;
   outline: none;
   cursor: pointer;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  overflow: hidden;
 }
 
 .book-strip select:focus {
@@ -696,6 +698,7 @@ body.theme-dark .commit-hint kbd {
 }
 
 .book-strip button {
+  flex-shrink: 0;
   background: none;
   border: 1px solid #333333;
   border-radius: 4px;

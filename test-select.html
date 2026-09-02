@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html>
+<style>
+.book-strip {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 20px;
+  margin-bottom: 18px;
+  width: 250px;
+  background: #333;
+}
+.book-strip select {
+  flex: 1;
+  min-width: 0;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.book-strip button {
+  flex-shrink: 0;
+}
+</style>
+<body>
+<div class="book-strip">
+  <select>
+    <option>This is a very long book title that has lots of words in it (40,000 words)</option>
+  </select>
+  <button>+</button>
+  <button>E</button>
+</div>
+</body>
+</html>

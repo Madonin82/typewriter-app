@@ -522,12 +522,7 @@ function calculateBookStats(book) {
   let words = 0;
   if (book && book.pages) {
     book.pages.forEach(p => {
-      if (p.chunks) {
-        p.chunks.forEach(c => {
-          const txt = getChunkText(c);
-          words += (txt.trim().match(/\S+/g) || []).length;
-        });
-      }
+      words += getPageWordCount(p);
     });
   }
   return { words, pages: (book && book.pages) ? book.pages.length : 0 };
@@ -1021,7 +1016,8 @@ function countWords(text) {
 
 function getPageWordCount(page) {
   if (!page || !page.chunks) return 0;
-  return page.chunks.reduce((sum, chunk) => sum + countWords(getChunkText(chunk)), 0);
+  const fullText = page.chunks.map(chunk => getChunkText(chunk)).join('');
+  return countWords(fullText);
 }
 
 function getBookTotalWordCount(book) {
@@ -1035,14 +1031,14 @@ function commitDraft() {
   if (!DOM.draftInput) return;
   const rawText = DOM.draftInput.value;
   if (!rawText) return;
-  if (rawText.trim().length === 0 && !rawText.includes('\t')) return;
+  if (rawText.length === 0) return;
 
   if (rawText.length > state.settings.maxChars) {
     showToast(`Draft exceeds maximum character limit (${state.settings.maxChars}).`);
     return;
   }
 
-  const text = rawText.replace(/\s+$/, '');
+  const text = rawText;
   if (!text) return;
 
   const page = getCurrentPage();
@@ -1363,7 +1359,7 @@ function compileManuscriptText(format = 'txt') {
   book.pages.forEach(page => {
     if (format === 'md') fullText += `## Page ${page.number}\n\n`;
     else fullText += `--- PAGE ${page.number} ---\n\n`;
-    const pageText = page.chunks.map(c => getChunkText(c)).join(' ');
+    const pageText = page.chunks.map(c => getChunkText(c)).join('');
     fullText += pageText + '\n\n';
   });
   return fullText.trim();
