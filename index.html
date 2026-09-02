@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Typewriter - Forward-Only Micro-Drafting Studio</title>
-  <meta name="description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, and manuscript export.">
+  <meta name="description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, Firestore sync, and Google Drive export.">
   <meta property="og:title" content="Typewriter - Forward-Only Micro-Drafting Studio">
-  <meta property="og:description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, and manuscript export.">
+  <meta property="og:description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, Firestore sync, and Google Drive export.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Special+Elite&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -70,6 +70,8 @@
       <div class="panel-divider"></div>
       <div class="panel-action" id="btn-new-page"><span>📄</span> + New Page</div>
       <div class="panel-action" id="btn-export-modal-toggle"><span>📥</span> Export Manuscript</div>
+      <div class="panel-action" id="btn-drive-backup"><span><svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#34A853" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/><path fill="#EA4335" d="M22 18.5l-3.5-6h-7.5l3.5 6z"/></svg></span> Backup to Google Drive</div>
+      <div class="panel-action" id="btn-drive-manager"><span>📁</span> Files on Google Drive</div>
       <div class="panel-action" id="btn-backup-cloud"><span>💾</span> Backup File (.json)</div>
       <div class="panel-action" id="btn-restore-cloud"><span>📂</span> Load Backup File</div>
       <input type="file" id="file-input-restore" accept=".json" class="hidden">
@@ -179,20 +181,38 @@
         <h3>Export Manuscript</h3>
         <button id="btn-close-export-modal" class="btn-close">×</button>
       </div>
-      <p class="modal-desc">Export the entire current book draft into your preferred manuscript format:</p>
+      <p class="modal-desc">Export the entire current book draft into your preferred format or sync to Google Drive:</p>
       <div class="export-options-grid">
+        <button id="btn-export-drive-doc" class="export-card-btn drive-highlight">
+          <span class="export-icon">
+            <svg class="drive-doc-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+          </span>
+          <div class="export-info">
+            <strong>Save as Google Doc</strong>
+            <span>Create an editable document in your Google Drive</span>
+          </div>
+        </button>
+        <button id="btn-export-drive-txt" class="export-card-btn">
+          <span class="export-icon">
+            <svg class="drive-doc-icon" viewBox="0 0 24 24"><path fill="#34A853" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#4285F4" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/></svg>
+          </span>
+          <div class="export-info">
+            <strong>Save Text to Google Drive</strong>
+            <span>Upload raw manuscript file to your Google Drive</span>
+          </div>
+        </button>
         <button id="btn-export-txt" class="export-card-btn">
           <span class="export-icon">📄</span>
           <div class="export-info">
-            <strong>Plain Text (.txt)</strong>
-            <span>Clean, unformatted text file</span>
+            <strong>Plain Text File (.txt)</strong>
+            <span>Download clean unformatted text file</span>
           </div>
         </button>
         <button id="btn-export-md" class="export-card-btn">
           <span class="export-icon">📝</span>
           <div class="export-info">
-            <strong>Markdown (.md)</strong>
-            <span>Includes page headers & chapters</span>
+            <strong>Markdown File (.md)</strong>
+            <span>Download formatted with page headers</span>
           </div>
         </button>
         <button id="btn-copy-all" class="export-card-btn">
@@ -202,6 +222,40 @@
             <span>Quick paste into any document editor</span>
           </div>
         </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── GOOGLE DRIVE MANAGER MODAL ── -->
+  <div id="drive-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-header">
+        <div class="modal-title-with-icon">
+          <svg class="drive-modal-title-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#34A853" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/><path fill="#EA4335" d="M22 18.5l-3.5-6h-7.5l3.5 6z"/></svg>
+          <h3>Google Drive Files</h3>
+        </div>
+        <div class="modal-header-actions">
+          <button id="btn-refresh-drive" class="btn-icon-subtle" title="Refresh file list">🔄</button>
+          <button id="btn-close-drive-modal" class="btn-close">×</button>
+        </div>
+      </div>
+      <p class="modal-desc">Manuscripts and studio backups saved to your Google Drive account:</p>
+      
+      <div class="drive-action-bar">
+        <button id="btn-quick-backup-drive" class="drive-pill-btn">💾 Backup Current Studio to Drive</button>
+        <button id="btn-quick-export-drive" class="drive-pill-btn">📄 Export Current Book to Drive</button>
+      </div>
+
+      <div id="drive-files-container" class="drive-files-container">
+        <div id="drive-loading-indicator" class="drive-state-message">
+          <span class="spinner">⏳</span> Fetching your Google Drive files...
+        </div>
+        <ul id="drive-files-list" class="drive-files-list hidden">
+          <!-- Populated dynamically -->
+        </ul>
+        <div id="drive-empty-message" class="drive-state-message hidden">
+          No Typewriter files found on your Google Drive yet. Click "Backup Current Studio to Drive" or export a book to get started!
+        </div>
       </div>
     </div>
   </div>

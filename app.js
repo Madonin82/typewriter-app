@@ -17,6 +17,7 @@ const firebaseConfig = {
 let auth = null;
 let db = null;
 let currentUser = null;
+let googleAccessToken = sessionStorage.getItem('google_drive_access_token') || null;
 
 // Global State
 let state = {
@@ -164,6 +165,20 @@ function initDOM() {
     btnExportTxt: document.getElementById('btn-export-txt'),
     btnExportMd: document.getElementById('btn-export-md'),
     btnCopyAll: document.getElementById('btn-copy-all'),
+    btnExportDriveDoc: document.getElementById('btn-export-drive-doc'),
+    btnExportDriveTxt: document.getElementById('btn-export-drive-txt'),
+
+    btnDriveBackup: document.getElementById('btn-drive-backup'),
+    btnDriveManager: document.getElementById('btn-drive-manager'),
+
+    driveModal: document.getElementById('drive-modal'),
+    btnCloseDriveModal: document.getElementById('btn-close-drive-modal'),
+    btnRefreshDrive: document.getElementById('btn-refresh-drive'),
+    btnQuickBackupDrive: document.getElementById('btn-quick-backup-drive'),
+    btnQuickExportDrive: document.getElementById('btn-quick-export-drive'),
+    driveLoadingIndicator: document.getElementById('drive-loading-indicator'),
+    driveFilesList: document.getElementById('drive-files-list'),
+    driveEmptyMessage: document.getElementById('drive-empty-message'),
 
     toast: document.getElementById('toast')
   };
@@ -183,6 +198,7 @@ function closeOverlay() {
   if (DOM.escOverlay) DOM.escOverlay.classList.remove('open');
   if (DOM.writingSurface) DOM.writingSurface.classList.remove('blurred');
   if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+  if (DOM.driveModal) DOM.driveModal.classList.add('hidden');
 
   setTimeout(() => {
     if (DOM.draftInput) DOM.draftInput.focus();
@@ -233,8 +249,14 @@ function handleGoogleSignIn() {
   if (!auth) initFirebase();
   if (auth) {
     const provider = new firebase.auth.GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/drive.file');
     auth.signInWithPopup(provider).then((result) => {
-      showToast(`Welcome, ${result.user.displayName || 'Author'}! Synced to Firestore.`);
+      if (result.credential && result.credential.accessToken) {
+        googleAccessToken = result.credential.accessToken;
+        sessionStorage.setItem('google_drive_access_token', googleAccessToken);
+      }
+      showToast(`Welcome, ${result.user.displayName || 'Author'}! Synced with Firestore & Google Drive.`);
+      renderUserUI();
     }).catch((error) => {
       console.error("Auth error:", error);
       showToast(`Sign in error: ${error.message}`);
@@ -245,10 +267,36 @@ function handleGoogleSignIn() {
 }
 
 function handleSignOut() {
+  googleAccessToken = null;
+  sessionStorage.removeItem('google_drive_access_token');
   if (auth) {
     auth.signOut().then(() => {
       showToast("Signed out.");
+      renderUserUI();
     });
+  }
+}
+
+async function getGoogleDriveToken() {
+  if (googleAccessToken) return googleAccessToken;
+
+  if (!auth) initFirebase();
+  const provider = new firebase.auth.GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/drive.file');
+
+  try {
+    const result = await auth.signInWithPopup(provider);
+    if (result.credential && result.credential.accessToken) {
+      googleAccessToken = result.credential.accessToken;
+      sessionStorage.setItem('google_drive_access_token', googleAccessToken);
+      renderUserUI();
+      return googleAccessToken;
+    }
+    throw new Error("No Google Drive token returned from authorization.");
+  } catch (err) {
+    console.error("Google Drive Auth error:", err);
+    showToast("Google Drive authorization was not completed.");
+    throw err;
   }
 }
 
@@ -258,7 +306,9 @@ function renderUserUI() {
     if (DOM.userProfile) DOM.userProfile.classList.remove('hidden');
     if (DOM.userName) DOM.userName.textContent = currentUser.displayName || currentUser.email.split('@')[0];
     if (DOM.userAvatar && currentUser.photoURL) DOM.userAvatar.src = currentUser.photoURL;
-    if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Firestore Synced";
+    if (DOM.syncStatus) {
+      DOM.syncStatus.textContent = googleAccessToken ? "☁️ Firestore + Drive Active" : "☁️ Firestore Synced";
+    }
   } else {
     if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.classList.remove('hidden');
     if (DOM.userProfile) DOM.userProfile.classList.add('hidden');
@@ -738,18 +788,286 @@ function copyManuscriptToClipboard() {
   });
 }
 
+// ─── GOOGLE DRIVE REST API INTEGRATION ───────────────────────
+
+async function uploadToGoogleDrive({ name, content, mimeType = 'text/plain', isDoc = false }) {
+  const token = await getGoogleDriveToken();
+  showToast(isDoc ? "Creating Google Doc..." : "Uploading to Google Drive...");
+
+  const metadata = {
+    name: name,
+    mimeType: isDoc ? 'application/vnd.google-apps.document' : mimeType,
+    description: 'Created by Typewriter Studio'
+  };
+
+  const boundary = '-------314159265358979323846';
+  const delimiter = "\r\n--" + boundary + "\r\n";
+  const closeDelim = "\r\n--" + boundary + "--";
+
+  const body =
+    delimiter +
+    'Content-Type: application/json; charset=UTF-8\r\n\r\n' +
+    JSON.stringify(metadata) +
+    delimiter +
+    'Content-Type: ' + (isDoc ? 'text/plain; charset=UTF-8' : mimeType) + '\r\n\r\n' +
+    content +
+    closeDelim;
+
+  const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,mimeType,webViewLink,createdTime', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': `multipart/related; boundary=${boundary}`
+    },
+    body: body
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      googleAccessToken = null;
+      sessionStorage.removeItem('google_drive_access_token');
+      renderUserUI();
+    }
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error?.message || `Google Drive error (${response.status})`);
+  }
+
+  return await response.json();
+}
+
+async function saveCurrentBookToDrive(asDoc = false) {
+  const book = getActiveBook();
+  if (!book) return;
+
+  try {
+    const rawContent = compileManuscriptText(asDoc ? 'txt' : 'txt');
+    const cleanTitle = (book.title || 'manuscript').replace(/[^a-z0-9]/gi, '_');
+    const fileName = asDoc 
+      ? `${book.title} (Manuscript)`
+      : `${cleanTitle}_${new Date().toISOString().slice(0, 10)}.txt`;
+
+    const result = await uploadToGoogleDrive({
+      name: fileName,
+      content: rawContent,
+      mimeType: 'text/plain',
+      isDoc: asDoc
+    });
+
+    if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+    showToast(`Saved "${result.name}" to Google Drive!`);
+    
+    // If open in new tab link is available, notify
+    if (result.webViewLink) {
+      console.log("Drive document created:", result.webViewLink);
+    }
+  } catch (err) {
+    console.error("Save to Drive error:", err);
+    showToast(`Google Drive: ${err.message || 'Failed to save.'}`);
+  }
+}
+
+async function saveBackupToDrive() {
+  try {
+    const backupData = JSON.stringify({
+      version: 1,
+      exportDate: new Date().toISOString(),
+      books: state.books,
+      settings: state.settings
+    }, null, 2);
+
+    const fileName = `typewriter_backup_${new Date().toISOString().slice(0, 10)}.json`;
+
+    const result = await uploadToGoogleDrive({
+      name: fileName,
+      content: backupData,
+      mimeType: 'application/json',
+      isDoc: false
+    });
+
+    showToast(`Backup saved to Google Drive as "${result.name}"!`);
+  } catch (err) {
+    console.error("Drive backup error:", err);
+    showToast(`Drive backup: ${err.message || 'Failed to save.'}`);
+  }
+}
+
+async function fetchDriveFiles() {
+  const token = await getGoogleDriveToken();
+  const url = `https://www.googleapis.com/drive/v3/files?spaces=drive&fields=files(id,name,mimeType,modifiedTime,size,webViewLink)&orderBy=modifiedTime%20desc&pageSize=50`;
+
+  const response = await fetch(url, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+
+  if (!response.ok) {
+    if (response.status === 401) {
+      googleAccessToken = null;
+      sessionStorage.removeItem('google_drive_access_token');
+      renderUserUI();
+    }
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error?.message || `Failed to fetch files (${response.status})`);
+  }
+
+  const data = await response.json();
+  return data.files || [];
+}
+
+async function downloadDriveFile(fileId) {
+  const token = await getGoogleDriveToken();
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to download file from Google Drive (${response.status})`);
+  }
+
+  return await response.text();
+}
+
+async function deleteDriveFile(fileId, fileName) {
+  if (!confirm(`Delete "${fileName}" from your Google Drive?`)) return;
+
+  try {
+    const token = await getGoogleDriveToken();
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+
+    if (response.ok || response.status === 204) {
+      showToast(`Deleted "${fileName}" from Google Drive.`);
+      refreshDriveFiles();
+    } else {
+      throw new Error(`Delete failed (${response.status})`);
+    }
+  } catch (err) {
+    showToast(`Could not delete: ${err.message}`);
+  }
+}
+
+async function restoreDriveBackup(fileId) {
+  try {
+    showToast("Downloading backup from Google Drive...");
+    const raw = await downloadDriveFile(fileId);
+    const importedData = JSON.parse(raw);
+
+    if (importedData && importedData.books && importedData.books.length > 0) {
+      if (confirm("Restore this backup? This will update your current books and studio settings.")) {
+        state.books = importedData.books;
+        if (importedData.settings) {
+          state.settings = { ...state.settings, ...importedData.settings };
+        }
+        state.activeBookId = state.books[0].id;
+        state.currentPageId = state.books[0].pages[state.books[0].pages.length - 1].id;
+        saveStorage();
+        renderAll();
+        closeDriveModal();
+        closeOverlay();
+        showToast("Studio state restored from Google Drive!");
+      }
+    } else {
+      showToast("Selected file is not a valid studio backup JSON.");
+    }
+  } catch (err) {
+    console.error("Restore error:", err);
+    showToast(`Failed to restore backup: ${err.message}`);
+  }
+}
+
+function openDriveModal() {
+  if (DOM.driveModal) DOM.driveModal.classList.remove('hidden');
+  refreshDriveFiles();
+}
+
+function closeDriveModal() {
+  if (DOM.driveModal) DOM.driveModal.classList.add('hidden');
+}
+
+async function refreshDriveFiles() {
+  if (!DOM.driveFilesList || !DOM.driveLoadingIndicator || !DOM.driveEmptyMessage) return;
+
+  DOM.driveLoadingIndicator.classList.remove('hidden');
+  DOM.driveFilesList.classList.add('hidden');
+  DOM.driveEmptyMessage.classList.add('hidden');
+
+  try {
+    const files = await fetchDriveFiles();
+    DOM.driveLoadingIndicator.classList.add('hidden');
+
+    if (!files || files.length === 0) {
+      DOM.driveEmptyMessage.classList.remove('hidden');
+      return;
+    }
+
+    renderDriveFilesList(files);
+  } catch (err) {
+    DOM.driveLoadingIndicator.classList.add('hidden');
+    DOM.driveEmptyMessage.textContent = `Could not load Google Drive files: ${err.message}`;
+    DOM.driveEmptyMessage.classList.remove('hidden');
+  }
+}
+
+function renderDriveFilesList(files) {
+  if (!DOM.driveFilesList) return;
+  DOM.driveFilesList.innerHTML = '';
+  DOM.driveFilesList.classList.remove('hidden');
+
+  files.forEach(file => {
+    const li = document.createElement('li');
+    li.className = 'drive-file-item';
+
+    const isDoc = file.mimeType === 'application/vnd.google-apps.document';
+    const isJson = file.name.endsWith('.json') || file.mimeType === 'application/json';
+    const icon = isDoc ? '📄' : isJson ? '💾' : '📝';
+    const dateStr = file.modifiedTime ? new Date(file.modifiedTime).toLocaleString() : '';
+
+    li.innerHTML = `
+      <div class="drive-file-main">
+        <span class="drive-file-icon">${icon}</span>
+        <div class="drive-file-details">
+          <span class="drive-file-name" title="${file.name}">${file.name}</span>
+          <span class="drive-file-subtext">${isDoc ? 'Google Doc' : isJson ? 'Studio Backup' : 'Text File'} • ${dateStr}</span>
+        </div>
+      </div>
+      <div class="drive-file-actions">
+        ${isJson ? `<button class="btn-drive-action primary btn-restore-item" title="Restore this backup into Studio">Restore</button>` : ''}
+        ${file.webViewLink ? `<a href="${file.webViewLink}" target="_blank" rel="noopener noreferrer" class="btn-drive-action" title="Open file in Google Drive">Open ↗</a>` : ''}
+        <button class="btn-drive-action btn-delete-item" title="Delete file">🗑️</button>
+      </div>
+    `;
+
+    const btnRestore = li.querySelector('.btn-restore-item');
+    if (btnRestore) {
+      btnRestore.onclick = () => restoreDriveBackup(file.id);
+    }
+
+    const btnDel = li.querySelector('.btn-delete-item');
+    if (btnDel) {
+      btnDel.onclick = () => deleteDriveFile(file.id, file.name);
+    }
+
+    DOM.driveFilesList.appendChild(li);
+  });
+}
+
 // ─── EVENT LISTENERS ────────────────────────────────────────
 
 function setupEventListeners() {
   // ESC Key Listener & Global Keyboard Shortcuts
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (DOM.driveModal && !DOM.driveModal.classList.contains('hidden')) {
+        DOM.driveModal.classList.add('hidden');
+        return;
+      }
       if (DOM.exportModal && !DOM.exportModal.classList.contains('hidden')) {
         DOM.exportModal.classList.add('hidden');
-      } else {
-        if (overlayOpen) closeOverlay();
-        else openOverlay();
+        return;
       }
+      if (overlayOpen) closeOverlay();
+      else openOverlay();
       return;
     }
 
@@ -836,6 +1154,20 @@ function setupEventListeners() {
   if (DOM.btnBackupCloud) DOM.btnBackupCloud.onclick = exportBackupFile;
   if (DOM.btnRestoreCloud) DOM.btnRestoreCloud.onclick = () => DOM.fileInputRestore && DOM.fileInputRestore.click();
   if (DOM.fileInputRestore) DOM.fileInputRestore.onchange = importBackupFile;
+
+  // Google Drive buttons
+  if (DOM.btnDriveBackup) DOM.btnDriveBackup.onclick = saveBackupToDrive;
+  if (DOM.btnDriveManager) DOM.btnDriveManager.onclick = openDriveModal;
+  if (DOM.btnQuickBackupDrive) DOM.btnQuickBackupDrive.onclick = saveBackupToDrive;
+  if (DOM.btnQuickExportDrive) DOM.btnQuickExportDrive.onclick = () => saveCurrentBookToDrive(true);
+  if (DOM.btnRefreshDrive) DOM.btnRefreshDrive.onclick = refreshDriveFiles;
+  if (DOM.btnCloseDriveModal) DOM.btnCloseDriveModal.onclick = closeDriveModal;
+
+  if (DOM.driveModal) {
+    DOM.driveModal.onclick = (e) => {
+      if (e.target === DOM.driveModal) closeDriveModal();
+    };
+  }
 
   // Clear all
   if (DOM.btnClearAll) {
@@ -928,6 +1260,8 @@ function setupEventListeners() {
     };
   }
 
+  if (DOM.btnExportDriveDoc) DOM.btnExportDriveDoc.onclick = () => saveCurrentBookToDrive(true);
+  if (DOM.btnExportDriveTxt) DOM.btnExportDriveTxt.onclick = () => saveCurrentBookToDrive(false);
   if (DOM.btnExportTxt) DOM.btnExportTxt.onclick = () => exportManuscript('txt');
   if (DOM.btnExportMd) DOM.btnExportMd.onclick = () => exportManuscript('md');
   if (DOM.btnCopyAll) DOM.btnCopyAll.onclick = copyManuscriptToClipboard;
