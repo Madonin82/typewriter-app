@@ -20,7 +20,7 @@ let currentUser = null;
 
 // Global State
 let state = {
-  books: [],           // Array of { id, title, pages: [], createdAt: number }
+  books: [],           // Array of { id, title, pages: [{ id, number, chunks: [], locked: boolean, createdAt }], createdAt }
   activeBookId: null,  // ID of currently open book
   currentPageId: null, // ID of currently open page
   buffer: '',
@@ -29,10 +29,14 @@ let state = {
     wordsPerPage: 300,
     theme: 'cream',
     font: 'courier',
+    commitKey: 'ctrl-enter', // 'ctrl-enter' | 'enter'
     volume: 50,
     soundEnabled: true
   }
 };
+
+let overlayOpen = false;
+let hintTimer = null;
 
 // Web Audio API Context for Typewriter Sound Effects
 let audioCtx = null;
@@ -50,12 +54,14 @@ function playKeyClickSound() {
   try {
     initAudio();
     if (!audioCtx) return;
-    const volume = (state.settings.volume / 100) * 0.4;
-    const bufferSize = audioCtx.sampleRate * 0.03;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    const volume = (state.settings.volume / 100) * 0.35;
+    const bufferSize = audioCtx.sampleRate * 0.025;
     const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
     const output = buffer.getChannelData(0);
     for (let i = 0; i < bufferSize; i++) {
-      output[i] = Math.random() * 2 - 1;
+      output[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
     }
 
     const whiteNoise = audioCtx.createBufferSource();
@@ -63,12 +69,12 @@ function playKeyClickSound() {
 
     const filter = audioCtx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(1200 + Math.random() * 400, audioCtx.currentTime);
-    filter.Q.setValueAtTime(3, audioCtx.currentTime);
+    filter.frequency.setValueAtTime(1400 + Math.random() * 300, audioCtx.currentTime);
+    filter.Q.setValueAtTime(3.5, audioCtx.currentTime);
 
     const gainNode = audioCtx.createGain();
     gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.03);
+    gainNode.gain.exponentialRampToValueAtTime(0.0008, audioCtx.currentTime + 0.025);
 
     whiteNoise.connect(filter);
     filter.connect(gainNode);
@@ -83,8 +89,9 @@ function playCarriageReturnBell() {
   try {
     initAudio();
     if (!audioCtx) return;
-    const volume = (state.settings.volume / 100) * 0.5;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
 
+    const volume = (state.settings.volume / 100) * 0.45;
     const osc = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
 
@@ -92,13 +99,13 @@ function playCarriageReturnBell() {
     osc.frequency.setValueAtTime(2400, audioCtx.currentTime);
 
     gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.6);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.55);
 
     osc.connect(gainNode);
     gainNode.connect(audioCtx.destination);
 
     osc.start();
-    osc.stop(audioCtx.currentTime + 0.6);
+    osc.stop(audioCtx.currentTime + 0.55);
   } catch (e) {}
 }
 
@@ -107,61 +114,96 @@ let DOM = {};
 
 function initDOM() {
   DOM = {
+    writingSurface: document.getElementById('writing-surface'),
+    pageSheet: document.getElementById('page-sheet'),
+    pageHeaderInfo: document.getElementById('page-header-info'),
+    inkStream: document.getElementById('ink-stream'),
+    draftInput: document.getElementById('draft-input'),
+    charCounter: document.getElementById('char-counter'),
+    commitHint: document.getElementById('commit-hint'),
+    btnCommit: document.getElementById('btn-commit'),
+
+    escOverlay: document.getElementById('esc-overlay'),
+    escHint: document.getElementById('esc-hint'),
+    btnResume: document.getElementById('btn-resume'),
+
+    selectBookSlot: document.getElementById('select-book-slot'),
+    btnNewBook: document.getElementById('btn-new-book'),
+    btnRenameBook: document.getElementById('btn-rename-book'),
+    btnDeleteBook: document.getElementById('btn-delete-book'),
+
+    pagesList: document.getElementById('pages-list'),
+    btnNewPage: document.getElementById('btn-new-page'),
+    btnBackupCloud: document.getElementById('btn-backup-cloud'),
+    btnRestoreCloud: document.getElementById('btn-restore-cloud'),
+    fileInputRestore: document.getElementById('file-input-restore'),
+
     btnGoogleSignIn: document.getElementById('btn-google-signin'),
     userProfile: document.getElementById('user-profile'),
     userAvatar: document.getElementById('user-avatar'),
     userName: document.getElementById('user-name'),
     syncStatus: document.getElementById('sync-status'),
     btnLogout: document.getElementById('btn-logout'),
-
-    btnBackupCloud: document.getElementById('btn-backup-cloud'),
-    btnRestoreCloud: document.getElementById('btn-restore-cloud'),
-    fileInputRestore: document.getElementById('file-input-restore'),
-
-    selectBookSlot: document.getElementById('select-book-slot'),
-    btnNewBook: document.getElementById('btn-new-book'),
-    btnRenameBook: document.getElementById('btn-rename-book'),
-    btnDeleteBook: document.getElementById('btn-delete-book'),
-    currentBookTitleHeader: document.getElementById('current-book-title-header'),
-    currentBookDisplayName: document.getElementById('current-book-display-name'),
-
-    pagesList: document.getElementById('pages-list'),
-    lockedInkStream: document.getElementById('locked-ink-stream'),
-    draftInput: document.getElementById('draft-input'),
-    btnCommit: document.getElementById('btn-commit'),
-    charCount: document.getElementById('char-count'),
-    charLimit: document.getElementById('char-limit'),
-    charCounter: document.getElementById('char-counter'),
-    statTotalWords: document.getElementById('stat-total-words'),
-    statTotalPages: document.getElementById('stat-total-pages'),
-    currentPageLabel: document.getElementById('current-page-label'),
-    currentPageStatus: document.getElementById('current-page-status'),
-    currentPageWords: document.getElementById('current-page-words'),
-    targetPageWords: document.getElementById('target-page-words'),
-    btnNewPage: document.getElementById('btn-new-page'),
-    btnSoundToggle: document.getElementById('btn-sound-toggle'),
-    soundIcon: document.getElementById('sound-icon'),
-    btnSettingsToggle: document.getElementById('btn-settings-toggle'),
-    settingsPanel: document.getElementById('settings-panel'),
-    btnCloseSettings: document.getElementById('btn-close-settings'),
-    btnExportDropdown: document.getElementById('btn-export-dropdown'),
-    exportMenu: document.getElementById('export-menu'),
-    btnExportTxt: document.getElementById('btn-export-txt'),
-    btnExportMd: document.getElementById('btn-export-md'),
-    btnCopyAll: document.getElementById('btn-copy-all'),
     btnClearAll: document.getElementById('btn-clear-all'),
 
     settingMaxChars: document.getElementById('setting-max-chars'),
     settingWordsPerPage: document.getElementById('setting-words-per-page'),
     settingTheme: document.getElementById('setting-theme'),
     settingFont: document.getElementById('setting-font'),
+    settingCommitKey: document.getElementById('setting-commit-key'),
     settingVolume: document.getElementById('setting-volume'),
-    draftingContainer: document.getElementById('drafting-container'),
+    btnSoundToggle: document.getElementById('btn-sound-toggle'),
+
+    statTotalWords: document.getElementById('stat-total-words'),
+    statTotalPages: document.getElementById('stat-total-pages'),
+    statTotalBooks: document.getElementById('stat-total-books'),
+
+    exportModal: document.getElementById('export-modal'),
+    btnExportModalToggle: document.getElementById('btn-export-modal-toggle'),
+    btnCloseExportModal: document.getElementById('btn-close-export-modal'),
+    btnExportTxt: document.getElementById('btn-export-txt'),
+    btnExportMd: document.getElementById('btn-export-md'),
+    btnCopyAll: document.getElementById('btn-copy-all'),
+
     toast: document.getElementById('toast')
   };
 }
 
-// Initialize Firebase Services
+// ─── OVERLAY SYSTEM (ESC) ───────────────────────────────────
+
+function openOverlay() {
+  overlayOpen = true;
+  if (DOM.escOverlay) DOM.escOverlay.classList.add('open');
+  if (DOM.writingSurface) DOM.writingSurface.classList.add('blurred');
+  if (DOM.escHint) DOM.escHint.classList.remove('fade');
+}
+
+function closeOverlay() {
+  overlayOpen = false;
+  if (DOM.escOverlay) DOM.escOverlay.classList.remove('open');
+  if (DOM.writingSurface) DOM.writingSurface.classList.remove('blurred');
+  if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+
+  setTimeout(() => {
+    if (DOM.draftInput) DOM.draftInput.focus();
+  }, 100);
+
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(() => {
+    if (DOM.escHint) DOM.escHint.classList.add('fade');
+  }, 2000);
+}
+
+function updateCommitHint() {
+  if (!DOM.commitHint) return;
+  const isCtrl = state.settings.commitKey === 'ctrl-enter';
+  DOM.commitHint.innerHTML = isCtrl
+    ? 'Commit with <kbd>Ctrl</kbd>+<kbd>Enter</kbd>'
+    : 'Commit with <kbd>Enter</kbd>';
+}
+
+// ─── FIREBASE AUTH & FIRESTORE SYNC ─────────────────────────
+
 function initFirebase() {
   if (typeof firebase !== 'undefined' && firebase.initializeApp) {
     try {
@@ -188,13 +230,11 @@ function initFirebase() {
 }
 
 function handleGoogleSignIn() {
-  if (!auth) {
-    initFirebase();
-  }
+  if (!auth) initFirebase();
   if (auth) {
     const provider = new firebase.auth.GoogleAuthProvider();
     auth.signInWithPopup(provider).then((result) => {
-      showToast(`Welcome, ${result.user.displayName || 'Author'}! Connected to Firestore.`);
+      showToast(`Welcome, ${result.user.displayName || 'Author'}! Synced to Firestore.`);
     }).catch((error) => {
       console.error("Auth error:", error);
       showToast(`Sign in error: ${error.message}`);
@@ -225,7 +265,6 @@ function renderUserUI() {
   }
 }
 
-// Firestore Database Realtime Sync
 function syncToFirestore() {
   if (!db || !currentUser) return;
   if (DOM.syncStatus) DOM.syncStatus.textContent = "🔄 Syncing...";
@@ -252,12 +291,11 @@ function loadFromFirestore(uid) {
         if (data.settings) state.settings = { ...state.settings, ...data.settings };
         state.activeBookId = state.books[0].id;
         state.currentPageId = state.books[0].pages[state.books[0].pages.length - 1].id;
-        saveStorage(false); // Save locally without echoing back to cloud
+        saveStorage(false);
         renderAll();
         showToast("Loaded your manuscripts from Firestore!");
       }
     } else {
-      // First time user: save initial local books to Firestore
       syncToFirestore();
     }
   }).catch((e) => {
@@ -265,7 +303,8 @@ function loadFromFirestore(uid) {
   });
 }
 
-// Storage Engine
+// ─── LOCAL STORAGE ENGINE ───────────────────────────────────
+
 function loadStorage() {
   try {
     const savedSettings = localStorage.getItem('typewriter_settings');
@@ -302,7 +341,8 @@ function saveStorage(syncCloud = true) {
   }
 }
 
-// Backup & Restore
+// ─── BACKUP & RESTORE ───────────────────────────────────────
+
 function exportBackupFile() {
   const backupData = JSON.stringify({
     version: 1,
@@ -311,7 +351,7 @@ function exportBackupFile() {
     settings: state.settings
   }, null, 2);
 
-  const filename = `typewriter_backup_${new Date().toISOString().slice(0,10)}.json`;
+  const filename = `typewriter_backup_${new Date().toISOString().slice(0, 10)}.json`;
   const blob = new Blob([backupData], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -343,6 +383,7 @@ function importBackupFile(event) {
         saveStorage();
         renderAll();
         showToast("Backup restored successfully!");
+        closeOverlay();
       } else {
         alert("Invalid backup file format.");
       }
@@ -353,7 +394,8 @@ function importBackupFile(event) {
   reader.readAsText(file);
 }
 
-// Book Management
+// ─── BOOK & PAGE MANAGEMENT ─────────────────────────────────
+
 function createNewBook(titlePrompt = null, showNotification = true) {
   const title = titlePrompt || prompt("Enter a name for your new book slot:", `Book ${state.books.length + 1}`);
   if (!title || !title.trim()) return;
@@ -382,7 +424,7 @@ function createNewBook(titlePrompt = null, showNotification = true) {
   renderAll();
 
   if (showNotification) {
-    showToast(`Switched to "${newBook.title}"`);
+    showToast(`Created & opened "${newBook.title}"`);
     playCarriageReturnBell();
   }
 }
@@ -422,7 +464,6 @@ function deleteCurrentBook() {
   }
 }
 
-// Page Management
 function createNewPage(showNotification = true) {
   const book = getActiveBook();
   if (!book) return;
@@ -435,7 +476,7 @@ function createNewPage(showNotification = true) {
     locked: false,
     createdAt: Date.now()
   };
-  
+
   const current = getCurrentPage();
   if (current) current.locked = true;
 
@@ -445,7 +486,7 @@ function createNewPage(showNotification = true) {
   renderAll();
 
   if (showNotification) {
-    showToast(`Page ${newNum} created!`);
+    showToast(`Page ${newNum} inserted!`);
     playCarriageReturnBell();
   }
 }
@@ -471,8 +512,9 @@ function getBookTotalWordCount(book) {
   return book.pages.reduce((sum, page) => sum + getPageWordCount(page), 0);
 }
 
-// Drafting Buffer
-function commitCurrentChunk() {
+// ─── DRAFTING BUFFER & FORWARD-ONLY INK STREAM ──────────────
+
+function commitDraft() {
   if (!DOM.draftInput) return;
   const text = DOM.draftInput.value.trim();
   if (!text) return;
@@ -493,7 +535,7 @@ function commitCurrentChunk() {
     const pageWords = getPageWordCount(activePage);
     if (pageWords >= state.settings.wordsPerPage) {
       activePage.locked = true;
-      showToast(`Target of ${state.settings.wordsPerPage} words reached! Page locked.`);
+      showToast(`Target of ${state.settings.wordsPerPage} words reached! Page turned.`);
       createNewPage(true);
     } else {
       saveStorage();
@@ -501,18 +543,267 @@ function commitCurrentChunk() {
     }
   }
 
+  if (DOM.writingSurface) {
+    DOM.writingSurface.scrollTo({
+      top: DOM.writingSurface.scrollHeight,
+      behavior: 'smooth'
+    });
+  }
+
   DOM.draftInput.focus();
 }
 
-// Event Listeners
+function updateCharCounter() {
+  if (!DOM.draftInput || !DOM.charCounter) return;
+  const len = DOM.draftInput.value.length;
+  const max = state.settings.maxChars;
+
+  DOM.charCounter.textContent = `${len} / ${max}`;
+  DOM.charCounter.className = 'char-counter';
+
+  if (len >= max) {
+    DOM.charCounter.classList.add('full');
+  } else if (len >= max * 0.85) {
+    DOM.charCounter.classList.add('near');
+  }
+}
+
+// ─── RENDERING & UI SYNC ────────────────────────────────────
+
+function renderAll() {
+  applyTheme();
+  applyFont();
+  updateCommitHint();
+  renderBookSlotsDropdown();
+  renderSidebarPages();
+  renderActivePage();
+  updateStats();
+  updateCharCounter();
+  renderUserUI();
+}
+
+function renderBookSlotsDropdown() {
+  if (!DOM.selectBookSlot) return;
+  DOM.selectBookSlot.innerHTML = '';
+  state.books.forEach(book => {
+    const opt = document.createElement('option');
+    opt.value = book.id;
+    opt.textContent = `${book.title} (${getBookTotalWordCount(book)}w)`;
+    if (book.id === state.activeBookId) opt.selected = true;
+    DOM.selectBookSlot.appendChild(opt);
+  });
+}
+
+function renderSidebarPages() {
+  if (!DOM.pagesList) return;
+  DOM.pagesList.innerHTML = '';
+  const book = getActiveBook();
+  if (!book) return;
+
+  book.pages.forEach(page => {
+    const li = document.createElement('li');
+    li.className = page.id === state.currentPageId ? 'active' : '';
+    const words = getPageWordCount(page);
+    li.innerHTML = `
+      <span>${page.locked ? '🔒' : '✍️'} Page ${page.number}</span>
+      <span class="page-badge">${words}w</span>
+    `;
+
+    li.onclick = () => {
+      state.currentPageId = page.id;
+      renderAll();
+      closeOverlay();
+    };
+
+    DOM.pagesList.appendChild(li);
+  });
+}
+
+function renderActivePage() {
+  const book = getActiveBook();
+  const page = getCurrentPage();
+  if (!page || !book) return;
+
+  const totalPages = book.pages.length;
+  if (DOM.pageHeaderInfo) {
+    DOM.pageHeaderInfo.textContent = `Page ${page.number} of ${totalPages} • ${book.title.toUpperCase()} ${page.locked ? '(LOCKED)' : ''}`;
+  }
+
+  if (DOM.inkStream) {
+    DOM.inkStream.innerHTML = '';
+
+    page.chunks.forEach(chunkText => {
+      const span = document.createElement('span');
+      span.className = 'ink-chunk';
+      span.textContent = chunkText;
+      DOM.inkStream.appendChild(span);
+    });
+
+    if (!page.locked) {
+      const cursor = document.createElement('span');
+      cursor.className = 'ink-cursor';
+      cursor.id = 'ink-cursor';
+      DOM.inkStream.appendChild(cursor);
+    }
+  }
+
+  const draftOverlay = document.getElementById('draft-overlay');
+  if (draftOverlay) {
+    if (page.locked) {
+      draftOverlay.classList.add('hidden');
+    } else {
+      draftOverlay.classList.remove('hidden');
+    }
+  }
+}
+
+function updateStats() {
+  const book = getActiveBook();
+  if (DOM.statTotalWords) DOM.statTotalWords.textContent = getBookTotalWordCount(book);
+  if (DOM.statTotalPages) DOM.statTotalPages.textContent = book ? book.pages.length : 0;
+  if (DOM.statTotalBooks) DOM.statTotalBooks.textContent = state.books.length;
+}
+
+function applyTheme() {
+  document.body.className = document.body.className.replace(/\btheme-\S+/g, '');
+  document.body.classList.add(`theme-${state.settings.theme}`);
+  if (DOM.settingTheme) DOM.settingTheme.value = state.settings.theme;
+}
+
+function applyFont() {
+  document.body.className = document.body.className.replace(/\bfont-\S+/g, '');
+  document.body.classList.add(`font-${state.settings.font}`);
+  if (DOM.settingFont) DOM.settingFont.value = state.settings.font;
+}
+
+function applySettingsUI() {
+  if (DOM.settingMaxChars) DOM.settingMaxChars.value = state.settings.maxChars;
+  if (DOM.settingWordsPerPage) DOM.settingWordsPerPage.value = state.settings.wordsPerPage;
+  if (DOM.settingCommitKey) DOM.settingCommitKey.value = state.settings.commitKey;
+  if (DOM.settingVolume) DOM.settingVolume.value = state.settings.volume;
+  if (DOM.btnSoundToggle) DOM.btnSoundToggle.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
+}
+
+function showToast(msg) {
+  if (!DOM.toast) return;
+  DOM.toast.textContent = msg;
+  DOM.toast.classList.add('show');
+  setTimeout(() => {
+    DOM.toast.classList.remove('show');
+  }, 2600);
+}
+
+// ─── EXPORT MECHANICS ───────────────────────────────────────
+
+function compileManuscriptText(format = 'txt') {
+  const book = getActiveBook();
+  if (!book) return '';
+  let fullText = `# ${book.title}\n\n`;
+  book.pages.forEach(page => {
+    if (format === 'md') fullText += `## Page ${page.number}\n\n`;
+    else fullText += `--- PAGE ${page.number} ---\n\n`;
+    fullText += page.chunks.join(' ') + '\n\n';
+  });
+  return fullText.trim();
+}
+
+function exportManuscript(format) {
+  const book = getActiveBook();
+  const content = compileManuscriptText(format);
+  const ext = format === 'md' ? 'md' : 'txt';
+  const cleanTitle = (book ? book.title : 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  const filename = `${cleanTitle}_${new Date().toISOString().slice(0, 10)}.${ext}`;
+
+  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = filename;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+
+  if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+  showToast(`Exported ${filename}`);
+}
+
+function copyManuscriptToClipboard() {
+  const content = compileManuscriptText('txt');
+  navigator.clipboard.writeText(content).then(() => {
+    if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+    showToast("Manuscript copied to clipboard!");
+  }).catch(() => {
+    showToast("Failed to copy to clipboard.");
+  });
+}
+
+// ─── EVENT LISTENERS ────────────────────────────────────────
+
 function setupEventListeners() {
-  if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.onclick = handleGoogleSignIn;
-  if (DOM.btnLogout) DOM.btnLogout.onclick = handleSignOut;
+  // ESC Key Listener & Global Keyboard Shortcuts
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      if (DOM.exportModal && !DOM.exportModal.classList.contains('hidden')) {
+        DOM.exportModal.classList.add('hidden');
+      } else {
+        if (overlayOpen) closeOverlay();
+        else openOverlay();
+      }
+      return;
+    }
 
-  if (DOM.btnBackupCloud) DOM.btnBackupCloud.onclick = exportBackupFile;
-  if (DOM.btnRestoreCloud) DOM.btnRestoreCloud.onclick = () => DOM.fileInputRestore && DOM.fileInputRestore.click();
-  if (DOM.fileInputRestore) DOM.fileInputRestore.onchange = importBackupFile;
+    if (!overlayOpen && document.activeElement === DOM.draftInput) {
+      const isCtrlMode = state.settings.commitKey === 'ctrl-enter';
+      const commitTriggered = isCtrlMode
+        ? (e.key === 'Enter' && (e.ctrlKey || e.metaKey))
+        : (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey);
 
+      if (commitTriggered) {
+        e.preventDefault();
+        commitDraft();
+      }
+    }
+  });
+
+  // ESC Hint Click / Auto fade
+  if (DOM.escHint) {
+    DOM.escHint.onclick = () => {
+      if (overlayOpen) closeOverlay();
+      else openOverlay();
+    };
+  }
+
+  hintTimer = setTimeout(() => {
+    if (DOM.escHint) DOM.escHint.classList.add('fade');
+  }, 3000);
+
+  // Overlay Backdrop Click to close
+  if (DOM.escOverlay) {
+    DOM.escOverlay.onclick = (e) => {
+      if (e.target === DOM.escOverlay) closeOverlay();
+    };
+  }
+
+  if (DOM.btnResume) DOM.btnResume.onclick = closeOverlay;
+
+  // Draft Input events
+  if (DOM.draftInput) {
+    DOM.draftInput.oninput = (e) => {
+      state.buffer = e.target.value;
+      playKeyClickSound();
+
+      if (state.buffer.length >= state.settings.maxChars) {
+        commitDraft();
+      } else {
+        updateCharCounter();
+      }
+    };
+  }
+
+  if (DOM.btnCommit) DOM.btnCommit.onclick = commitDraft;
+
+  // Book selectors
   if (DOM.selectBookSlot) {
     DOM.selectBookSlot.onchange = (e) => {
       state.activeBookId = e.target.value;
@@ -522,7 +813,7 @@ function setupEventListeners() {
       }
       saveStorage();
       renderAll();
-      showToast(`Opened "${book.title}"`);
+      showToast(`Switched to "${book.title}"`);
     };
   }
 
@@ -530,65 +821,39 @@ function setupEventListeners() {
   if (DOM.btnRenameBook) DOM.btnRenameBook.onclick = () => renameCurrentBook();
   if (DOM.btnDeleteBook) DOM.btnDeleteBook.onclick = () => deleteCurrentBook();
 
-  if (DOM.draftInput) {
-    DOM.draftInput.oninput = (e) => {
-      state.buffer = e.target.value;
-      playKeyClickSound();
+  // Pages
+  if (DOM.btnNewPage) {
+    DOM.btnNewPage.onclick = () => {
+      createNewPage();
+      closeOverlay();
+    };
+  }
 
-      if (state.buffer.length >= state.settings.maxChars) {
-        commitCurrentChunk();
-      } else {
-        updateCharCounter();
+  // Auth & Cloud
+  if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.onclick = handleGoogleSignIn;
+  if (DOM.btnLogout) DOM.btnLogout.onclick = handleSignOut;
+
+  if (DOM.btnBackupCloud) DOM.btnBackupCloud.onclick = exportBackupFile;
+  if (DOM.btnRestoreCloud) DOM.btnRestoreCloud.onclick = () => DOM.fileInputRestore && DOM.fileInputRestore.click();
+  if (DOM.fileInputRestore) DOM.fileInputRestore.onchange = importBackupFile;
+
+  // Clear all
+  if (DOM.btnClearAll) {
+    DOM.btnClearAll.onclick = () => {
+      if (confirm("Are you sure you want to reset all books, pages, and preferences?")) {
+        state.books = [];
+        localStorage.clear();
+        createNewBook("My First Book", false);
+        closeOverlay();
+        showToast("Studio data reset.");
       }
     };
-
-    DOM.draftInput.onkeydown = (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        commitCurrentChunk();
-      }
-    };
   }
 
-  if (DOM.btnCommit) DOM.btnCommit.onclick = () => commitCurrentChunk();
-  if (DOM.btnNewPage) DOM.btnNewPage.onclick = () => createNewPage();
-
-  if (DOM.btnSoundToggle) {
-    DOM.btnSoundToggle.onclick = () => {
-      state.settings.soundEnabled = !state.settings.soundEnabled;
-      if (DOM.soundIcon) DOM.soundIcon.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
-      saveStorage();
-      showToast(state.settings.soundEnabled ? 'Sound ON' : 'Sound OFF');
-    };
-  }
-
-  if (DOM.btnSettingsToggle) {
-    DOM.btnSettingsToggle.onclick = () => {
-      if (DOM.settingsPanel) DOM.settingsPanel.classList.toggle('hidden');
-      if (DOM.exportMenu) DOM.exportMenu.classList.add('hidden');
-    };
-  }
-
-  if (DOM.btnCloseSettings) {
-    DOM.btnCloseSettings.onclick = () => {
-      if (DOM.settingsPanel) DOM.settingsPanel.classList.add('hidden');
-    };
-  }
-
-  if (DOM.btnExportDropdown) {
-    DOM.btnExportDropdown.onclick = () => {
-      if (DOM.exportMenu) DOM.exportMenu.classList.toggle('hidden');
-      if (DOM.settingsPanel) DOM.settingsPanel.classList.add('hidden');
-    };
-  }
-
-  if (DOM.btnExportTxt) DOM.btnExportTxt.onclick = () => exportManuscript('txt');
-  if (DOM.btnExportMd) DOM.btnExportMd.onclick = () => exportManuscript('md');
-  if (DOM.btnCopyAll) DOM.btnCopyAll.onclick = copyManuscriptToClipboard;
-
+  // Settings
   if (DOM.settingMaxChars) {
     DOM.settingMaxChars.onchange = (e) => {
-      state.settings.maxChars = parseInt(e.target.value, 10) || 200;
+      state.settings.maxChars = Math.max(20, parseInt(e.target.value, 10) || 200);
       saveStorage();
       renderAll();
     };
@@ -596,7 +861,7 @@ function setupEventListeners() {
 
   if (DOM.settingWordsPerPage) {
     DOM.settingWordsPerPage.onchange = (e) => {
-      state.settings.wordsPerPage = parseInt(e.target.value, 10) || 300;
+      state.settings.wordsPerPage = Math.max(50, parseInt(e.target.value, 10) || 300);
       saveStorage();
       renderAll();
     };
@@ -618,6 +883,14 @@ function setupEventListeners() {
     };
   }
 
+  if (DOM.settingCommitKey) {
+    DOM.settingCommitKey.onchange = (e) => {
+      state.settings.commitKey = e.target.value;
+      updateCommitHint();
+      saveStorage();
+    };
+  }
+
   if (DOM.settingVolume) {
     DOM.settingVolume.oninput = (e) => {
       state.settings.volume = parseInt(e.target.value, 10);
@@ -625,205 +898,42 @@ function setupEventListeners() {
     };
   }
 
-  if (DOM.btnClearAll) {
-    DOM.btnClearAll.onclick = () => {
-      if (confirm("Reset everything?")) {
-        state.books = [];
-        localStorage.clear();
-        createNewBook("My First Book", false);
-        if (DOM.settingsPanel) DOM.settingsPanel.classList.add('hidden');
-        showToast("Reset complete.");
+  if (DOM.btnSoundToggle) {
+    DOM.btnSoundToggle.onclick = () => {
+      state.settings.soundEnabled = !state.settings.soundEnabled;
+      DOM.btnSoundToggle.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
+      saveStorage();
+      showToast(state.settings.soundEnabled ? 'Sound ON' : 'Sound Muted');
+    };
+  }
+
+  // Export Modal
+  if (DOM.btnExportModalToggle) {
+    DOM.btnExportModalToggle.onclick = () => {
+      if (DOM.exportModal) DOM.exportModal.classList.remove('hidden');
+    };
+  }
+
+  if (DOM.btnCloseExportModal) {
+    DOM.btnCloseExportModal.onclick = () => {
+      if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+    };
+  }
+
+  if (DOM.exportModal) {
+    DOM.exportModal.onclick = (e) => {
+      if (e.target === DOM.exportModal) {
+        DOM.exportModal.classList.add('hidden');
       }
     };
   }
 
-  document.addEventListener('click', (e) => {
-    if (DOM.exportMenu && DOM.btnExportDropdown && !DOM.exportMenu.contains(e.target) && !DOM.btnExportDropdown.contains(e.target)) {
-      DOM.exportMenu.classList.add('hidden');
-    }
-  });
+  if (DOM.btnExportTxt) DOM.btnExportTxt.onclick = () => exportManuscript('txt');
+  if (DOM.btnExportMd) DOM.btnExportMd.onclick = () => exportManuscript('md');
+  if (DOM.btnCopyAll) DOM.btnCopyAll.onclick = copyManuscriptToClipboard;
 }
 
-// Render Functions
-function renderAll() {
-  applyTheme();
-  applyFont();
-  renderBookSlotsDropdown();
-  renderSidebarPages();
-  renderActivePage();
-  updateStats();
-  updateCharCounter();
-  renderUserUI();
-}
-
-function renderBookSlotsDropdown() {
-  if (!DOM.selectBookSlot) return;
-  DOM.selectBookSlot.innerHTML = '';
-  state.books.forEach(book => {
-    const opt = document.createElement('option');
-    opt.value = book.id;
-    opt.textContent = `${book.title} (${getBookTotalWordCount(book)}w)`;
-    if (book.id === state.activeBookId) opt.selected = true;
-    DOM.selectBookSlot.appendChild(opt);
-  });
-
-  const activeBook = getActiveBook();
-  if (activeBook) {
-    if (DOM.currentBookTitleHeader) DOM.currentBookTitleHeader.textContent = activeBook.title;
-    if (DOM.currentBookDisplayName) DOM.currentBookDisplayName.textContent = activeBook.title;
-  }
-}
-
-function updateCharCounter() {
-  if (!DOM.draftInput || !DOM.charCount || !DOM.charLimit) return;
-  const currentLen = DOM.draftInput.value.length;
-  const maxLen = state.settings.maxChars;
-
-  DOM.charCount.textContent = currentLen;
-  DOM.charLimit.textContent = maxLen;
-
-  if (DOM.charCounter) {
-    DOM.charCounter.classList.remove('near-limit', 'at-limit');
-    if (currentLen >= maxLen) DOM.charCounter.classList.add('at-limit');
-    else if (currentLen >= maxLen * 0.85) DOM.charCounter.classList.add('near-limit');
-  }
-}
-
-function renderSidebarPages() {
-  if (!DOM.pagesList) return;
-  DOM.pagesList.innerHTML = '';
-  const book = getActiveBook();
-  if (!book) return;
-
-  book.pages.forEach(page => {
-    const li = document.createElement('li');
-    li.className = page.id === state.currentPageId ? 'active' : '';
-    const words = getPageWordCount(page);
-    li.innerHTML = `
-      <span>Page ${page.number} ${page.locked ? '🔒' : '✍️'}</span>
-      <span class="page-word-badge">${words}w</span>
-    `;
-
-    li.onclick = () => {
-      state.currentPageId = page.id;
-      renderAll();
-    };
-
-    DOM.pagesList.appendChild(li);
-  });
-}
-
-function renderActivePage() {
-  const page = getCurrentPage();
-  if (!page) return;
-
-  if (DOM.currentPageLabel) DOM.currentPageLabel.textContent = `Page ${page.number}`;
-  
-  if (page.locked) {
-    if (DOM.currentPageStatus) {
-      DOM.currentPageStatus.textContent = "Locked";
-      DOM.currentPageStatus.className = "status-badge status-locked";
-    }
-    if (DOM.draftingContainer) DOM.draftingContainer.classList.add('hidden');
-  } else {
-    if (DOM.currentPageStatus) {
-      DOM.currentPageStatus.textContent = "Active";
-      DOM.currentPageStatus.className = "status-badge status-active";
-    }
-    if (DOM.draftingContainer) DOM.draftingContainer.classList.remove('hidden');
-  }
-
-  const pageWords = getPageWordCount(page);
-  if (DOM.currentPageWords) DOM.currentPageWords.textContent = pageWords;
-  if (DOM.targetPageWords) DOM.targetPageWords.textContent = state.settings.wordsPerPage;
-
-  if (DOM.lockedInkStream) {
-    DOM.lockedInkStream.innerHTML = '';
-    page.chunks.forEach(chunkText => {
-      const chunkSpan = document.createElement('span');
-      chunkSpan.className = 'ink-chunk';
-      chunkSpan.textContent = chunkText;
-      DOM.lockedInkStream.appendChild(chunkSpan);
-    });
-  }
-}
-
-function updateStats() {
-  const book = getActiveBook();
-  if (DOM.statTotalWords) DOM.statTotalWords.textContent = getBookTotalWordCount(book);
-  if (DOM.statTotalPages) DOM.statTotalPages.textContent = book ? book.pages.length : 0;
-}
-
-function applyTheme() {
-  document.body.className = document.body.className.replace(/\btheme-\S+/g, '');
-  document.body.classList.add(`theme-${state.settings.theme}`);
-  if (DOM.settingTheme) DOM.settingTheme.value = state.settings.theme;
-}
-
-function applyFont() {
-  document.body.className = document.body.className.replace(/\bfont-\S+/g, '');
-  document.body.classList.add(`font-${state.settings.font}`);
-  if (DOM.settingFont) DOM.settingFont.value = state.settings.font;
-}
-
-function applySettingsUI() {
-  if (DOM.settingMaxChars) DOM.settingMaxChars.value = state.settings.maxChars;
-  if (DOM.settingWordsPerPage) DOM.settingWordsPerPage.value = state.settings.wordsPerPage;
-  if (DOM.settingVolume) DOM.settingVolume.value = state.settings.volume;
-  if (DOM.soundIcon) DOM.soundIcon.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
-}
-
-function showToast(msg) {
-  if (!DOM.toast) return;
-  DOM.toast.textContent = msg;
-  DOM.toast.classList.remove('hidden');
-  setTimeout(() => {
-    DOM.toast.classList.add('hidden');
-  }, 2500);
-}
-
-function compileManuscriptText(format = 'txt') {
-  const book = getActiveBook();
-  if (!book) return '';
-  let fullText = `# ${book.title}\n\n`;
-  book.pages.forEach(page => {
-    if (format === 'md') fullText += `## Page ${page.number}\n\n`;
-    else fullText += `--- PAGE ${page.number} ---\n\n`;
-    fullText += page.chunks.join(' ') + '\n\n';
-  });
-  return fullText.trim();
-}
-
-function exportManuscript(format) {
-  const book = getActiveBook();
-  const content = compileManuscriptText(format);
-  const ext = format === 'md' ? 'md' : 'txt';
-  const cleanTitle = (book ? book.title : 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase();
-  const filename = `${cleanTitle}_${new Date().toISOString().slice(0,10)}.${ext}`;
-  
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-
-  if (DOM.exportMenu) DOM.exportMenu.classList.add('hidden');
-  showToast(`Exported ${filename}`);
-}
-
-function copyManuscriptToClipboard() {
-  const content = compileManuscriptText('txt');
-  navigator.clipboard.writeText(content).then(() => {
-    if (DOM.exportMenu) DOM.exportMenu.classList.add('hidden');
-    showToast("Manuscript copied to clipboard!");
-  }).catch(() => {
-    showToast("Failed to copy to clipboard.");
-  });
-}
+// ─── INITIALIZATION ─────────────────────────────────────────
 
 function init() {
   initDOM();
@@ -832,6 +942,11 @@ function init() {
   applySettingsUI();
   initFirebase();
   renderAll();
+
+  // Focus drafting input on start
+  setTimeout(() => {
+    if (DOM.draftInput) DOM.draftInput.focus();
+  }, 150);
 }
 
 if (document.readyState === 'loading') {

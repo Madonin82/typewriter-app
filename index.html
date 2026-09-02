@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Typewriter - Forward-Only Micro-Drafting Studio</title>
+  <meta name="description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, and manuscript export.">
+  <meta property="og:title" content="Typewriter - Forward-Only Micro-Drafting Studio">
+  <meta property="og:description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, and manuscript export.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Special+Elite&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
@@ -15,198 +18,201 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 </head>
 <body class="theme-cream font-courier">
-  <div class="app-container">
-    <!-- Top Navigation Header -->
-    <header class="app-header">
-      <div class="brand">
-        <span class="typewriter-icon">⌨️</span>
-        <h1>TYPEWRITER</h1>
-        <span class="tagline">Forward-Only Micro-Drafting</span>
+
+  <!-- ── MAIN WRITING SURFACE ── -->
+  <div id="writing-surface" class="writing-surface">
+    <div class="page" id="page-sheet">
+      <div class="page-number" id="page-header-info">Page 1 of 1</div>
+      <div class="ink-stream" id="ink-stream">
+        <!-- Chunks are rendered here -->
+        <span class="ink-cursor" id="ink-cursor"></span>
       </div>
-
-      <!-- Book / Save Slot Selector -->
-      <div class="book-slot-selector">
-        <label for="select-book-slot">📖 Book:</label>
-        <select id="select-book-slot" class="select-book">
-          <!-- Dynamically populated save slots -->
-        </select>
-        <button id="btn-rename-book" class="btn-icon" title="Rename Book">✏️</button>
-        <button id="btn-new-book" class="btn-secondary" title="Create New Book Slot">+ New Book</button>
-      </div>
-
-      <div class="header-stats">
-        <div class="stat-badge" title="Total words typed in this book">
-          <span class="stat-label">Words</span>
-          <span id="stat-total-words" class="stat-value">0</span>
-        </div>
-        <div class="stat-badge" title="Total pages in this book">
-          <span class="stat-label">Pages</span>
-          <span id="stat-total-pages" class="stat-value">1</span>
-        </div>
-      </div>
-      
-      <div class="header-actions">
-        <!-- Firebase Google Sign In Container -->
-        <div class="auth-container">
-          <button id="btn-google-signin" class="btn-google">
-            <svg class="google-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
-            <span>Sign in with Google</span>
-          </button>
-          
-          <div id="user-profile" class="user-profile hidden">
-            <img id="user-avatar" class="user-avatar" src="" alt="Avatar">
-            <div class="user-info">
-              <span id="user-name" class="user-name">Author</span>
-              <span id="sync-status" class="sync-status">☁️ Firestore Synced</span>
-            </div>
-            <button id="btn-logout" class="btn-icon" title="Sign Out">🚪</button>
-          </div>
-        </div>
-
-        <!-- Manual Backup Fallbacks -->
-        <button id="btn-backup-cloud" class="btn-secondary" title="Save Backup File">
-          <span>💾 Backup</span>
-        </button>
-        <button id="btn-restore-cloud" class="btn-secondary" title="Load Backup File">
-          <span>📂 Load</span>
-        </button>
-        <input type="file" id="file-input-restore" accept=".json" class="hidden">
-
-        <button id="btn-sound-toggle" class="btn-icon" title="Toggle Typewriter Sound (ON)">
-          <span id="sound-icon">🔊</span>
-        </button>
-        <button id="btn-settings-toggle" class="btn-secondary">
-          <span>⚙️ Settings</span>
-        </button>
-        <button id="btn-export-dropdown" class="btn-primary">
-          <span>📥 Export Draft</span>
-        </button>
-      </div>
-    </header>
-
-    <!-- Main Content Area -->
-    <div class="main-layout">
-      <!-- Sidebar / Pages Navigation -->
-      <aside class="sidebar" id="sidebar">
-        <div class="sidebar-header">
-          <h3 id="current-book-title-header">Pages & Archive</h3>
-          <button id="btn-new-page" class="btn-small">+ New Page</button>
-        </div>
-        <ul id="pages-list" class="pages-list">
-          <!-- Populated dynamically -->
-        </ul>
-
-        <!-- Export Popup Menu -->
-        <div id="export-menu" class="export-menu hidden">
-          <h4>Export Manuscript</h4>
-          <button id="btn-export-txt" class="export-option">📄 Plain Text (.txt)</button>
-          <button id="btn-export-md" class="export-option">📝 Markdown (.md)</button>
-          <button id="btn-copy-all" class="export-option">📋 Copy All to Clipboard</button>
-        </div>
-
-        <!-- Settings Drawer -->
-        <div id="settings-panel" class="settings-panel hidden">
-          <div class="settings-header">
-            <h4>Writing Settings</h4>
-            <button id="btn-close-settings" class="btn-close">×</button>
-          </div>
-          <div class="setting-group">
-            <label for="setting-max-chars">Chunk Character Limit (Buffer):</label>
-            <div class="setting-input-wrapper">
-              <input type="number" id="setting-max-chars" min="50" max="2000" step="10" value="200">
-              <span class="unit">chars</span>
-            </div>
-            <small>Text automatically commits to ink when reaching this limit.</small>
-          </div>
-          <div class="setting-group">
-            <label for="setting-words-per-page">Target Words Per Page:</label>
-            <div class="setting-input-wrapper">
-              <input type="number" id="setting-words-per-page" min="100" max="1000" step="50" value="300">
-              <span class="unit">words</span>
-            </div>
-            <small>Page automatically locks and turns when word target is reached.</small>
-          </div>
-          <div class="setting-group">
-            <label for="setting-theme">Paper Theme:</label>
-            <select id="setting-theme">
-              <option value="cream">Warm Cream Paper</option>
-              <option value="sepia">Vintage Sepia</option>
-              <option value="dark">Midnight Ink (Dark)</option>
-              <option value="white">Clean White</option>
-            </select>
-          </div>
-          <div class="setting-group">
-            <label for="setting-font">Typewriter Font:</label>
-            <select id="setting-font">
-              <option value="courier">Courier Prime (Classic)</option>
-              <option value="special">Special Elite (Gritty)</option>
-              <option value="mono">System Monospace</option>
-            </select>
-          </div>
-          <div class="setting-group">
-            <label for="setting-volume">Sound Volume:</label>
-            <input type="range" id="setting-volume" min="0" max="100" value="50">
-          </div>
-          <div class="setting-actions">
-            <button id="btn-delete-book" class="btn-danger">🗑️ Delete Current Book Slot</button>
-            <button id="btn-clear-all" class="btn-danger" style="margin-top: 6px;">⚠️ Reset All Books & Data</button>
-          </div>
-        </div>
-      </aside>
-
-      <!-- Typewriter Desk Area -->
-      <main class="desk-area">
-        <div class="page-meta-bar">
-          <div class="page-indicator">
-            <span id="current-book-display-name" class="book-display-badge">My First Book</span>
-            <span>•</span>
-            <span id="current-page-label">Page 1</span>
-            <span id="current-page-status" class="status-badge status-active">Active</span>
-          </div>
-          <div class="page-word-count">
-            <span id="current-page-words">0</span> / <span id="target-page-words">300</span> words
-          </div>
-        </div>
-
-        <!-- The Paper Sheet -->
-        <div class="paper-sheet" id="paper-sheet">
-          <div class="paper-watermark">PERMANENT INK</div>
-
-          <!-- Locked Permanent Ink Stream -->
-          <div id="locked-ink-stream" class="locked-ink-stream">
-            <!-- Permanent chunks appear here -->
-          </div>
-
-          <!-- Active Drafting Buffer Area -->
-          <div class="drafting-buffer-container" id="drafting-container">
-            <div class="buffer-toolbar">
-              <span class="buffer-label">Drafting Buffer (Pencil)</span>
-              <span id="char-counter" class="char-counter"><span id="char-count">0</span> / <span id="char-limit">200</span></span>
-            </div>
-            
-            <textarea 
-              id="draft-input" 
-              class="draft-input" 
-              placeholder="Type your thought here... Press Enter or click Commit to set ink permanently." 
-              rows="3"
-              autofocus
-            ></textarea>
-            
-            <div class="buffer-actions">
-              <span class="buffer-hint">💡 Press <strong>Enter</strong> or <strong>Ctrl+Enter</strong> to set in ink.</span>
-              <button id="btn-commit" class="btn-commit">
-                <span class="ink-drop">🖋️</span> Commit to Ink
-              </button>
-            </div>
-          </div>
-        </div>
-      </main>
     </div>
   </div>
 
-  <!-- Notification Toast -->
-  <div id="toast" class="toast hidden"></div>
+  <!-- ── FLOATING DRAFT BOX ── -->
+  <div id="draft-overlay">
+    <div id="draft-box">
+      <textarea 
+        id="draft-input" 
+        placeholder="Write your next thought... then commit to ink." 
+        rows="2" 
+        autofocus
+      ></textarea>
+      <div class="draft-footer">
+        <span class="char-counter" id="char-counter">0 / 200</span>
+        <div class="draft-footer-actions">
+          <span class="commit-hint" id="commit-hint">Commit with <kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
+          <button id="btn-commit" class="btn-commit-mini" title="Commit to Ink">🖋️ Commit</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
+  <!-- ── ESC OVERLAY (MENU & SETTINGS) ── -->
+  <div id="esc-overlay">
+    <!-- Left: Books & Pages Navigation -->
+    <div id="panel-left">
+      <div class="panel-section-label">Books</div>
+      <div class="book-strip">
+        <select id="select-book-slot" title="Select Book Slot">
+          <!-- Populated dynamically -->
+        </select>
+        <button id="btn-new-book" title="Create New Book">+</button>
+        <button id="btn-rename-book" title="Rename Current Book">✏️</button>
+      </div>
+
+      <div class="panel-section-label">Pages</div>
+      <ul class="pages-list" id="pages-list">
+        <!-- Populated dynamically -->
+      </ul>
+
+      <div class="panel-divider"></div>
+      <div class="panel-action" id="btn-new-page"><span>📄</span> + New Page</div>
+      <div class="panel-action" id="btn-export-modal-toggle"><span>📥</span> Export Manuscript</div>
+      <div class="panel-action" id="btn-backup-cloud"><span>💾</span> Backup File (.json)</div>
+      <div class="panel-action" id="btn-restore-cloud"><span>📂</span> Load Backup File</div>
+      <input type="file" id="file-input-restore" accept=".json" class="hidden">
+    </div>
+
+    <!-- Center: Main Brand, Auth & Navigation -->
+    <div id="panel-center">
+      <div class="menu-label">TYPEWRITER STUDIO</div>
+      <p class="menu-sublabel">Forward-Only Micro-Drafting</p>
+
+      <!-- Firebase Google Sign In Container -->
+      <div class="auth-center-block">
+        <button id="btn-google-signin" class="menu-btn google">
+          <svg class="google-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+          Sign in with Google
+        </button>
+
+        <div id="user-profile" class="user-row hidden">
+          <img id="user-avatar" class="user-avatar" src="" alt="Avatar">
+          <div class="user-text">
+            <span id="user-name" class="user-name">Author</span>
+            <span id="sync-status" class="sync-status">☁️ Firestore Synced</span>
+          </div>
+          <button id="btn-logout" class="btn-icon-subtle" title="Sign Out">🚪</button>
+        </div>
+      </div>
+
+      <div class="panel-divider" style="width:240px; background:#2a2a2a;"></div>
+      <button id="btn-resume" class="menu-btn primary-action">Resume Writing</button>
+      <div class="panel-divider" style="width:240px; background:#2a2a2a;"></div>
+      <button id="btn-delete-book" class="menu-btn danger-subtle">Delete Current Book</button>
+      <button id="btn-clear-all" class="menu-btn danger">Reset All Books & Data</button>
+    </div>
+
+    <!-- Right: Studio Settings -->
+    <div id="panel-right">
+      <div>
+        <div class="setting-label">Buffer Character Limit</div>
+        <input id="setting-max-chars" class="setting-input" type="number" min="50" max="2000" step="10" value="200">
+        <small class="setting-help">Characters before auto-commit to ink.</small>
+      </div>
+
+      <div>
+        <div class="setting-label">Words Per Page Target</div>
+        <input id="setting-words-per-page" class="setting-input" type="number" min="50" max="1500" step="25" value="300">
+        <small class="setting-help">Page automatically locks and turns when reached.</small>
+      </div>
+
+      <div>
+        <div class="setting-label">Paper Tone</div>
+        <select id="setting-theme" class="setting-select">
+          <option value="cream">Warm Cream</option>
+          <option value="white">Clean White</option>
+          <option value="sepia">Vintage Sepia</option>
+          <option value="dark">Midnight Ink (Dark)</option>
+        </select>
+      </div>
+
+      <div>
+        <div class="setting-label">Typewriter Font</div>
+        <select id="setting-font" class="setting-select">
+          <option value="courier">Courier Prime</option>
+          <option value="special">Special Elite</option>
+          <option value="mono">System Monospace</option>
+        </select>
+      </div>
+
+      <div>
+        <div class="setting-label">Commit Shortcut</div>
+        <select id="setting-commit-key" class="setting-select">
+          <option value="ctrl-enter">Ctrl + Enter (Enter = line break)</option>
+          <option value="enter">Enter (no line breaks)</option>
+        </select>
+      </div>
+
+      <div>
+        <div class="setting-label-row">
+          <span class="setting-label">Sound Volume</span>
+          <button id="btn-sound-toggle" class="btn-mute-toggle" title="Toggle Sound">🔊</button>
+        </div>
+        <input id="setting-volume" type="range" min="0" max="100" value="50">
+      </div>
+
+      <div class="stats-footer-container">
+        <div class="stats-strip">
+          <div class="stat">
+            <span id="stat-total-words" class="stat-val">0</span>
+            <span class="stat-lbl">Words</span>
+          </div>
+          <div class="stat">
+            <span id="stat-total-pages" class="stat-val">1</span>
+            <span class="stat-lbl">Pages</span>
+          </div>
+          <div class="stat">
+            <span id="stat-total-books" class="stat-val">1</span>
+            <span class="stat-lbl">Books</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── EXPORT MODAL DIALOG ── -->
+  <div id="export-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Export Manuscript</h3>
+        <button id="btn-close-export-modal" class="btn-close">×</button>
+      </div>
+      <p class="modal-desc">Export the entire current book draft into your preferred manuscript format:</p>
+      <div class="export-options-grid">
+        <button id="btn-export-txt" class="export-card-btn">
+          <span class="export-icon">📄</span>
+          <div class="export-info">
+            <strong>Plain Text (.txt)</strong>
+            <span>Clean, unformatted text file</span>
+          </div>
+        </button>
+        <button id="btn-export-md" class="export-card-btn">
+          <span class="export-icon">📝</span>
+          <div class="export-info">
+            <strong>Markdown (.md)</strong>
+            <span>Includes page headers & chapters</span>
+          </div>
+        </button>
+        <button id="btn-copy-all" class="export-card-btn">
+          <span class="export-icon">📋</span>
+          <div class="export-info">
+            <strong>Copy to Clipboard</strong>
+            <span>Quick paste into any document editor</span>
+          </div>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── ESC HINT / MENU TRIGGER ── -->
+  <div id="esc-hint" title="Click or press ESC to open studio menu">ESC — menu</div>
+
+  <!-- ── TOAST NOTIFICATION ── -->
+  <div id="toast" class="toast"></div>
+
+  <!-- Core Script -->
   <script src="app.js"></script>
 </body>
 </html>
