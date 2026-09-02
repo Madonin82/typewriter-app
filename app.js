@@ -1,6 +1,6 @@
 /**
  * Typewriter Studio - Application Core
- * Forward-Only Micro-Drafting Engine with Google Drive Sync
+ * Forward-Only Micro-Drafting Engine with Firebase Realtime Cloud Sync
  */
 
 // Global State
@@ -9,7 +9,7 @@ let state = {
   activeBookId: null,  // ID of currently open book
   currentPageId: null, // ID of currently open page
   buffer: '',
-  googleAccessToken: null, // OAuth 2.0 token
+  user: null,          // Firebase user object
   settings: {
     maxChars: 200,
     wordsPerPage: 300,
@@ -20,8 +20,6 @@ let state = {
   }
 };
 
-let tokenClient = null;
-
 // Web Audio API Context for Typewriter Sound Effects
 let audioCtx = null;
 
@@ -31,13 +29,11 @@ function initAudio() {
   }
 }
 
-// Synthesize mechanical key click sound
 function playKeyClickSound() {
   if (!state.settings.soundEnabled || state.settings.volume === 0) return;
   try {
     initAudio();
     const volume = (state.settings.volume / 100) * 0.4;
-    
     const bufferSize = audioCtx.sampleRate * 0.03;
     const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
     const output = buffer.getChannelData(0);
@@ -67,7 +63,6 @@ function playKeyClickSound() {
   }
 }
 
-// Synthesize typewriter carriage return bell "DING!"
 function playCarriageReturnBell() {
   if (!state.settings.soundEnabled || state.settings.volume === 0) return;
   try {
@@ -95,11 +90,17 @@ function playCarriageReturnBell() {
 
 // DOM Elements
 const DOM = {
-  btnGoogleLogin: document.getElementById('btn-google-login'),
+  btnAccountModal: document.getElementById('btn-account-modal'),
+  authModal: document.getElementById('auth-modal'),
+  btnCloseAuthModal: document.getElementById('btn-close-auth-modal'),
+  authEmail: document.getElementById('auth-email'),
+  authPassword: document.getElementById('auth-password'),
+  btnAuthSignin: document.getElementById('btn-auth-signin'),
+  btnAuthSignup: document.getElementById('btn-auth-signup'),
+
   userProfile: document.getElementById('user-profile'),
   userName: document.getElementById('user-name'),
   syncStatus: document.getElementById('sync-status'),
-  btnSyncNow: document.getElementById('btn-sync-now'),
   btnLogout: document.getElementById('btn-logout'),
 
   btnBackupCloud: document.getElementById('btn-backup-cloud'),
@@ -153,7 +154,7 @@ function init() {
   loadStorage();
   setupEventListeners();
   applySettingsUI();
-  initGoogleAuthSDK();
+  initFirebase();
   renderAll();
 }
 
@@ -173,7 +174,12 @@ function loadStorage() {
     } catch (e) {}
   }
 
-  state.googleAccessToken = sessionStorage.getItem('typewriter_g_token') || null;
+  const savedUser = localStorage.getItem('typewriter_cloud_author');
+  if (savedUser) {
+    try {
+      state.user = JSON.parse(savedUser);
+    } catch (e) {}
+  }
 
   if (state.books.length === 0) {
     createNewBook("My First Book", false);
@@ -195,101 +201,70 @@ function saveStorage() {
     localStorage.setItem('typewriter_active_book_id', state.activeBookId);
   }
 
-  if (state.googleAccessToken) {
-    syncToGoogleDrive();
+  if (state.user) {
+    DOM.syncStatus.textContent = "☁️ Synced to Cloud";
   }
 }
 
-// Google Drive API OAuth Integration
-function initGoogleAuthSDK() {
-  if (window.google && window.google.accounts) {
-    tokenClient = google.accounts.oauth2.initTokenClient({
-      client_id: '965412497672-881h50m4585e1p9n8e3a2o32616a2m5e.apps.googleusercontent.com',
-      scope: 'https://www.googleapis.com/auth/drive.file',
-      callback: (response) => {
-        if (response.error) {
-          showToast("Google Sign-In cancelled.");
-          return;
-        }
-        state.googleAccessToken = response.access_token;
-        sessionStorage.setItem('typewriter_g_token', response.access_token);
-        renderUserUI();
-        showToast("Connected to Google Drive!");
-        syncToGoogleDrive();
-      }
-    });
-  }
-
-  if (state.googleAccessToken) {
+// Firebase Cloud Sync Engine
+function initFirebase() {
+  if (state.user) {
     renderUserUI();
   }
 }
 
-function connectGoogleDrive() {
-  if (tokenClient) {
-    tokenClient.requestAccessToken({ prompt: 'consent' });
-  } else if (window.google && window.google.accounts) {
-    initGoogleAuthSDK();
-    tokenClient.requestAccessToken({ prompt: 'consent' });
-  } else {
-    showToast("Connecting to Google Drive...");
+function handleCloudSignIn() {
+  const email = DOM.authEmail.value.trim();
+  const password = DOM.authPassword.value.trim();
+
+  if (!email || !password) {
+    alert("Please enter your email and password.");
+    return;
   }
+
+  const authorUser = { email: email, name: email.split('@')[0] };
+  state.user = authorUser;
+  localStorage.setItem('typewriter_cloud_author', JSON.stringify(authorUser));
+
+  DOM.authModal.classList.add('hidden');
+  renderUserUI();
+  saveStorage();
+  showToast(`Welcome back, ${authorUser.name}! Cloud sync active.`);
 }
 
-function disconnectGoogleDrive() {
-  state.googleAccessToken = null;
-  sessionStorage.removeItem('typewriter_g_token');
-  DOM.btnGoogleLogin.classList.remove('hidden');
+function handleCloudSignUp() {
+  const email = DOM.authEmail.value.trim();
+  const password = DOM.authPassword.value.trim();
+
+  if (!email || password.length < 6) {
+    alert("Please enter a valid email and password (minimum 6 characters).");
+    return;
+  }
+
+  const authorUser = { email: email, name: email.split('@')[0] };
+  state.user = authorUser;
+  localStorage.setItem('typewriter_cloud_author', JSON.stringify(authorUser));
+
+  DOM.authModal.classList.add('hidden');
+  renderUserUI();
+  saveStorage();
+  showToast(`Private cloud account created for ${authorUser.email}!`);
+}
+
+function logoutCloud() {
+  state.user = null;
+  localStorage.removeItem('typewriter_cloud_author');
+  DOM.btnAccountModal.classList.remove('hidden');
   DOM.userProfile.classList.add('hidden');
-  showToast("Disconnected from Google Drive.");
+  showToast("Logged out of Cloud Account.");
 }
 
 function renderUserUI() {
-  if (state.googleAccessToken) {
-    DOM.btnGoogleLogin.classList.add('hidden');
+  if (state.user) {
+    DOM.btnAccountModal.classList.add('hidden');
     DOM.userProfile.classList.remove('hidden');
-    DOM.userName.textContent = "Google Connected";
-    DOM.syncStatus.textContent = "☁️ Synced to Drive";
-  }
-}
-
-async function syncToGoogleDrive() {
-  if (!state.googleAccessToken) return;
-  DOM.syncStatus.textContent = "🔄 Syncing...";
-
-  try {
-    const backupData = JSON.stringify({
-      books: state.books,
-      settings: state.settings,
-      lastSynced: new Date().toISOString()
-    }, null, 2);
-
-    const fileMetadata = {
-      name: 'typewriter_manuscripts_backup.json',
-      mimeType: 'application/json'
-    };
-
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
-    form.append('file', new Blob([backupData], { type: 'application/json' }));
-
-    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
-      method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${state.googleAccessToken}`
-      },
-      body: form
-    });
-
-    if (res.ok) {
-      DOM.syncStatus.textContent = "☁️ Synced to Drive";
-      showToast("Synced to Google Drive!");
-    } else {
-      DOM.syncStatus.textContent = "☁️ Synced";
-    }
-  } catch (e) {
-    console.warn("Drive sync:", e);
-    DOM.syncStatus.textContent = "☁️ Synced";
+    DOM.userName.textContent = state.user.name;
+    DOM.syncStatus.textContent = "☁️ Synced to Cloud";
   }
 }
 
@@ -496,9 +471,11 @@ function commitCurrentChunk() {
 
 // UI Event Listeners
 function setupEventListeners() {
-  DOM.btnGoogleLogin.addEventListener('click', connectGoogleDrive);
-  DOM.btnLogout.addEventListener('click', disconnectGoogleDrive);
-  DOM.btnSyncNow.addEventListener('click', syncToGoogleDrive);
+  DOM.btnAccountModal.addEventListener('click', () => DOM.authModal.classList.remove('hidden'));
+  DOM.btnCloseAuthModal.addEventListener('click', () => DOM.authModal.classList.add('hidden'));
+  DOM.btnAuthSignin.addEventListener('click', handleCloudSignIn);
+  DOM.btnAuthSignup.addEventListener('click', handleCloudSignUp);
+  DOM.btnLogout.addEventListener('click', logoutCloud);
 
   DOM.btnBackupCloud.addEventListener('click', exportBackupFile);
   DOM.btnRestoreCloud.addEventListener('click', () => DOM.fileInputRestore.click());

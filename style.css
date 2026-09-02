@@ -82,7 +82,6 @@ body {
   overflow-x: hidden;
 }
 
-/* App Container Layout */
 .app-container {
   display: flex;
   flex-direction: column;
@@ -130,33 +129,10 @@ body {
   padding-left: 10px;
 }
 
-/* Google Auth & Cloud Sync Button */
+/* Auth Container */
 .auth-container {
   display: flex;
   align-items: center;
-}
-
-.btn-google {
-  background-color: #ffffff;
-  color: #3c4043;
-  border: 1px solid #dadce0;
-  padding: 6px 12px;
-  border-radius: 18px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-weight: 500;
-  font-size: 0.8rem;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.2);
-}
-.btn-google:hover {
-  background-color: #f8f9fa;
-  box-shadow: 0 2px 6px rgba(0,0,0,0.3);
-}
-
-.google-icon {
-  width: 16px;
-  height: 16px;
 }
 
 .user-profile {
@@ -169,11 +145,10 @@ body {
   border: 1px solid #3d352e;
 }
 
-.user-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  object-fit: cover;
+.cloud-badge {
+  font-size: 0.75rem;
+  color: #52c41a;
+  font-weight: 600;
 }
 
 .user-info {
@@ -191,6 +166,85 @@ body {
 .sync-status {
   font-size: 0.65rem;
   color: #52c41a;
+}
+
+/* Modal Overlay & Box */
+.modal-overlay {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-color: rgba(0, 0, 0, 0.75);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  z-index: 200;
+}
+
+.modal-box {
+  background-color: #231f1d;
+  border: 1px solid #443c35;
+  border-radius: 8px;
+  padding: 24px;
+  width: 100%;
+  max-width: 400px;
+  box-shadow: 0 15px 35px rgba(0,0,0,0.6);
+  font-family: 'Inter', sans-serif;
+  color: #f5eedc;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.modal-header h3 {
+  font-size: 1.1rem;
+  color: #f5eedc;
+}
+
+.modal-desc {
+  font-size: 0.85rem;
+  color: #a39789;
+  margin-bottom: 20px;
+  line-height: 1.4;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-group label {
+  font-size: 0.8rem;
+  color: #d6ccbf;
+}
+
+.form-group input {
+  background-color: #1a1715;
+  border: 1px solid #443c35;
+  color: #f5eedc;
+  padding: 10px;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.auth-buttons {
+  display: flex;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.auth-buttons button {
+  flex: 1;
+  padding: 10px;
 }
 
 /* Book / Save Slot Selector UI */
@@ -221,10 +275,6 @@ body {
   font-family: 'Inter', sans-serif;
   cursor: pointer;
   max-width: 200px;
-}
-.select-book:focus {
-  outline: none;
-  border-color: var(--accent-color);
 }
 
 .book-display-badge {
@@ -332,7 +382,6 @@ button {
   position: relative;
 }
 
-/* Sidebar */
 .sidebar {
   width: 260px;
   background-color: var(--sidebar-bg);
@@ -402,7 +451,6 @@ button {
   font-family: var(--font-family);
 }
 
-/* Export Menu Popup */
 .export-menu {
   position: absolute;
   top: 60px;
@@ -439,13 +487,9 @@ button {
   color: #fff;
 }
 
-/* Settings Drawer */
 .settings-panel {
   position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
+  top: 0; left: 0; right: 0; bottom: 0;
   background-color: #1e1a18;
   padding: 20px;
   overflow-y: auto;
@@ -513,7 +557,6 @@ button {
   background-color: #842029;
 }
 
-/* Desk & Paper Canvas */
 .desk-area {
   flex: 1;
   display: flex;
@@ -565,7 +608,6 @@ button {
   border: 1px solid #572b2b;
 }
 
-/* The Paper Sheet */
 .paper-sheet {
   width: 100%;
   max-width: 800px;
@@ -592,7 +634,6 @@ button {
   pointer-events: none;
 }
 
-/* Permanent Ink Stream */
 .locked-ink-stream {
   flex: 1;
   font-family: var(--font-family);
@@ -626,7 +667,6 @@ button {
   }
 }
 
-/* Drafting Buffer Box */
 .drafting-buffer-container {
   margin-top: 30px;
   background-color: var(--pencil-bg);
@@ -716,11 +756,9 @@ button {
   color: #ffffff;
 }
 
-/* Toast */
 .toast {
   position: fixed;
-  bottom: 30px;
-  right: 30px;
+  bottom: 30px; right: 30px;
   background-color: #1c1917;
   color: #f5eedc;
   padding: 12px 20px;
