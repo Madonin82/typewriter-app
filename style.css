@@ -89,8 +89,8 @@ body.theme-matrix {
 }
 
 body.theme-matrix #page-sheet {
-  box-shadow: 0 0 45px rgba(0, 255, 65, 0.08), 0 2px 14px rgba(0, 0, 0, 0.95);
-  border: 1px solid rgba(0, 255, 65, 0.15);
+  box-shadow: none;
+  border: none;
 }
 
 body.theme-matrix .ink-stream {
@@ -281,11 +281,25 @@ html, body {
   z-index: 50;
 }
 
+#draft-container {
+  width: 100%;
+  max-width: 700px;
+  padding: 0 30px;
+  box-sizing: border-box;
+  display: flex;
+  justify-content: center;
+}
+
+@media (max-width: 600px) {
+  #draft-container {
+    padding: 0 16px;
+  }
+}
+
 #draft-box {
   pointer-events: all;
   width: 100%;
-  max-width: 700px;
-  margin: 0 20px;
+  margin: 0;
   background: var(--draft-bg);
   border: 1px solid var(--draft-border);
   border-radius: 6px;
@@ -352,6 +366,15 @@ body.theme-dark .draft-footer {
   font-size: 10px;
   color: #999999;
   opacity: 0.6;
+}
+
+.page-word-counter {
+  font-size: 11px;
+  color: var(--ink-faded);
+  letter-spacing: 0.05em;
+  font-family: 'Inter', sans-serif;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
 }
 
 .char-counter {

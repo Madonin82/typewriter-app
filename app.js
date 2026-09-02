@@ -120,6 +120,7 @@ function initDOM() {
     writingSurface: document.getElementById('writing-surface'),
     pageSheet: document.getElementById('page-sheet'),
     pageHeaderInfo: document.getElementById('page-header-info'),
+    pageWordCounter: document.getElementById('page-word-counter'),
     inkStream: document.getElementById('ink-stream'),
     draftInput: document.getElementById('draft-input'),
     charCounter: document.getElementById('char-counter'),
@@ -1161,11 +1162,20 @@ function renderActivePage(lastChunkIsNew = false) {
   }
 }
 
+function updatePageWordCounter() {
+  if (!DOM.pageWordCounter) return;
+  const page = getCurrentPage();
+  const currentWords = page ? getPageWordCount(page) : 0;
+  const targetWords = state.settings.wordsPerPage || 300;
+  DOM.pageWordCounter.textContent = `${currentWords} / ${targetWords}`;
+}
+
 function updateStats() {
   const book = getActiveBook();
   if (DOM.statTotalWords) DOM.statTotalWords.textContent = getBookTotalWordCount(book);
   if (DOM.statTotalPages) DOM.statTotalPages.textContent = book ? book.pages.length : 0;
   if (DOM.statTotalBooks) DOM.statTotalBooks.textContent = state.books.length;
+  updatePageWordCounter();
 }
 
 function applyTheme() {
