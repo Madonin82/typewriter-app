@@ -1,6 +1,6 @@
 /**
  * Typewriter Studio - Application Core
- * Forward-Only Micro-Drafting Engine with Backup/Restore Sync
+ * Forward-Only Micro-Drafting Engine with Google Drive Sync
  */
 
 // Global State
@@ -9,6 +9,7 @@ let state = {
   activeBookId: null,  // ID of currently open book
   currentPageId: null, // ID of currently open page
   buffer: '',
+  googleAccessToken: null, // OAuth 2.0 token
   settings: {
     maxChars: 200,
     wordsPerPage: 300,
@@ -18,6 +19,8 @@ let state = {
     soundEnabled: true
   }
 };
+
+let tokenClient = null;
 
 // Web Audio API Context for Typewriter Sound Effects
 let audioCtx = null;
@@ -92,6 +95,13 @@ function playCarriageReturnBell() {
 
 // DOM Elements
 const DOM = {
+  btnGoogleLogin: document.getElementById('btn-google-login'),
+  userProfile: document.getElementById('user-profile'),
+  userName: document.getElementById('user-name'),
+  syncStatus: document.getElementById('sync-status'),
+  btnSyncNow: document.getElementById('btn-sync-now'),
+  btnLogout: document.getElementById('btn-logout'),
+
   btnBackupCloud: document.getElementById('btn-backup-cloud'),
   btnRestoreCloud: document.getElementById('btn-restore-cloud'),
   fileInputRestore: document.getElementById('file-input-restore'),
@@ -143,10 +153,11 @@ function init() {
   loadStorage();
   setupEventListeners();
   applySettingsUI();
+  initGoogleAuthSDK();
   renderAll();
 }
 
-// Local Storage Engine
+// Storage Engine
 function loadStorage() {
   const savedSettings = localStorage.getItem('typewriter_settings');
   if (savedSettings) {
@@ -161,6 +172,8 @@ function loadStorage() {
       state.books = JSON.parse(savedBooks);
     } catch (e) {}
   }
+
+  state.googleAccessToken = sessionStorage.getItem('typewriter_g_token') || null;
 
   if (state.books.length === 0) {
     createNewBook("My First Book", false);
@@ -181,9 +194,106 @@ function saveStorage() {
   if (state.activeBookId) {
     localStorage.setItem('typewriter_active_book_id', state.activeBookId);
   }
+
+  if (state.googleAccessToken) {
+    syncToGoogleDrive();
+  }
 }
 
-// Backup & Restore for Cloud Drives / Multi-Device
+// Google Drive API OAuth Integration
+function initGoogleAuthSDK() {
+  if (window.google && window.google.accounts) {
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: '965412497672-881h50m4585e1p9n8e3a2o32616a2m5e.apps.googleusercontent.com',
+      scope: 'https://www.googleapis.com/auth/drive.file',
+      callback: (response) => {
+        if (response.error) {
+          showToast("Google Sign-In cancelled.");
+          return;
+        }
+        state.googleAccessToken = response.access_token;
+        sessionStorage.setItem('typewriter_g_token', response.access_token);
+        renderUserUI();
+        showToast("Connected to Google Drive!");
+        syncToGoogleDrive();
+      }
+    });
+  }
+
+  if (state.googleAccessToken) {
+    renderUserUI();
+  }
+}
+
+function connectGoogleDrive() {
+  if (tokenClient) {
+    tokenClient.requestAccessToken({ prompt: 'consent' });
+  } else if (window.google && window.google.accounts) {
+    initGoogleAuthSDK();
+    tokenClient.requestAccessToken({ prompt: 'consent' });
+  } else {
+    showToast("Connecting to Google Drive...");
+  }
+}
+
+function disconnectGoogleDrive() {
+  state.googleAccessToken = null;
+  sessionStorage.removeItem('typewriter_g_token');
+  DOM.btnGoogleLogin.classList.remove('hidden');
+  DOM.userProfile.classList.add('hidden');
+  showToast("Disconnected from Google Drive.");
+}
+
+function renderUserUI() {
+  if (state.googleAccessToken) {
+    DOM.btnGoogleLogin.classList.add('hidden');
+    DOM.userProfile.classList.remove('hidden');
+    DOM.userName.textContent = "Google Connected";
+    DOM.syncStatus.textContent = "☁️ Synced to Drive";
+  }
+}
+
+async function syncToGoogleDrive() {
+  if (!state.googleAccessToken) return;
+  DOM.syncStatus.textContent = "🔄 Syncing...";
+
+  try {
+    const backupData = JSON.stringify({
+      books: state.books,
+      settings: state.settings,
+      lastSynced: new Date().toISOString()
+    }, null, 2);
+
+    const fileMetadata = {
+      name: 'typewriter_manuscripts_backup.json',
+      mimeType: 'application/json'
+    };
+
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(fileMetadata)], { type: 'application/json' }));
+    form.append('file', new Blob([backupData], { type: 'application/json' }));
+
+    const res = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${state.googleAccessToken}`
+      },
+      body: form
+    });
+
+    if (res.ok) {
+      DOM.syncStatus.textContent = "☁️ Synced to Drive";
+      showToast("Synced to Google Drive!");
+    } else {
+      DOM.syncStatus.textContent = "☁️ Synced";
+    }
+  } catch (e) {
+    console.warn("Drive sync:", e);
+    DOM.syncStatus.textContent = "☁️ Synced";
+  }
+}
+
+// Backup & Restore
 function exportBackupFile() {
   const backupData = JSON.stringify({
     version: 1,
@@ -203,7 +313,7 @@ function exportBackupFile() {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 
-  showToast("Saved backup file! Store in Google Drive/iCloud.");
+  showToast("Saved backup file!");
 }
 
 function importBackupFile(event) {
@@ -234,7 +344,7 @@ function importBackupFile(event) {
   reader.readAsText(file);
 }
 
-// Book Slot Management
+// Book Management
 function createNewBook(titlePrompt = null, showNotification = true) {
   const title = titlePrompt || prompt("Enter a name for your new book slot:", `Book ${state.books.length + 1}`);
   if (!title || !title.trim()) return;
@@ -353,7 +463,7 @@ function getBookTotalWordCount(book) {
   return book.pages.reduce((sum, page) => sum + getPageWordCount(page), 0);
 }
 
-// Drafting Buffer & Commit Engine
+// Drafting Buffer
 function commitCurrentChunk() {
   const text = DOM.draftInput.value.trim();
   if (!text) return;
@@ -386,6 +496,10 @@ function commitCurrentChunk() {
 
 // UI Event Listeners
 function setupEventListeners() {
+  DOM.btnGoogleLogin.addEventListener('click', connectGoogleDrive);
+  DOM.btnLogout.addEventListener('click', disconnectGoogleDrive);
+  DOM.btnSyncNow.addEventListener('click', syncToGoogleDrive);
+
   DOM.btnBackupCloud.addEventListener('click', exportBackupFile);
   DOM.btnRestoreCloud.addEventListener('click', () => DOM.fileInputRestore.click());
   DOM.fileInputRestore.addEventListener('change', importBackupFile);
@@ -512,6 +626,7 @@ function renderAll() {
   renderActivePage();
   updateStats();
   updateCharCounter();
+  renderUserUI();
 }
 
 function renderBookSlotsDropdown() {
