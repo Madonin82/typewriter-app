@@ -70,6 +70,72 @@ body.theme-dark {
   --draft-text: #ded6c8;
 }
 
+body.theme-matrix {
+  --paper: #030804;
+  --paper-subtle: #07150a;
+  --ink: #2bf042;
+  --ink-faded: #137722;
+  --ink-locked: #20e038;
+  --panel-bg: #040d06;
+  --panel-text: #6be879;
+  --panel-border: #14401c;
+  --accent: #00ff41;
+  --accent-light: #57ff80;
+  --accent-hover: #00cc33;
+  --overlay-bg: rgba(1, 10, 2, 0.85);
+  --draft-bg: rgba(5, 18, 8, 0.96);
+  --draft-border: #175222;
+  --draft-text: #00ff41;
+}
+
+body.theme-matrix #page-sheet {
+  box-shadow: 0 0 45px rgba(0, 255, 65, 0.08), 0 2px 14px rgba(0, 0, 0, 0.95);
+  border: 1px solid rgba(0, 255, 65, 0.15);
+}
+
+body.theme-matrix .ink-stream {
+  text-shadow: 0 0 8px rgba(0, 255, 65, 0.55), 0 0 2px rgba(0, 255, 65, 0.85);
+}
+
+body.theme-matrix #draft-box {
+  box-shadow: 0 0 30px rgba(0, 255, 65, 0.12), 0 10px 40px rgba(0, 0, 0, 0.8);
+  border-color: #175222;
+}
+
+body.theme-matrix #draft-box textarea {
+  text-shadow: 0 0 6px rgba(0, 255, 65, 0.6);
+}
+
+body.theme-matrix #draft-box textarea::placeholder {
+  color: #145e23;
+  text-shadow: none;
+}
+
+body.theme-matrix .ink-cursor {
+  background: #00ff41;
+  box-shadow: 0 0 10px #00ff41, 0 0 3px #57ff80;
+  width: 9px;
+  height: 1.15em;
+  animation: blink 0.85s step-end infinite;
+}
+
+body.theme-matrix .draft-footer {
+  border-top-color: rgba(0, 255, 65, 0.15);
+}
+
+body.theme-matrix .btn-commit {
+  background: #003b10;
+  border-color: #00ff41;
+  color: #00ff41;
+  box-shadow: 0 0 10px rgba(0, 255, 65, 0.2);
+}
+
+body.theme-matrix .btn-commit:hover {
+  background: #00ff41;
+  color: #030804;
+  box-shadow: 0 0 18px rgba(0, 255, 65, 0.6);
+}
+
 /* ─── FONT SELECTIONS ──────────────────────────────────────── */
 body.font-courier {
   --font-family: 'Courier Prime', 'Courier New', monospace;
