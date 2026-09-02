@@ -1,6 +1,6 @@
 {
   "name": "Typewriter - Forward-Only Micro-Drafting Studio",
-  "description": "Forward-only micro-drafting studio with typewriter physics, page mechanics, manuscript export, and Google Drive cloud backup integration.",
+  "description": "Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, and manuscript export.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

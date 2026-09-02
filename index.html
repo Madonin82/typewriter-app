@@ -4,17 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Typewriter - Forward-Only Micro-Drafting Studio</title>
-  <meta name="description" content="Forward-only micro-drafting studio with typewriter physics, page mechanics, manuscript export, and Google Drive cloud backup integration.">
+  <meta name="description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, and manuscript export.">
   <meta property="og:title" content="Typewriter - Forward-Only Micro-Drafting Studio">
-  <meta property="og:description" content="Forward-only micro-drafting studio with typewriter physics, page mechanics, manuscript export, and Google Drive cloud backup integration.">
+  <meta property="og:description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, and manuscript export.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Special+Elite&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   
-  <!-- PDF Generator Library -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
   <!-- Official Firebase SDK (Compat) -->
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
@@ -73,14 +70,9 @@
       <div class="panel-divider"></div>
       <div class="panel-action" id="btn-new-page"><span>📄</span> + New Page</div>
       <div class="panel-action" id="btn-export-modal-toggle"><span>📥</span> Export Manuscript</div>
-      <div class="panel-action" id="btn-backup-cloud"><span>💾</span> Save Local Backup (.json)</div>
-      <div class="panel-action" id="btn-restore-cloud"><span>📂</span> Load Local Backup</div>
+      <div class="panel-action" id="btn-backup-cloud"><span>💾</span> Backup File (.json)</div>
+      <div class="panel-action" id="btn-restore-cloud"><span>📂</span> Load Backup File</div>
       <input type="file" id="file-input-restore" accept=".json" class="hidden">
-      
-      <div class="panel-section-label" style="margin-top: 14px;">Google Drive</div>
-      <div class="panel-action" id="btn-drive-save-book"><span>☁️</span> Save Book to Drive</div>
-      <div class="panel-action" id="btn-drive-save-backup"><span>🛡️</span> Backup All to Drive</div>
-      <div class="panel-action" id="btn-drive-browser-toggle"><span>📂</span> Open from Google Drive</div>
     </div>
 
     <!-- Center: Main Brand, Auth & Navigation -->
@@ -133,7 +125,6 @@
           <option value="white">Clean White</option>
           <option value="sepia">Vintage Sepia</option>
           <option value="dark">Midnight Ink (Dark)</option>
-          <option value="matrix">Matrix Phosphor (Green on Black)</option>
         </select>
       </div>
 
@@ -190,102 +181,27 @@
       </div>
       <p class="modal-desc">Export the entire current book draft into your preferred manuscript format:</p>
       <div class="export-options-grid">
-        <button id="btn-export-pdf" class="export-card-btn">
-          <span class="export-icon">📑</span>
-          <div class="export-info">
-            <strong>PDF Document (.pdf)</strong>
-            <span>Formatted manuscript with page breaks</span>
-          </div>
-        </button>
-        <button id="btn-export-docx" class="export-card-btn">
-          <span class="export-icon">📘</span>
-          <div class="export-info">
-            <strong>Word Document (.docx)</strong>
-            <span>Microsoft Word & Docs format</span>
-          </div>
-        </button>
         <button id="btn-export-txt" class="export-card-btn">
           <span class="export-icon">📄</span>
           <div class="export-info">
             <strong>Plain Text (.txt)</strong>
-            <span>Download clean text file</span>
+            <span>Clean, unformatted text file</span>
           </div>
         </button>
         <button id="btn-export-md" class="export-card-btn">
           <span class="export-icon">📝</span>
           <div class="export-info">
             <strong>Markdown (.md)</strong>
-            <span>Download with headers & chapters</span>
+            <span>Includes page headers & chapters</span>
           </div>
         </button>
         <button id="btn-copy-all" class="export-card-btn">
           <span class="export-icon">📋</span>
           <div class="export-info">
             <strong>Copy to Clipboard</strong>
-            <span>Quick paste into any editor</span>
+            <span>Quick paste into any document editor</span>
           </div>
         </button>
-        <button id="btn-export-drive-txt" class="export-card-btn export-drive-btn">
-          <span class="export-icon">☁️</span>
-          <div class="export-info">
-            <strong>Save to Google Drive (.txt)</strong>
-            <span>Save clean draft to your Drive</span>
-          </div>
-        </button>
-        <button id="btn-export-drive-md" class="export-card-btn export-drive-btn">
-          <span class="export-icon">💾</span>
-          <div class="export-info">
-            <strong>Save to Google Drive (.md)</strong>
-            <span>Save Markdown draft to your Drive</span>
-          </div>
-        </button>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── GOOGLE DRIVE CLOUD EXPLORER MODAL ── -->
-  <div id="drive-modal" class="modal-backdrop hidden">
-    <div class="modal-card drive-modal-card">
-      <div class="modal-header">
-        <h3>☁️ Google Drive Cloud Storage</h3>
-        <button id="btn-close-drive-modal" class="btn-close">×</button>
-      </div>
-      <p class="modal-desc">
-        Manage your manuscripts and studio backups stored securely on your Google Drive.
-      </p>
-
-      <!-- Auth State Box for Drive -->
-      <div id="drive-auth-box" class="drive-auth-card">
-        <div class="drive-auth-info">
-          <span class="drive-status-indicator" id="drive-status-dot">●</span>
-          <span id="drive-auth-status-text" class="drive-status-text">Checking Google Drive access...</span>
-        </div>
-        <button id="btn-drive-login" class="menu-btn google drive-login-btn">
-          <svg class="google-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
-          Connect Google Drive
-        </button>
-      </div>
-
-      <!-- Quick Upload Actions -->
-      <div class="drive-quick-actions" id="drive-quick-actions">
-        <button id="btn-drive-upload-current" class="menu-btn primary-action">
-          ☁️ Save Current Book to Drive
-        </button>
-        <button id="btn-drive-upload-backup" class="menu-btn">
-          🛡️ Save Full Studio Backup to Drive
-        </button>
-      </div>
-
-      <!-- Drive File List -->
-      <div class="drive-files-container">
-        <div class="drive-files-header">
-          <span>Files on your Google Drive</span>
-          <button id="btn-drive-refresh" class="btn-icon-subtle" title="Refresh file list">🔄</button>
-        </div>
-        <div id="drive-files-list" class="drive-files-list">
-          <!-- Populated dynamically -->
-          <div class="drive-empty-notice">Sign in to view your Google Drive manuscripts.</div>
-        </div>
       </div>
     </div>
   </div>
