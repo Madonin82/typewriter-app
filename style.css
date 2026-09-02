@@ -198,7 +198,7 @@ html, body {
 .page {
   width: 100%;
   max-width: 700px;
-  min-height: calc(100vh - 260px);
+  min-height: calc(100dvh - 260px);
   background: var(--paper);
   position: relative;
   display: flex;
@@ -1493,5 +1493,21 @@ body.theme-dark #esc-hint:hover {
   #draft-box {
     margin: 0 12px;
     padding: 12px 14px;
+  }
+}
+
+@media (max-width: 600px) {
+  .page.has-timestamps {
+    padding-left: 20px;
+  }
+  .ink-stream.has-timestamps .ink-chunk-row {
+    margin-bottom: 12px;
+  }
+  .commit-timestamp {
+    position: static;
+    display: block;
+    text-align: left;
+    margin-bottom: 2px;
+    width: auto;
   }
 }
