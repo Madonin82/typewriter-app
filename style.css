@@ -236,6 +236,13 @@ html, body {
   color: var(--ink-locked);
 }
 
+.ink-ghost {
+  display: inline;
+  color: var(--ink-locked);
+  opacity: 0.35;
+  pointer-events: none;
+}
+
 @keyframes typewriterStrike {
   0% {
     opacity: 0;
@@ -455,8 +462,8 @@ input:checked + .toggle-slider:before {
   outline: none;
   resize: none;
   font-family: var(--font-family);
-  font-size: 16px;
-  line-height: 1.7;
+  font-size: 17px;
+  line-height: 1.85;
   color: transparent !important;
   caret-color: var(--draft-text);
   background: transparent;
@@ -465,7 +472,7 @@ input:checked + .toggle-slider:before {
   tab-size: 4;
   -moz-tab-size: 4;
   box-sizing: border-box;
-  padding-left: 0;
+  padding: 0;
   text-indent: 0;
   transition: text-indent 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -478,15 +485,15 @@ input:checked + .toggle-slider:before {
   bottom: 0;
   pointer-events: none;
   font-family: var(--font-family);
-  font-size: 16px;
-  line-height: 1.7;
+  font-size: 17px;
+  line-height: 1.85;
   color: var(--draft-text);
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-wrap: break-word;
   tab-size: 4;
   -moz-tab-size: 4;
-  padding-left: 0;
+  padding: 0;
   text-indent: 0;
   transition: text-indent 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   overflow-y: hidden;

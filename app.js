@@ -1235,6 +1235,16 @@ function renderActivePage(lastChunkIsNew = false) {
     });
 
     if (!page.locked) {
+      const anchor = document.createElement('span');
+      anchor.id = 'ink-cursor-anchor';
+      DOM.inkStream.appendChild(anchor);
+
+      const ghost = document.createElement('span');
+      ghost.id = 'ink-ghost';
+      ghost.className = 'ink-ghost';
+      ghost.textContent = state.buffer || '';
+      DOM.inkStream.appendChild(ghost);
+
       const cursor = document.createElement('span');
       cursor.className = 'ink-cursor';
       cursor.id = 'ink-cursor';
@@ -1268,7 +1278,7 @@ function renderActivePage(lastChunkIsNew = false) {
 }
 
 function updateDraftInputCursorAlignment() {
-  const inkCursor = document.getElementById('ink-cursor');
+  const inkCursor = document.getElementById('ink-cursor-anchor') || document.getElementById('ink-cursor');
   if (!inkCursor || !DOM.pageSheet || !DOM.draftInput || !DOM.draftBox) return;
 
   const pageRect = DOM.pageSheet.getBoundingClientRect();
@@ -1707,11 +1717,9 @@ function setupEventListeners() {
         state.buffer = DOM.draftInput.value;
         playKeyClickSound();
 
-        if (state.buffer.length > state.settings.maxChars) {
-          updateCharCounter();
-        } else {
-          updateCharCounter();
-        }
+        updateCharCounter();
+        const ghost = document.getElementById('ink-ghost');
+        if (ghost) ghost.textContent = state.buffer;
         return;
       }
 
@@ -1769,6 +1777,16 @@ function setupEventListeners() {
       state.buffer = e.target.value;
       playKeyClickSound();
       updateCharCounter();
+      const ghost = document.getElementById('ink-ghost');
+      if (ghost) {
+        ghost.textContent = state.buffer;
+        // Auto-scroll to ensure ghost text stays visible above the input box as it grows
+        requestAnimationFrame(() => {
+          if (DOM.writingSurface) {
+            DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'auto' });
+          }
+        });
+      }
     };
   }
 
