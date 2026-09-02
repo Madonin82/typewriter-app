@@ -1,8 +1,21 @@
 /**
  * Typewriter Studio - Application Core
- * Forward-Only Micro-Drafting Engine
- * Pure Local Storage + Direct File Save/Open
+ * Forward-Only Micro-Drafting Engine with Firebase Auth & Firestore Sync
+ * Firebase Project: typewriter-app-6e624
  */
+
+// Firebase Configuration for Project: typewriter-app-6e624
+const firebaseConfig = {
+  authDomain: "typewriter-app-6e624.firebaseapp.com",
+  projectId: "typewriter-app-6e624",
+  storageBucket: "typewriter-app-6e624.firebasestorage.app",
+  messagingSenderId: "965412497672",
+  appId: "1:965412497672:web:typewriter-app"
+};
+
+let auth = null;
+let db = null;
+let currentUser = null;
 
 // Global State
 let state = {
@@ -93,6 +106,13 @@ let DOM = {};
 
 function initDOM() {
   DOM = {
+    btnGoogleSignIn: document.getElementById('btn-google-signin'),
+    userProfile: document.getElementById('user-profile'),
+    userAvatar: document.getElementById('user-avatar'),
+    userName: document.getElementById('user-name'),
+    syncStatus: document.getElementById('sync-status'),
+    btnLogout: document.getElementById('btn-logout'),
+
     btnBackupCloud: document.getElementById('btn-backup-cloud'),
     btnRestoreCloud: document.getElementById('btn-restore-cloud'),
     fileInputRestore: document.getElementById('file-input-restore'),
@@ -140,6 +160,110 @@ function initDOM() {
   };
 }
 
+// Initialize Firebase Services
+function initFirebase() {
+  if (typeof firebase !== 'undefined' && firebase.initializeApp) {
+    try {
+      if (!firebase.apps.length) {
+        firebase.initializeApp(firebaseConfig);
+      }
+      auth = firebase.auth();
+      db = firebase.firestore();
+
+      auth.onAuthStateChanged((user) => {
+        if (user) {
+          currentUser = user;
+          renderUserUI();
+          loadFromFirestore(user.uid);
+        } else {
+          currentUser = null;
+          renderUserUI();
+        }
+      });
+    } catch (e) {
+      console.warn("Firebase Init:", e);
+    }
+  }
+}
+
+function handleGoogleSignIn() {
+  if (!auth) {
+    initFirebase();
+  }
+  if (auth) {
+    const provider = new firebase.auth.GoogleAuthProvider();
+    auth.signInWithPopup(provider).then((result) => {
+      showToast(`Welcome, ${result.user.displayName || 'Author'}! Connected to Firestore.`);
+    }).catch((error) => {
+      console.error("Auth error:", error);
+      showToast(`Sign in error: ${error.message}`);
+    });
+  } else {
+    showToast("Firebase Auth initializing...");
+  }
+}
+
+function handleSignOut() {
+  if (auth) {
+    auth.signOut().then(() => {
+      showToast("Signed out.");
+    });
+  }
+}
+
+function renderUserUI() {
+  if (currentUser) {
+    if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.classList.add('hidden');
+    if (DOM.userProfile) DOM.userProfile.classList.remove('hidden');
+    if (DOM.userName) DOM.userName.textContent = currentUser.displayName || currentUser.email.split('@')[0];
+    if (DOM.userAvatar && currentUser.photoURL) DOM.userAvatar.src = currentUser.photoURL;
+    if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Firestore Synced";
+  } else {
+    if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.classList.remove('hidden');
+    if (DOM.userProfile) DOM.userProfile.classList.add('hidden');
+  }
+}
+
+// Firestore Database Realtime Sync
+function syncToFirestore() {
+  if (!db || !currentUser) return;
+  if (DOM.syncStatus) DOM.syncStatus.textContent = "🔄 Syncing...";
+
+  db.collection("users").doc(currentUser.uid).set({
+    books: state.books,
+    settings: state.settings,
+    lastSynced: firebase.firestore.FieldValue.serverTimestamp()
+  }, { merge: true }).then(() => {
+    if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Firestore Synced";
+  }).catch((e) => {
+    console.warn("Firestore sync error:", e);
+    if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Local (Sync paused)";
+  });
+}
+
+function loadFromFirestore(uid) {
+  if (!db) return;
+  db.collection("users").doc(uid).get().then((doc) => {
+    if (doc.exists) {
+      const data = doc.data();
+      if (data.books && data.books.length > 0) {
+        state.books = data.books;
+        if (data.settings) state.settings = { ...state.settings, ...data.settings };
+        state.activeBookId = state.books[0].id;
+        state.currentPageId = state.books[0].pages[state.books[0].pages.length - 1].id;
+        saveStorage(false); // Save locally without echoing back to cloud
+        renderAll();
+        showToast("Loaded your manuscripts from Firestore!");
+      }
+    } else {
+      // First time user: save initial local books to Firestore
+      syncToFirestore();
+    }
+  }).catch((e) => {
+    console.warn("Firestore load error:", e);
+  });
+}
+
 // Storage Engine
 function loadStorage() {
   try {
@@ -163,7 +287,7 @@ function loadStorage() {
   }
 }
 
-function saveStorage() {
+function saveStorage(syncCloud = true) {
   try {
     localStorage.setItem('typewriter_settings', JSON.stringify(state.settings));
     localStorage.setItem('typewriter_books', JSON.stringify(state.books));
@@ -171,10 +295,14 @@ function saveStorage() {
       localStorage.setItem('typewriter_active_book_id', state.activeBookId);
     }
   } catch (e) {}
+
+  if (syncCloud && currentUser) {
+    syncToFirestore();
+  }
 }
 
-// Direct File Save & Open (Save directly to PC / Google Drive / iCloud)
-function saveFileBackup() {
+// Backup & Restore
+function exportBackupFile() {
   const backupData = JSON.stringify({
     version: 1,
     exportDate: new Date().toISOString(),
@@ -182,7 +310,7 @@ function saveFileBackup() {
     settings: state.settings
   }, null, 2);
 
-  const filename = `typewriter_books_backup_${new Date().toISOString().slice(0,10)}.json`;
+  const filename = `typewriter_backup_${new Date().toISOString().slice(0,10)}.json`;
   const blob = new Blob([backupData], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
@@ -193,10 +321,10 @@ function saveFileBackup() {
   document.body.removeChild(link);
   URL.revokeObjectURL(url);
 
-  showToast("💾 File saved! (Save it in your Google Drive or iCloud folder)");
+  showToast("Saved backup file!");
 }
 
-function loadFileBackup(event) {
+function importBackupFile(event) {
   const file = event.target.files[0];
   if (!file) return;
 
@@ -213,12 +341,12 @@ function loadFileBackup(event) {
         state.currentPageId = state.books[0].pages[state.books[0].pages.length - 1].id;
         saveStorage();
         renderAll();
-        showToast("📂 All books loaded successfully!");
+        showToast("Backup restored successfully!");
       } else {
-        alert("Invalid file. Please select a valid typewriter backup .json file.");
+        alert("Invalid backup file format.");
       }
     } catch (err) {
-      alert("Error reading file.");
+      alert("Error reading backup file.");
     }
   };
   reader.readAsText(file);
@@ -377,9 +505,12 @@ function commitCurrentChunk() {
 
 // Event Listeners
 function setupEventListeners() {
-  if (DOM.btnBackupCloud) DOM.btnBackupCloud.onclick = saveFileBackup;
+  if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.onclick = handleGoogleSignIn;
+  if (DOM.btnLogout) DOM.btnLogout.onclick = handleSignOut;
+
+  if (DOM.btnBackupCloud) DOM.btnBackupCloud.onclick = exportBackupFile;
   if (DOM.btnRestoreCloud) DOM.btnRestoreCloud.onclick = () => DOM.fileInputRestore && DOM.fileInputRestore.click();
-  if (DOM.fileInputRestore) DOM.fileInputRestore.onchange = loadFileBackup;
+  if (DOM.fileInputRestore) DOM.fileInputRestore.onchange = importBackupFile;
 
   if (DOM.selectBookSlot) {
     DOM.selectBookSlot.onchange = (e) => {
@@ -521,6 +652,7 @@ function renderAll() {
   renderActivePage();
   updateStats();
   updateCharCounter();
+  renderUserUI();
 }
 
 function renderBookSlotsDropdown() {
@@ -697,6 +829,7 @@ function init() {
   loadStorage();
   setupEventListeners();
   applySettingsUI();
+  initFirebase();
   renderAll();
 }
 
