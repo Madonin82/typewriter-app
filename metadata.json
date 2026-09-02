@@ -1,6 +1,6 @@
 {
   "name": "Typewriter - Forward-Only Micro-Drafting Studio",
-  "description": "Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, Firestore sync, and Google Drive export.",
+  "description": "Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, offline PWA desktop installation, and Google Drive export.",
   "requestFramePermissions": [],
   "majorCapabilities": [
     "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"

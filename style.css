@@ -1043,6 +1043,61 @@ body.theme-dark #esc-hint:hover {
   color: #ffffff;
 }
 
+.menu-btn.install-pwa {
+  border-color: #8b7355;
+  color: #ebdcc0;
+  background: rgba(139, 115, 85, 0.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.menu-btn.install-pwa:hover {
+  background: rgba(139, 115, 85, 0.28);
+  border-color: #c59b4e;
+  color: #ffffff;
+}
+
+.offline-badge {
+  position: fixed;
+  bottom: 16px;
+  left: 16px;
+  background: rgba(30, 26, 22, 0.95);
+  border: 1px solid #5a4832;
+  color: #e8c88c;
+  font-size: 11px;
+  font-family: 'Inter', sans-serif;
+  padding: 6px 12px;
+  border-radius: 20px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.offline-badge.visible {
+  opacity: 1;
+}
+
+.offline-pulse-dot {
+  width: 7px;
+  height: 7px;
+  background-color: #e8a84c;
+  border-radius: 50%;
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+  0% { transform: scale(0.95); opacity: 0.6; }
+  50% { transform: scale(1.3); opacity: 1; }
+  100% { transform: scale(0.95); opacity: 0.6; }
+}
+
 /* ─── TOAST NOTIFICATION ───────────────────────────────────── */
 .toast {
   position: fixed;

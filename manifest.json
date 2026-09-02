@@ -1,0 +1,54 @@
+{
+  "id": "./",
+  "name": "Typewriter - Forward-Only Micro-Drafting Studio",
+  "short_name": "Typewriter",
+  "description": "Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, Firestore sync, and Google Drive export.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#141210",
+  "background_color": "#141210",
+  "categories": ["productivity", "utilities", "books"],
+  "icons": [
+    {
+      "src": "./pwa-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./pwa-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "./pwa-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Open Typewriter",
+      "short_name": "Draft",
+      "description": "Start typing a new draft",
+      "url": "./index.html",
+      "icons": [
+        {
+          "src": "./pwa-192x192.png",
+          "sizes": "192x192",
+          "type": "image/png"
+        }
+      ]
+    }
+  ]
+}

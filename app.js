@@ -38,6 +38,8 @@ let state = {
 
 let overlayOpen = false;
 let hintTimer = null;
+let deferredInstallPrompt = null;
+let isAppInstalled = false;
 
 // Web Audio API Context for Typewriter Sound Effects
 let audioCtx = null;
@@ -171,6 +173,13 @@ function initDOM() {
     btnDriveBackup: document.getElementById('btn-drive-backup'),
     btnDriveManager: document.getElementById('btn-drive-manager'),
 
+    btnInstallPwa: document.getElementById('btn-install-pwa'),
+    btnPwaInstallLeft: document.getElementById('btn-pwa-install-left'),
+    iosInstallModal: document.getElementById('ios-install-modal'),
+    btnCloseIosModal: document.getElementById('btn-close-ios-modal'),
+    btnCloseIosModalBtn: document.getElementById('btn-close-ios-modal-btn'),
+    offlineBadge: document.getElementById('offline-badge'),
+
     driveModal: document.getElementById('drive-modal'),
     btnCloseDriveModal: document.getElementById('btn-close-drive-modal'),
     btnRefreshDrive: document.getElementById('btn-refresh-drive'),
@@ -182,6 +191,59 @@ function initDOM() {
 
     toast: document.getElementById('toast')
   };
+}
+
+// ─── PWA & OFFLINE CONTROLS ──────────────────────────────────
+
+function checkPwaInstallState() {
+  const isStandalone = window.matchMedia('(display-mode: standalone)').matches ||
+                       window.navigator.standalone === true;
+  isAppInstalled = isStandalone;
+
+  if (isAppInstalled) {
+    if (DOM.btnInstallPwa) DOM.btnInstallPwa.classList.add('hidden');
+    if (DOM.btnPwaInstallLeft) DOM.btnPwaInstallLeft.classList.add('hidden');
+  }
+}
+
+async function handleInstallPrompt() {
+  const isIOS = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
+
+  if (isAppInstalled) {
+    showToast("Typewriter is already running as an installed standalone app!");
+    return;
+  }
+
+  if (deferredInstallPrompt) {
+    try {
+      deferredInstallPrompt.prompt();
+      const choice = await deferredInstallPrompt.userChoice;
+      if (choice.outcome === 'accepted') {
+        showToast("Typewriter installation started!");
+        deferredInstallPrompt = null;
+        isAppInstalled = true;
+        checkPwaInstallState();
+      } else {
+        showToast("Installation postponed.");
+      }
+    } catch (err) {
+      console.error("PWA install error:", err);
+    }
+  } else if (isIOS) {
+    if (DOM.iosInstallModal) DOM.iosInstallModal.classList.remove('hidden');
+  } else {
+    showToast("To install on Windows or Mac, click the Install App icon (⊞ or 📥) in your browser's address bar.");
+  }
+}
+
+function updateNetworkStatus(online) {
+  if (DOM.offlineBadge) {
+    if (!online) {
+      DOM.offlineBadge.classList.add('visible');
+    } else {
+      DOM.offlineBadge.classList.remove('visible');
+    }
+  }
 }
 
 // ─── OVERLAY SYSTEM (ESC) ───────────────────────────────────
@@ -1064,6 +1126,10 @@ function setupEventListeners() {
         DOM.driveModal.classList.add('hidden');
         return;
       }
+      if (DOM.iosInstallModal && !DOM.iosInstallModal.classList.contains('hidden')) {
+        DOM.iosInstallModal.classList.add('hidden');
+        return;
+      }
       if (DOM.exportModal && !DOM.exportModal.classList.contains('hidden')) {
         DOM.exportModal.classList.add('hidden');
         return;
@@ -1164,6 +1230,42 @@ function setupEventListeners() {
   if (DOM.btnQuickExportDrive) DOM.btnQuickExportDrive.onclick = () => saveCurrentBookToDrive(true);
   if (DOM.btnRefreshDrive) DOM.btnRefreshDrive.onclick = refreshDriveFiles;
   if (DOM.btnCloseDriveModal) DOM.btnCloseDriveModal.onclick = closeDriveModal;
+
+  // PWA Install buttons & modals
+  if (DOM.btnInstallPwa) DOM.btnInstallPwa.onclick = handleInstallPrompt;
+  if (DOM.btnPwaInstallLeft) DOM.btnPwaInstallLeft.onclick = handleInstallPrompt;
+  if (DOM.btnCloseIosModal) DOM.btnCloseIosModal.onclick = () => DOM.iosInstallModal && DOM.iosInstallModal.classList.add('hidden');
+  if (DOM.btnCloseIosModalBtn) DOM.btnCloseIosModalBtn.onclick = () => DOM.iosInstallModal && DOM.iosInstallModal.classList.add('hidden');
+
+  if (DOM.iosInstallModal) {
+    DOM.iosInstallModal.onclick = (e) => {
+      if (e.target === DOM.iosInstallModal) DOM.iosInstallModal.classList.add('hidden');
+    };
+  }
+
+  // Network Online / Offline Events
+  window.addEventListener('online', () => {
+    updateNetworkStatus(true);
+    showToast("Back online. Cloud sync active.");
+  });
+  window.addEventListener('offline', () => {
+    updateNetworkStatus(false);
+    showToast("Offline mode. Auto-saving to local disk.");
+  });
+
+  // PWA Prompt Listeners
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredInstallPrompt = e;
+    checkPwaInstallState();
+  });
+
+  window.addEventListener('appinstalled', () => {
+    deferredInstallPrompt = null;
+    isAppInstalled = true;
+    checkPwaInstallState();
+    showToast("Typewriter installed to desktop!");
+  });
 
   if (DOM.driveModal) {
     DOM.driveModal.onclick = (e) => {
@@ -1278,6 +1380,19 @@ function init() {
   applySettingsUI();
   initFirebase();
   renderAll();
+  checkPwaInstallState();
+  updateNetworkStatus(navigator.onLine);
+
+  // Register PWA Service Worker for offline & standalone support
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('./sw.js')
+      .then((reg) => {
+        console.log('PWA ServiceWorker registered successfully with scope:', reg.scope);
+      })
+      .catch((err) => {
+        console.warn('PWA ServiceWorker registration failed:', err);
+      });
+  }
 
   // Focus drafting input on start
   setTimeout(() => {
