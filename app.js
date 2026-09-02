@@ -140,6 +140,14 @@ function initDOM() {
     btnBackupCloud: document.getElementById('btn-backup-cloud'),
     btnRestoreCloud: document.getElementById('btn-restore-cloud'),
     fileInputRestore: document.getElementById('file-input-restore'),
+    btnSafetyArchive: document.getElementById('btn-safety-archive'),
+    safetyArchiveBadge: document.getElementById('safety-archive-badge'),
+    safetyArchiveModal: document.getElementById('safety-archive-modal'),
+    btnCloseArchiveModal: document.getElementById('btn-close-archive-modal'),
+    btnClearSafetyArchive: document.getElementById('btn-clear-safety-archive'),
+    archiveStatusSummary: document.getElementById('archive-status-summary'),
+    archiveEmptyMessage: document.getElementById('archive-empty-message'),
+    archiveFilesList: document.getElementById('archive-files-list'),
 
     btnGoogleSignIn: document.getElementById('btn-google-signin'),
     userProfile: document.getElementById('user-profile'),
@@ -261,6 +269,7 @@ function closeOverlay() {
   if (DOM.writingSurface) DOM.writingSurface.classList.remove('blurred');
   if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
   if (DOM.driveModal) DOM.driveModal.classList.add('hidden');
+  if (DOM.safetyArchiveModal) DOM.safetyArchiveModal.classList.add('hidden');
 
   setTimeout(() => {
     if (DOM.draftInput) DOM.draftInput.focus();
@@ -455,7 +464,368 @@ function saveStorage(syncCloud = true) {
   }
 }
 
-// ─── BACKUP & RESTORE ───────────────────────────────────────
+// ─── BACKUP & RESTORE / SAFETY ARCHIVE ──────────────────────
+
+function triggerFileDownload(filename, textContent, mimeType = 'application/json') {
+  try {
+    const blob = new Blob([textContent], { type: mimeType });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (e) {
+    console.error("File download error:", e);
+  }
+}
+
+function calculateBookStats(book) {
+  let words = 0;
+  if (book && book.pages) {
+    book.pages.forEach(p => {
+      if (p.chunks) {
+        p.chunks.forEach(c => {
+          words += (c.text.trim().match(/\S+/g) || []).length;
+        });
+      }
+    });
+  }
+  return { words, pages: (book && book.pages) ? book.pages.length : 0 };
+}
+
+function getSafetyArchive() {
+  try {
+    const raw = localStorage.getItem('typewriter_safety_archive');
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function saveSafetyArchive(archive) {
+  try {
+    localStorage.setItem('typewriter_safety_archive', JSON.stringify(archive));
+    updateSafetyArchiveBadge();
+  } catch (e) {
+    console.warn("Save safety archive failed:", e);
+  }
+}
+
+function updateSafetyArchiveBadge() {
+  const archive = getSafetyArchive();
+  if (DOM.safetyArchiveBadge) {
+    DOM.safetyArchiveBadge.textContent = archive.length;
+  }
+}
+
+function createSafetyBackupForBook(book, reason = 'Deleted Book') {
+  if (!book) return;
+
+  const stats = calculateBookStats(book);
+  const now = new Date();
+  const dateIso = now.toISOString();
+  const dateFormatted = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const cleanTitle = (book.title || 'Untitled').replace(/[^a-z0-9]/gi, '_');
+  const fileDate = dateIso.slice(0, 10);
+  const filename = `Typewriter_Backup_DELETED_${cleanTitle}_${fileDate}.json`;
+
+  const backupPayload = {
+    version: 1,
+    type: 'safety_backup_single_book',
+    reason: reason,
+    backupDate: dateIso,
+    bookTitle: book.title,
+    stats: stats,
+    books: [JSON.parse(JSON.stringify(book))],
+    settings: { ...state.settings }
+  };
+
+  const jsonStr = JSON.stringify(backupPayload, null, 2);
+
+  // 1. Automatically download local backup file
+  triggerFileDownload(filename, jsonStr, 'application/json');
+
+  // 2. Add to localStorage safety archive
+  const archive = getSafetyArchive();
+  const archiveItem = {
+    id: 'safety_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+    type: 'single_book',
+    reason: reason,
+    date: dateFormatted,
+    isoDate: dateIso,
+    title: book.title,
+    stats: stats,
+    filename: filename,
+    data: backupPayload
+  };
+  archive.unshift(archiveItem);
+  if (archive.length > 30) archive.pop();
+  saveSafetyArchive(archive);
+
+  // 3. Upload to Google Drive if authorized
+  if (googleAccessToken) {
+    uploadToGoogleDrive({
+      name: filename,
+      content: jsonStr,
+      mimeType: 'application/json',
+      isDoc: false
+    }).then(res => {
+      console.log("Safety backup saved to Google Drive:", res.name);
+    }).catch(err => {
+      console.warn("Drive safety backup error:", err);
+    });
+  }
+
+  // 4. Firestore safety backup if authorized
+  if (db && currentUser) {
+    db.collection("users").doc(currentUser.uid).collection("safety_backups").add({
+      type: 'single_book',
+      reason: reason,
+      title: book.title,
+      stats: stats,
+      book: book,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(e => console.warn("Firestore safety backup error:", e));
+  }
+}
+
+function createSafetyBackupForReset(books, settings, reason = 'Full Studio Reset') {
+  if (!books || books.length === 0) return;
+
+  let totalWords = 0;
+  let totalPages = 0;
+  books.forEach(b => {
+    const s = calculateBookStats(b);
+    totalWords += s.words;
+    totalPages += s.pages;
+  });
+
+  const now = new Date();
+  const dateIso = now.toISOString();
+  const dateFormatted = now.toLocaleDateString() + ' ' + now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const fileDate = dateIso.slice(0, 10);
+  const filename = `Typewriter_Backup_FULL_RESET_${books.length}_BOOKS_${fileDate}.json`;
+
+  const backupPayload = {
+    version: 1,
+    type: 'safety_backup_full_reset',
+    reason: reason,
+    backupDate: dateIso,
+    totalBooks: books.length,
+    stats: { words: totalWords, pages: totalPages, books: books.length },
+    books: JSON.parse(JSON.stringify(books)),
+    settings: { ...settings }
+  };
+
+  const jsonStr = JSON.stringify(backupPayload, null, 2);
+
+  // 1. Automatically download complete safety backup file
+  triggerFileDownload(filename, jsonStr, 'application/json');
+
+  // 2. Add to localStorage safety archive
+  const archive = getSafetyArchive();
+  const archiveItem = {
+    id: 'safety_reset_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+    type: 'full_reset',
+    reason: reason,
+    date: dateFormatted,
+    isoDate: dateIso,
+    title: `All Manuscripts (${books.length} Books)`,
+    stats: { words: totalWords, pages: totalPages, books: books.length },
+    filename: filename,
+    data: backupPayload
+  };
+  archive.unshift(archiveItem);
+  if (archive.length > 30) archive.pop();
+  saveSafetyArchive(archive);
+
+  // 3. Upload to Google Drive if authorized
+  if (googleAccessToken) {
+    uploadToGoogleDrive({
+      name: filename,
+      content: jsonStr,
+      mimeType: 'application/json',
+      isDoc: false
+    }).catch(err => console.warn("Drive reset safety backup error:", err));
+  }
+
+  // 4. Firestore safety backup if authorized
+  if (db && currentUser) {
+    db.collection("users").doc(currentUser.uid).collection("safety_backups").add({
+      type: 'full_reset',
+      reason: reason,
+      totalBooks: books.length,
+      stats: { words: totalWords, pages: totalPages },
+      books: books,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    }).catch(e => console.warn("Firestore reset safety backup error:", e));
+  }
+}
+
+function openSafetyArchiveModal() {
+  if (DOM.safetyArchiveModal) {
+    DOM.safetyArchiveModal.classList.remove('hidden');
+    renderSafetyArchiveList();
+  }
+}
+
+function closeSafetyArchiveModal() {
+  if (DOM.safetyArchiveModal) {
+    DOM.safetyArchiveModal.classList.add('hidden');
+  }
+}
+
+function renderSafetyArchiveList() {
+  const archive = getSafetyArchive();
+  updateSafetyArchiveBadge();
+
+  if (DOM.archiveStatusSummary) {
+    DOM.archiveStatusSummary.textContent = `${archive.length} safety backup${archive.length === 1 ? '' : 's'} stored locally`;
+  }
+
+  if (!DOM.archiveFilesList || !DOM.archiveEmptyMessage) return;
+
+  if (archive.length === 0) {
+    DOM.archiveEmptyMessage.classList.remove('hidden');
+    DOM.archiveFilesList.classList.add('hidden');
+    DOM.archiveFilesList.innerHTML = '';
+    return;
+  }
+
+  DOM.archiveEmptyMessage.classList.add('hidden');
+  DOM.archiveFilesList.classList.remove('hidden');
+  DOM.archiveFilesList.innerHTML = '';
+
+  archive.forEach(item => {
+    const li = document.createElement('li');
+    li.className = 'drive-file-item';
+
+    const isReset = item.type === 'full_reset';
+    const iconEmoji = isReset ? '📚' : '📖';
+    const wordsCount = item.stats?.words ?? 0;
+    const pagesCount = item.stats?.pages ?? 0;
+    const subtext = `${item.date} • ${item.reason} • ${wordsCount} words • ${pagesCount} pages`;
+
+    li.innerHTML = `
+      <div class="drive-file-main">
+        <span class="drive-file-icon">${iconEmoji}</span>
+        <div class="drive-file-details">
+          <span class="drive-file-name" title="${item.title}">${item.title}</span>
+          <span class="drive-file-subtext">${subtext}</span>
+        </div>
+      </div>
+      <div class="drive-file-actions">
+        <button class="drive-pill-btn btn-restore-archive" data-id="${item.id}" title="Restore into Studio" style="background:#1b3d22; border-color:#2a7238; color:#7ee896;">
+          📥 Restore
+        </button>
+        <button class="drive-pill-btn btn-download-archive" data-id="${item.id}" title="Download JSON Backup">
+          💾 Download
+        </button>
+        <button class="drive-pill-btn btn-delete-archive" data-id="${item.id}" title="Delete this safety copy permanently" style="color:#ff6b6b; border-color:rgba(255,107,107,0.3);">
+          🗑️
+        </button>
+      </div>
+    `;
+
+    li.querySelector('.btn-restore-archive').onclick = () => restoreSafetyArchiveItem(item.id);
+    li.querySelector('.btn-download-archive').onclick = () => downloadSafetyArchiveItem(item.id);
+    li.querySelector('.btn-delete-archive').onclick = () => deleteSafetyArchiveItem(item.id);
+
+    DOM.archiveFilesList.appendChild(li);
+  });
+}
+
+function restoreSafetyArchiveItem(id) {
+  const archive = getSafetyArchive();
+  const item = archive.find(x => x.id === id);
+  if (!item || !item.data) {
+    showToast("Unable to restore: backup data not found.");
+    return;
+  }
+
+  if (item.type === 'single_book' && item.data.books && item.data.books.length > 0) {
+    const bookToRestore = JSON.parse(JSON.stringify(item.data.books[0]));
+    // Check if book with this ID already exists, generate fresh ID if so
+    const existingIndex = state.books.findIndex(b => b.id === bookToRestore.id);
+    if (existingIndex !== -1) {
+      bookToRestore.id = 'book_' + Date.now();
+      bookToRestore.title = bookToRestore.title + ' (Restored)';
+    }
+
+    state.books.push(bookToRestore);
+    state.activeBookId = bookToRestore.id;
+    const lastPage = bookToRestore.pages && bookToRestore.pages.length > 0
+      ? bookToRestore.pages[bookToRestore.pages.length - 1]
+      : null;
+    state.currentPageId = lastPage ? lastPage.id : null;
+
+    saveStorage();
+    renderAll();
+    closeSafetyArchiveModal();
+    closeOverlay();
+    showToast(`Restored "${bookToRestore.title}" to active books!`);
+    playCarriageReturnBell();
+  } else if (item.type === 'full_reset' && item.data.books && item.data.books.length > 0) {
+    if (confirm(`Restore all ${item.data.books.length} books from this snapshot? (This will add them to your studio)`)) {
+      item.data.books.forEach(b => {
+        const copy = JSON.parse(JSON.stringify(b));
+        copy.id = 'book_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+        state.books.push(copy);
+      });
+      state.activeBookId = state.books[state.books.length - 1].id;
+      const lastBook = state.books[state.books.length - 1];
+      const lastPage = (lastBook && lastBook.pages && lastBook.pages.length > 0) ? lastBook.pages[lastBook.pages.length - 1] : null;
+      state.currentPageId = lastPage ? lastPage.id : null;
+
+      saveStorage();
+      renderAll();
+      closeSafetyArchiveModal();
+      closeOverlay();
+      showToast(`Restored ${item.data.books.length} manuscripts from snapshot!`);
+      playCarriageReturnBell();
+    }
+  }
+}
+
+function downloadSafetyArchiveItem(id) {
+  const archive = getSafetyArchive();
+  const item = archive.find(x => x.id === id);
+  if (!item || !item.data) return;
+
+  const jsonStr = JSON.stringify(item.data, null, 2);
+  triggerFileDownload(item.filename || `Typewriter_Backup_${id}.json`, jsonStr, 'application/json');
+  showToast(`Downloaded safety backup: ${item.title}`);
+}
+
+function deleteSafetyArchiveItem(id) {
+  let archive = getSafetyArchive();
+  const item = archive.find(x => x.id === id);
+  if (!item) return;
+
+  if (confirm(`Permanently delete this local safety backup for "${item.title}"?`)) {
+    archive = archive.filter(x => x.id !== id);
+    saveSafetyArchive(archive);
+    renderSafetyArchiveList();
+    showToast("Safety backup copy deleted.");
+  }
+}
+
+function clearSafetyArchive() {
+  const archive = getSafetyArchive();
+  if (archive.length === 0) {
+    showToast("Safety archive is already empty.");
+    return;
+  }
+
+  if (confirm(`Permanently remove all ${archive.length} automatic safety backups from your local storage?`)) {
+    saveSafetyArchive([]);
+    renderSafetyArchiveList();
+    showToast("Safety archive cleared.");
+  }
+}
 
 function exportBackupFile() {
   const backupData = JSON.stringify({
@@ -466,16 +836,7 @@ function exportBackupFile() {
   }, null, 2);
 
   const filename = `typewriter_backup_${new Date().toISOString().slice(0, 10)}.json`;
-  const blob = new Blob([backupData], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-
+  triggerFileDownload(filename, backupData, 'application/json');
   showToast("Saved backup file!");
 }
 
@@ -567,14 +928,19 @@ function deleteCurrentBook() {
   }
 
   const book = getActiveBook();
-  if (confirm(`Delete "${book.title}"?`)) {
+  if (!book) return;
+
+  if (confirm(`Delete "${book.title}"?\n\n(A safety backup will automatically be saved and downloaded to your files in case this was an accident.)`)) {
+    // Automatically create safety backup
+    createSafetyBackupForBook(book, 'Deleted Book');
+
     state.books = state.books.filter(b => b.id !== book.id);
     state.activeBookId = state.books[0].id;
     const newActive = getActiveBook();
     state.currentPageId = newActive.pages[newActive.pages.length - 1].id;
     saveStorage();
     renderAll();
-    showToast("Book deleted.");
+    showToast(`Deleted "${book.title}". Safety backup auto-saved & downloaded.`);
   }
 }
 
@@ -794,12 +1160,22 @@ function applyFont() {
   if (DOM.settingFont) DOM.settingFont.value = state.settings.font;
 }
 
+function updateCommitHint() {
+  if (!DOM.commitHint) return;
+  if (state.settings.commitKey === 'enter') {
+    DOM.commitHint.innerHTML = 'Commit with <kbd>Enter</kbd> (Shift+Enter for line break)';
+  } else {
+    DOM.commitHint.innerHTML = 'Commit with <kbd>Ctrl</kbd>+<kbd>Enter</kbd>';
+  }
+}
+
 function applySettingsUI() {
   if (DOM.settingMaxChars) DOM.settingMaxChars.value = state.settings.maxChars;
   if (DOM.settingWordsPerPage) DOM.settingWordsPerPage.value = state.settings.wordsPerPage;
   if (DOM.settingCommitKey) DOM.settingCommitKey.value = state.settings.commitKey;
   if (DOM.settingVolume) DOM.settingVolume.value = state.settings.volume;
   if (DOM.btnSoundToggle) DOM.btnSoundToggle.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
+  updateCommitHint();
 }
 
 function showToast(msg) {
@@ -1167,7 +1543,7 @@ function setupEventListeners() {
       const isCtrlMode = state.settings.commitKey === 'ctrl-enter';
       const commitTriggered = isCtrlMode
         ? (e.key === 'Enter' && (e.ctrlKey || e.metaKey))
-        : (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey);
+        : (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey);
 
       if (commitTriggered) {
         e.preventDefault();
@@ -1297,15 +1673,47 @@ function setupEventListeners() {
     };
   }
 
+  // Safety Archive Modal
+  if (DOM.btnSafetyArchive) DOM.btnSafetyArchive.onclick = openSafetyArchiveModal;
+  if (DOM.btnCloseArchiveModal) DOM.btnCloseArchiveModal.onclick = closeSafetyArchiveModal;
+  if (DOM.btnClearSafetyArchive) DOM.btnClearSafetyArchive.onclick = clearSafetyArchive;
+  if (DOM.safetyArchiveModal) {
+    DOM.safetyArchiveModal.onclick = (e) => {
+      if (e.target === DOM.safetyArchiveModal) closeSafetyArchiveModal();
+    };
+  }
+
   // Clear all
   if (DOM.btnClearAll) {
     DOM.btnClearAll.onclick = () => {
-      if (confirm("Are you sure you want to reset all books, pages, and preferences?")) {
-        state.books = [];
+      if (confirm("Reset all books, pages, and preferences?\n\n(An automatic safety backup of ALL your manuscripts will be created and downloaded first in case this was an accident.)")) {
+        // Automatically back up all manuscripts before resetting
+        createSafetyBackupForReset(state.books, state.settings, 'Full Studio Reset');
+
+        // Retain safety archive and reset other items
+        const savedArchive = localStorage.getItem('typewriter_safety_archive');
         localStorage.clear();
+        if (savedArchive) {
+          localStorage.setItem('typewriter_safety_archive', savedArchive);
+        }
+
+        state.books = [];
+        state.settings = {
+          maxChars: 200,
+          wordsPerPage: 300,
+          theme: 'cream',
+          font: 'courier',
+          commitKey: 'ctrl-enter',
+          soundEnabled: true,
+          volume: 50
+        };
+        applyTheme();
+        applyFont();
+        applySettingsUI();
         createNewBook("My First Book", false);
+        closeSafetyArchiveModal();
         closeOverlay();
-        showToast("Studio data reset.");
+        showToast("Studio data reset. Safety backup of all books was saved & downloaded.");
       }
     };
   }
@@ -1404,6 +1812,7 @@ function init() {
   applySettingsUI();
   initFirebase();
   renderAll();
+  updateSafetyArchiveBadge();
   checkPwaInstallState();
   updateNetworkStatus(navigator.onLine);
 

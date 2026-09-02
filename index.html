@@ -92,6 +92,7 @@
       <div class="panel-action" id="btn-pwa-install-left"><span>💻</span> Install Desktop App</div>
       <div class="panel-action" id="btn-backup-cloud"><span>💾</span> Backup File (.json)</div>
       <div class="panel-action" id="btn-restore-cloud"><span>📂</span> Load Backup File</div>
+      <div class="panel-action" id="btn-safety-archive"><span>🛡️</span> Safety Archive (<span id="safety-archive-badge">0</span>)</div>
       <input type="file" id="file-input-restore" accept=".json" class="hidden">
     </div>
 
@@ -163,7 +164,7 @@
         <div class="setting-label">Commit Shortcut</div>
         <select id="setting-commit-key" class="setting-select">
           <option value="ctrl-enter">Ctrl + Enter (Enter = line break)</option>
-          <option value="enter">Enter (no line breaks)</option>
+          <option value="enter">Enter (Shift + Enter = line break)</option>
         </select>
       </div>
 
@@ -276,6 +277,38 @@
         <div id="drive-empty-message" class="drive-state-message hidden">
           No Typewriter files found on your Google Drive yet. Click "Backup Current Studio to Drive" or export a book to get started!
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SAFETY ARCHIVE & BACKUPS MODAL ── -->
+  <div id="safety-archive-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-header">
+        <div class="modal-title-with-icon">
+          <span>🛡️</span>
+          <h3>Safety Archive & Backups</h3>
+        </div>
+        <button id="btn-close-archive-modal" class="btn-close">×</button>
+      </div>
+      <p class="modal-desc">
+        Every time a book is deleted or studio data is reset, Typewriter automatically creates a safety backup so your work is never lost. You can restore your books here anytime or delete local archives manually:
+      </p>
+
+      <div class="drive-action-bar" style="justify-content: space-between; align-items: center;">
+        <span id="archive-status-summary" style="font-size: 11px; color: #888888; font-family: 'Inter', sans-serif;">0 safety backups protected</span>
+        <button id="btn-clear-safety-archive" class="drive-pill-btn" style="color: #ff6b6b; border-color: rgba(255, 107, 107, 0.3);">🗑️ Clear Local Archive</button>
+      </div>
+
+      <div class="drive-files-container" style="max-height: 380px;">
+        <div id="archive-empty-message" class="drive-state-message">
+          <span>🛡️</span><br><br>
+          No deleted books or reset snapshots in your safety archive.<br>
+          <span style="font-size:11px; color:#666;">Deleted books and reset states are automatically preserved here.</span>
+        </div>
+        <ul id="archive-files-list" class="drive-files-list hidden">
+          <!-- Populated dynamically -->
+        </ul>
       </div>
     </div>
   </div>
