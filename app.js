@@ -18,6 +18,36 @@ let auth = null;
 let db = null;
 let currentUser = null;
 let googleAccessToken = sessionStorage.getItem('google_drive_access_token') || null;
+let lastRenderedPageId = null;
+
+// Chunk Data Helpers for Timestamping
+function getChunkText(chunk) {
+  if (chunk === null || chunk === undefined) return '';
+  if (typeof chunk === 'string') return chunk;
+  return chunk.text || '';
+}
+
+function getChunkTimestamp(chunk) {
+  if (chunk === null || chunk === undefined) return null;
+  if (typeof chunk === 'string') return null;
+  return chunk.timestamp || null;
+}
+
+function formatChunkTime(isoString) {
+  if (!isoString) return '';
+  try {
+    const d = new Date(isoString);
+    if (isNaN(d.getTime())) return '';
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+    const dateStr = `${month}/${day}/${year}`;
+    const timeStr = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    return `${dateStr} ${timeStr}`;
+  } catch (e) {
+    return '';
+  }
+}
 
 // Global State
 let state = {
@@ -32,7 +62,8 @@ let state = {
     font: 'courier',
     commitKey: 'ctrl-enter', // 'ctrl-enter' | 'enter'
     volume: 50,
-    soundEnabled: true
+    soundEnabled: true,
+    showTimestamps: false
   }
 };
 
@@ -122,6 +153,7 @@ function initDOM() {
     pageHeaderInfo: document.getElementById('page-header-info'),
     pageWordCounter: document.getElementById('page-word-counter'),
     inkStream: document.getElementById('ink-stream'),
+    draftBox: document.getElementById('draft-box'),
     draftInput: document.getElementById('draft-input'),
     charCounter: document.getElementById('char-counter'),
     commitHint: document.getElementById('commit-hint'),
@@ -165,6 +197,8 @@ function initDOM() {
     settingCommitKey: document.getElementById('setting-commit-key'),
     settingVolume: document.getElementById('setting-volume'),
     btnSoundToggle: document.getElementById('btn-sound-toggle'),
+    settingShowTimestamps: document.getElementById('setting-show-timestamps'),
+    btnToggleTimestamps: document.getElementById('btn-toggle-timestamps'),
 
     statTotalWords: document.getElementById('stat-total-words'),
     statTotalPages: document.getElementById('stat-total-pages'),
@@ -489,7 +523,8 @@ function calculateBookStats(book) {
     book.pages.forEach(p => {
       if (p.chunks) {
         p.chunks.forEach(c => {
-          words += (c.text.trim().match(/\S+/g) || []).length;
+          const txt = getChunkText(c);
+          words += (txt.trim().match(/\S+/g) || []).length;
         });
       }
     });
@@ -985,7 +1020,7 @@ function countWords(text) {
 
 function getPageWordCount(page) {
   if (!page || !page.chunks) return 0;
-  return page.chunks.reduce((sum, chunk) => sum + countWords(chunk), 0);
+  return page.chunks.reduce((sum, chunk) => sum + countWords(getChunkText(chunk)), 0);
 }
 
 function getBookTotalWordCount(book) {
@@ -1011,7 +1046,13 @@ function commitDraft() {
 
   const activePage = getCurrentPage();
   if (activePage) {
-    activePage.chunks.push(text);
+    const timestamp = new Date().toISOString();
+    const newChunk = {
+      id: 'chunk_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      text: text,
+      timestamp: timestamp
+    };
+    activePage.chunks.push(newChunk);
     DOM.draftInput.value = '';
     state.buffer = '';
 
@@ -1111,27 +1152,61 @@ function renderActivePage(lastChunkIsNew = false) {
   const page = getCurrentPage();
   if (!page || !book) return;
 
+  const pageChanged = lastRenderedPageId !== page.id;
+  lastRenderedPageId = page.id;
+
   const totalPages = book.pages.length;
   if (DOM.pageHeaderInfo) {
     DOM.pageHeaderInfo.textContent = `Page ${page.number}/${totalPages} • ${book.title}${page.locked ? ' (Locked)' : ''}`;
   }
 
+  const showTS = Boolean(state.settings.showTimestamps);
+
   if (DOM.pageSheet) {
     DOM.pageSheet.classList.toggle('is-locked', Boolean(page.locked));
+    DOM.pageSheet.classList.toggle('has-timestamps', showTS);
   }
 
   if (DOM.inkStream) {
     DOM.inkStream.innerHTML = '';
+    DOM.inkStream.classList.toggle('has-timestamps', showTS);
 
     const count = page.chunks.length;
-    page.chunks.forEach((chunkText, idx) => {
-      const span = document.createElement('span');
-      span.className = 'ink-chunk';
-      if (lastChunkIsNew && idx === count - 1) {
-        span.classList.add('new-strike');
+    page.chunks.forEach((chunkItem, idx) => {
+      const text = getChunkText(chunkItem);
+      const ts = getChunkTimestamp(chunkItem);
+      const timeStr = formatChunkTime(ts);
+
+      if (showTS) {
+        const row = document.createElement('div');
+        row.className = 'ink-chunk-row';
+        if (lastChunkIsNew && idx === count - 1) {
+          row.classList.add('new-strike');
+        }
+
+        const timeSpan = document.createElement('span');
+        timeSpan.className = timeStr ? 'commit-timestamp' : 'commit-timestamp muted';
+        timeSpan.textContent = timeStr || '—';
+        if (ts) {
+          timeSpan.title = `Committed at ${new Date(ts).toLocaleString()}`;
+        }
+        row.appendChild(timeSpan);
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'ink-chunk';
+        textSpan.textContent = text;
+        row.appendChild(textSpan);
+
+        DOM.inkStream.appendChild(row);
+      } else {
+        const span = document.createElement('span');
+        span.className = 'ink-chunk';
+        if (lastChunkIsNew && idx === count - 1) {
+          span.classList.add('new-strike');
+        }
+        span.textContent = text;
+        DOM.inkStream.appendChild(span);
       }
-      span.textContent = chunkText;
-      DOM.inkStream.appendChild(span);
     });
 
     if (!page.locked) {
@@ -1144,11 +1219,16 @@ function renderActivePage(lastChunkIsNew = false) {
 
   if (DOM.writingSurface) {
     requestAnimationFrame(() => {
-      if (page.locked) {
-        DOM.writingSurface.scrollTo({ top: 0, behavior: 'smooth' });
-      } else {
+      if (pageChanged) {
+        if (page.locked) {
+          DOM.writingSurface.scrollTo({ top: 0, behavior: 'smooth' });
+        } else {
+          DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'smooth' });
+        }
+      } else if (lastChunkIsNew && !page.locked) {
         DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'smooth' });
       }
+      updateDraftInputCursorAlignment();
     });
   }
 
@@ -1160,6 +1240,28 @@ function renderActivePage(lastChunkIsNew = false) {
       draftOverlay.classList.remove('hidden');
     }
   }
+}
+
+function updateDraftInputCursorAlignment() {
+  const inkCursor = document.getElementById('ink-cursor');
+  if (!inkCursor || !DOM.pageSheet || !DOM.draftInput || !DOM.draftBox) return;
+
+  const pageRect = DOM.pageSheet.getBoundingClientRect();
+  const cursorRect = inkCursor.getBoundingClientRect();
+  const draftBoxRect = DOM.draftBox.getBoundingClientRect();
+
+  if (!pageRect.width || !cursorRect.height) return;
+
+  // Measure X position of inkCursor relative to draft box text inner padding (20px)
+  const cursorX = cursorRect.left - (draftBoxRect.left + 20);
+
+  const draftBoxWidth = draftBoxRect.width || 700;
+  // Keep at least 140px of typing room in draft input before line wrapping
+  const maxIndent = Math.max(0, draftBoxWidth - 180);
+  const indentPx = Math.max(0, Math.min(cursorX, maxIndent));
+
+  DOM.draftInput.style.textIndent = `${indentPx}px`;
+  DOM.draftInput.style.paddingLeft = '0px';
 }
 
 function updatePageWordCounter() {
@@ -1205,6 +1307,8 @@ function applySettingsUI() {
   if (DOM.settingCommitKey) DOM.settingCommitKey.value = state.settings.commitKey;
   if (DOM.settingVolume) DOM.settingVolume.value = state.settings.volume;
   if (DOM.btnSoundToggle) DOM.btnSoundToggle.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
+  if (DOM.settingShowTimestamps) DOM.settingShowTimestamps.checked = Boolean(state.settings.showTimestamps);
+  if (DOM.btnToggleTimestamps) DOM.btnToggleTimestamps.classList.toggle('active', Boolean(state.settings.showTimestamps));
   updateCommitHint();
 }
 
@@ -1226,7 +1330,8 @@ function compileManuscriptText(format = 'txt') {
   book.pages.forEach(page => {
     if (format === 'md') fullText += `## Page ${page.number}\n\n`;
     else fullText += `--- PAGE ${page.number} ---\n\n`;
-    fullText += page.chunks.join(' ') + '\n\n';
+    const pageText = page.chunks.map(c => getChunkText(c)).join(' ');
+    fullText += pageText + '\n\n';
   });
   return fullText.trim();
 }
@@ -1550,6 +1655,17 @@ function setupEventListeners() {
     }
 
     if (!overlayOpen && document.activeElement === DOM.draftInput) {
+      if (e.key === 'PageUp' || e.key === 'PageDown') {
+        e.preventDefault();
+        const pageStep = DOM.writingSurface.clientHeight * 0.75;
+        if (e.key === 'PageUp') {
+          DOM.writingSurface.scrollBy({ top: -pageStep, behavior: 'smooth' });
+        } else {
+          DOM.writingSurface.scrollBy({ top: pageStep, behavior: 'smooth' });
+        }
+        return;
+      }
+
       if (e.key === 'Tab') {
         e.preventDefault();
         const start = DOM.draftInput.selectionStart;
@@ -1603,8 +1719,17 @@ function setupEventListeners() {
 
   if (DOM.btnResume) DOM.btnResume.onclick = closeOverlay;
 
+  // Window Resize & Cursor Alignment
+  window.addEventListener('resize', () => {
+    updateDraftInputCursorAlignment();
+  });
+
   // Draft Input events
   if (DOM.draftInput) {
+    DOM.draftInput.addEventListener('focus', () => {
+      updateDraftInputCursorAlignment();
+    });
+
     DOM.draftInput.oninput = (e) => {
       state.buffer = e.target.value;
       playKeyClickSound();
@@ -1802,6 +1927,23 @@ function setupEventListeners() {
       DOM.btnSoundToggle.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
       saveStorage();
       showToast(state.settings.soundEnabled ? 'Sound ON' : 'Sound Muted');
+    };
+  }
+
+  if (DOM.btnToggleTimestamps) {
+    DOM.btnToggleTimestamps.onclick = () => {
+      state.settings.showTimestamps = !state.settings.showTimestamps;
+      saveStorage();
+      renderAll();
+      showToast(state.settings.showTimestamps ? "Left margin timestamps enabled" : "Left margin timestamps hidden");
+    };
+  }
+
+  if (DOM.settingShowTimestamps) {
+    DOM.settingShowTimestamps.onchange = (e) => {
+      state.settings.showTimestamps = e.target.checked;
+      saveStorage();
+      renderAll();
     };
   }
 

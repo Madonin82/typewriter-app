@@ -58,6 +58,8 @@
             <span class="page-word-counter" id="page-word-counter" title="Words written on current page / Target page word count">0 / 300 words</span>
             <span class="meta-separator">•</span>
             <span class="char-counter" id="char-counter">0 / 200</span>
+            <span class="meta-separator">•</span>
+            <button id="btn-toggle-timestamps" class="btn-timestamp-toggle" title="Toggle commit timestamps in left margin">⏱️ Timestamps</button>
           </div>
           <div class="draft-footer-actions">
             <span class="commit-hint" id="commit-hint">Commit with <kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
@@ -176,6 +178,17 @@
           <button id="btn-sound-toggle" class="btn-mute-toggle" title="Toggle Sound">🔊</button>
         </div>
         <input id="setting-volume" type="range" min="0" max="100" value="50">
+      </div>
+
+      <div>
+        <div class="setting-label-row">
+          <span class="setting-label">Show Commit Timestamps</span>
+          <label class="toggle-switch" title="Toggle commit timestamps in left margin">
+            <input type="checkbox" id="setting-show-timestamps">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <small class="setting-help">Displays the time each commit was made in the left margin of the page.</small>
       </div>
 
       <div class="stats-footer-container">
