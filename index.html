@@ -86,6 +86,12 @@
         <button id="btn-rename-book" title="Rename Current Book">✏️</button>
       </div>
 
+      <div class="panel-section-label">Search Current Book</div>
+      <div class="manuscript-search-box">
+        <input type="text" id="input-book-search" class="book-search-input" placeholder="Search words or phrases..." autocomplete="off">
+        <button id="btn-clear-book-search" class="book-search-clear-btn hidden" title="Clear search">×</button>
+      </div>
+
       <div class="panel-section-label">Pages</div>
       <ul class="pages-list" id="pages-list">
         <!-- Populated dynamically -->
@@ -410,6 +416,65 @@
             📥 Replace & Restore
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── EDIT PAGE DESCRIPTION MODAL ── -->
+  <div id="page-desc-modal" class="modal-backdrop hidden">
+    <div class="modal-card" style="max-width: 440px;">
+      <div class="modal-header">
+        <div class="modal-title-with-icon">
+          <span>🏷️</span>
+          <h3 id="page-desc-modal-title">Edit Page Description</h3>
+        </div>
+        <button id="btn-close-page-desc" class="btn-close">×</button>
+      </div>
+      <p class="modal-desc" id="page-desc-modal-subtitle">Give this page a custom label or chapter subtitle (e.g., "Chapter 1", "Prologue", "The Midnight Alley"):</p>
+      
+      <div style="margin: 14px 0;">
+        <input type="text" id="input-page-desc" class="setting-input" style="width: 100%; font-size: 14px; padding: 10px 12px;" placeholder="e.g., Chapter 1" maxlength="60" autocomplete="off">
+      </div>
+
+      <div class="backup-inspect-footer" style="margin-top: 14px; padding-top: 12px;">
+        <button id="btn-clear-page-desc" class="btn-drive-action" style="padding: 7px 14px; font-size: 11px; color: #ff8888; border-color: #552222;" title="Remove description">Remove</button>
+        <div style="display: flex; gap: 8px;">
+          <button id="btn-cancel-page-desc" class="btn-drive-action" style="padding: 7px 14px; font-size: 12px;">Cancel</button>
+          <button id="btn-save-page-desc" class="btn-drive-action primary" style="padding: 7px 18px; font-size: 12px; font-weight: 600;">Save Description</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── MANUSCRIPT SEARCH RESULTS MODAL ── -->
+  <div id="search-results-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-header">
+        <div class="modal-title-with-icon">
+          <span>🔍</span>
+          <h3 id="search-modal-title">Search Results in Current Book</h3>
+        </div>
+        <button id="btn-close-search-modal" class="btn-close">×</button>
+      </div>
+
+      <div class="search-modal-query-bar">
+        <span class="search-modal-icon">🔎</span>
+        <input type="text" id="input-modal-search" class="search-modal-input" placeholder="Search phrase or word in current book..." autocomplete="off">
+        <span id="search-results-count-badge" class="search-results-count-badge">0 matches</span>
+      </div>
+
+      <div class="search-results-container">
+        <div id="search-empty-state" class="search-empty-state hidden">
+          <span>No matches found in this book. Try different keywords.</span>
+        </div>
+        <ul id="search-results-list" class="search-results-list">
+          <!-- Populated dynamically -->
+        </ul>
+      </div>
+
+      <div class="backup-inspect-footer" style="margin-top: 12px; padding-top: 10px;">
+        <span style="font-size: 11px; color: #777; font-family: 'Inter', sans-serif;">Click any result snippet to navigate to that page.</span>
+        <button id="btn-dismiss-search-modal" class="btn-drive-action" style="padding: 6px 16px; font-size: 12px;">Close</button>
       </div>
     </div>
   </div>

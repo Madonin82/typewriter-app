@@ -249,6 +249,29 @@ function initDOM() {
     backupInspectSource: document.getElementById('backup-inspect-source'),
     backupInspectBooksList: document.getElementById('backup-inspect-books-list'),
 
+    // Page Description Modal
+    pageDescModal: document.getElementById('page-desc-modal'),
+    pageDescModalTitle: document.getElementById('page-desc-modal-title'),
+    pageDescModalSubtitle: document.getElementById('page-desc-modal-subtitle'),
+    inputPageDesc: document.getElementById('input-page-desc'),
+    btnClosePageDesc: document.getElementById('btn-close-page-desc'),
+    btnCancelPageDesc: document.getElementById('btn-cancel-page-desc'),
+    btnClearPageDesc: document.getElementById('btn-clear-page-desc'),
+    btnSavePageDesc: document.getElementById('btn-save-page-desc'),
+
+    // Manuscript Search
+    inputBookSearch: document.getElementById('input-book-search'),
+    btnClearBookSearch: document.getElementById('btn-clear-book-search'),
+    searchResultsModal: document.getElementById('search-results-modal'),
+    searchModalTitle: document.getElementById('search-modal-title'),
+    inputModalSearch: document.getElementById('input-modal-search'),
+    searchResultsCountBadge: document.getElementById('search-results-count-badge'),
+    searchResultsContainer: document.querySelector('.search-results-container'),
+    searchResultsList: document.getElementById('search-results-list'),
+    searchEmptyState: document.getElementById('search-empty-state'),
+    btnCloseSearchModal: document.getElementById('btn-close-search-modal'),
+    btnDismissSearchModal: document.getElementById('btn-dismiss-search-modal'),
+
     toast: document.getElementById('toast')
   };
 }
@@ -323,6 +346,8 @@ function closeOverlay() {
   if (DOM.driveModal) DOM.driveModal.classList.add('hidden');
   if (DOM.safetyArchiveModal) DOM.safetyArchiveModal.classList.add('hidden');
   if (DOM.backupInspectModal) DOM.backupInspectModal.classList.add('hidden');
+  if (DOM.pageDescModal) DOM.pageDescModal.classList.add('hidden');
+  if (DOM.searchResultsModal) DOM.searchResultsModal.classList.add('hidden');
 
   setTimeout(() => {
     if (DOM.draftInput) DOM.draftInput.focus();
@@ -1095,6 +1120,7 @@ function createNewBook(titlePrompt = null, showNotification = true) {
   const firstPage = {
     id: 'page_' + Date.now(),
     number: 1,
+    description: '',
     chunks: [],
     locked: false,
     createdAt: Date.now()
@@ -1162,6 +1188,7 @@ function createNewPage(showNotification = true) {
   const newPage = {
     id: 'page_' + Date.now(),
     number: newNum,
+    description: '',
     chunks: [],
     locked: false,
     createdAt: Date.now()
@@ -1406,19 +1433,298 @@ function renderSidebarPages() {
     const li = document.createElement('li');
     li.className = page.id === state.currentPageId ? 'active' : '';
     const words = getPageWordCount(page);
+    const descText = (page.description && page.description.trim()) ? page.description.trim() : '';
+
     li.innerHTML = `
-      <span>${page.locked ? '🔒' : '✍️'} Page ${page.number}</span>
-      <span class="page-badge">${words}w</span>
+      <div class="page-item-main">
+        <div class="page-item-header">
+          <span>${page.locked ? '🔒' : '✍️'}</span>
+          <span class="page-item-title">Page ${page.number}</span>
+        </div>
+        ${descText ? `<span class="page-item-desc" title="${escapeHtml(descText)}">${escapeHtml(descText)}</span>` : ''}
+      </div>
+      <div class="page-item-actions">
+        <button class="btn-edit-page-desc" title="Edit description / chapter label" aria-label="Edit description for page ${page.number}">✏️</button>
+        <span class="page-badge">${words}w</span>
+      </div>
     `;
 
-    li.onclick = () => {
+    // Click on page item selects page and resumes drafting
+    li.onclick = (e) => {
+      // If clicking the edit button, do not close overlay
+      if (e.target.closest('.btn-edit-page-desc')) {
+        e.stopPropagation();
+        openPageDescModal(page.id);
+        return;
+      }
       state.currentPageId = page.id;
       renderAll(false);
       closeOverlay();
     };
 
+    const btnEdit = li.querySelector('.btn-edit-page-desc');
+    if (btnEdit) {
+      btnEdit.onclick = (e) => {
+        e.stopPropagation();
+        openPageDescModal(page.id);
+      };
+    }
+
     DOM.pagesList.appendChild(li);
   });
+}
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str.replace(/[&<>"']/g, m => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[m]));
+}
+
+// ─── PAGE DESCRIPTION MODAL LOGIC ─────────────────────────────
+
+let targetPageDescId = null;
+
+function openPageDescModal(pageId) {
+  const book = getActiveBook();
+  if (!book) return;
+  const page = book.pages.find(p => p.id === pageId);
+  if (!page) return;
+
+  targetPageDescId = pageId;
+
+  if (DOM.pageDescModalTitle) {
+    DOM.pageDescModalTitle.textContent = `Page ${page.number} Description`;
+  }
+  if (DOM.pageDescModalSubtitle) {
+    DOM.pageDescModalSubtitle.textContent = `Assign a custom chapter or section label for Page ${page.number} (e.g., "Chapter 1", "Prologue", "Act I"):`;
+  }
+  if (DOM.inputPageDesc) {
+    DOM.inputPageDesc.value = page.description || '';
+  }
+
+  if (DOM.pageDescModal) {
+    DOM.pageDescModal.classList.remove('hidden');
+    setTimeout(() => {
+      if (DOM.inputPageDesc) {
+        DOM.inputPageDesc.focus();
+        DOM.inputPageDesc.select();
+      }
+    }, 50);
+  }
+}
+
+function closePageDescModal() {
+  if (DOM.pageDescModal) {
+    DOM.pageDescModal.classList.add('hidden');
+  }
+  targetPageDescId = null;
+}
+
+function savePageDescModal() {
+  if (!targetPageDescId) {
+    closePageDescModal();
+    return;
+  }
+  const book = getActiveBook();
+  if (!book) {
+    closePageDescModal();
+    return;
+  }
+  const page = book.pages.find(p => p.id === targetPageDescId);
+  if (!page) {
+    closePageDescModal();
+    return;
+  }
+
+  const val = DOM.inputPageDesc ? DOM.inputPageDesc.value.trim() : '';
+  if (val) {
+    page.description = val;
+    showToast(`Page ${page.number} labeled "${val}"`);
+  } else {
+    delete page.description;
+    showToast(`Cleared description for Page ${page.number}`);
+  }
+
+  saveStorage();
+  renderSidebarPages();
+  renderActivePage(false);
+  closePageDescModal();
+}
+
+function clearPageDescModal() {
+  if (!targetPageDescId) {
+    closePageDescModal();
+    return;
+  }
+  const book = getActiveBook();
+  if (!book) {
+    closePageDescModal();
+    return;
+  }
+  const page = book.pages.find(p => p.id === targetPageDescId);
+  if (page) {
+    delete page.description;
+    saveStorage();
+    renderSidebarPages();
+    renderActivePage(false);
+    showToast(`Cleared description for Page ${page.number}`);
+  }
+  closePageDescModal();
+}
+
+// ─── MANUSCRIPT SEARCH LOGIC ───────────────────────────────────
+
+function performBookSearch(query) {
+  const q = (query || '').trim();
+  if (!q) {
+    if (DOM.btnClearBookSearch) DOM.btnClearBookSearch.classList.add('hidden');
+    return;
+  }
+
+  if (DOM.btnClearBookSearch) DOM.btnClearBookSearch.classList.remove('hidden');
+
+  const book = getActiveBook();
+  if (!book) return;
+
+  // Search across all pages in current book
+  const results = [];
+  const lowerQ = q.toLowerCase();
+
+  book.pages.forEach(page => {
+    const pageNum = page.number;
+    const pageDesc = page.description ? page.description.trim() : '';
+    const fullPageText = (page.chunks || []).map(c => getChunkText(c)).join('');
+
+    const descMatches = pageDesc && pageDesc.toLowerCase().includes(lowerQ);
+    const textMatches = fullPageText.toLowerCase().includes(lowerQ);
+
+    if (descMatches || textMatches) {
+      // Find snippets
+      const snippets = [];
+      if (textMatches) {
+        let searchIndex = 0;
+        const textLower = fullPageText.toLowerCase();
+        while (searchIndex < textLower.length && snippets.length < 3) {
+          const foundAt = textLower.indexOf(lowerQ, searchIndex);
+          if (foundAt === -1) break;
+
+          // Extract excerpt around match
+          const snippetStart = Math.max(0, foundAt - 40);
+          const snippetEnd = Math.min(fullPageText.length, foundAt + q.length + 55);
+          let snippet = fullPageText.substring(snippetStart, snippetEnd).replace(/[\r\n]+/g, ' ');
+
+          // Add ellipsis
+          if (snippetStart > 0) snippet = '…' + snippet;
+          if (snippetEnd < fullPageText.length) snippet = snippet + '…';
+
+          snippets.push({
+            text: snippet,
+            matchTerm: fullPageText.substring(foundAt, foundAt + q.length)
+          });
+
+          searchIndex = foundAt + Math.max(1, q.length);
+        }
+      }
+
+      results.push({
+        pageId: page.id,
+        pageNumber: pageNum,
+        pageDescription: pageDesc,
+        snippets: snippets,
+        descMatch: descMatches
+      });
+    }
+  });
+
+  openSearchResultsModal(q, results);
+}
+
+function openSearchResultsModal(query, results) {
+  if (!DOM.searchResultsModal) return;
+
+  if (DOM.searchModalTitle) {
+    const book = getActiveBook();
+    DOM.searchModalTitle.textContent = `Search in "${book ? book.title : 'Current Book'}"`;
+  }
+
+  if (DOM.inputModalSearch) {
+    DOM.inputModalSearch.value = query;
+  }
+
+  if (DOM.searchResultsCountBadge) {
+    DOM.searchResultsCountBadge.textContent = `${results.length} page${results.length === 1 ? '' : 's'} matched`;
+  }
+
+  if (DOM.searchResultsList) {
+    DOM.searchResultsList.innerHTML = '';
+
+    if (results.length === 0) {
+      if (DOM.searchEmptyState) DOM.searchEmptyState.classList.remove('hidden');
+    } else {
+      if (DOM.searchEmptyState) DOM.searchEmptyState.classList.add('hidden');
+
+      results.forEach(res => {
+        const li = document.createElement('li');
+        li.className = 'search-result-item';
+
+        let snippetHtml = '';
+        if (res.snippets && res.snippets.length > 0) {
+          snippetHtml = '<div class="search-result-snippets">' + res.snippets.map(s => {
+            const escaped = escapeHtml(s.text);
+            const regex = new RegExp(escapeRegExp(escapeHtml(query)), 'gi');
+            const highlighted = escaped.replace(regex, match => `<mark>${match}</mark>`);
+            return `<div class="search-result-snippet">${highlighted}</div>`;
+          }).join('') + '</div>';
+        } else if (res.descMatch) {
+          snippetHtml = `<div class="search-result-snippet" style="font-style:italic; color:#88bbff;">Matched in page description: "${escapeHtml(res.pageDescription)}"</div>`;
+        }
+
+        li.innerHTML = `
+          <div class="search-result-item-header">
+            <span class="search-result-page-label">
+              <span>📄</span> Page ${res.pageNumber}
+              ${res.pageDescription ? `<span class="search-result-page-desc">"${escapeHtml(res.pageDescription)}"</span>` : ''}
+            </span>
+            <span class="search-result-matches-count">Jump to Page →</span>
+          </div>
+          ${snippetHtml}
+        `;
+
+        li.onclick = () => {
+          state.currentPageId = res.pageId;
+          renderAll(false);
+          closeSearchResultsModal();
+          closeOverlay();
+          showToast(`Navigated to Page ${res.pageNumber}${res.pageDescription ? ` (${res.pageDescription})` : ''}`);
+        };
+
+        DOM.searchResultsList.appendChild(li);
+      });
+    }
+  }
+
+  DOM.searchResultsModal.classList.remove('hidden');
+  setTimeout(() => {
+    if (DOM.inputModalSearch) {
+      DOM.inputModalSearch.focus();
+      DOM.inputModalSearch.select();
+    }
+  }, 50);
+}
+
+function closeSearchResultsModal() {
+  if (DOM.searchResultsModal) {
+    DOM.searchResultsModal.classList.add('hidden');
+  }
+}
+
+function escapeRegExp(string) {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 let activeTypewriterTimer = null;
@@ -1440,8 +1746,9 @@ function renderActivePage(lastChunkIsNew = false) {
   lastRenderedPageId = page.id;
 
   const totalPages = book.pages.length;
+  const descLabel = (page.description && page.description.trim()) ? ` • "${page.description.trim()}"` : '';
   if (DOM.pageHeaderInfo) {
-    DOM.pageHeaderInfo.textContent = `Page ${page.number}/${totalPages} • ${book.title}${page.locked ? ' (Locked)' : ''}`;
+    DOM.pageHeaderInfo.textContent = `Page ${page.number}/${totalPages}${descLabel} • ${book.title}${page.locked ? ' (Locked)' : ''}`;
   }
 
   const showTS = Boolean(state.settings.showTimestamps);
@@ -1713,8 +2020,9 @@ function compileManuscriptText(format = 'txt') {
   if (!book) return '';
   let fullText = `# ${book.title}\n\n`;
   book.pages.forEach(page => {
-    if (format === 'md') fullText += `## Page ${page.number}\n\n`;
-    else fullText += `--- PAGE ${page.number} ---\n\n`;
+    const descSuffix = (page.description && page.description.trim()) ? ` (${page.description.trim()})` : '';
+    if (format === 'md') fullText += `## Page ${page.number}${descSuffix}\n\n`;
+    else fullText += `--- PAGE ${page.number}${descSuffix.toUpperCase()} ---\n\n`;
     const pageText = page.chunks.map(c => getChunkText(c)).join('');
     fullText += pageText + '\n\n';
   });
@@ -1791,7 +2099,8 @@ function exportManuscriptPDF() {
         const headerTitle = bookTitle.toUpperCase() + (isContinuation ? ' (CONT.)' : '');
         doc.text(headerTitle, margin, 46);
 
-        const headerRight = `PAGE ${page.number}`;
+        const headerDesc = (page.description && page.description.trim()) ? ` [${page.description.trim().toUpperCase()}]` : '';
+        const headerRight = `PAGE ${page.number}${headerDesc}`;
         const rightW = doc.getTextWidth(headerRight);
         doc.text(headerRight, pageWidth - margin - rightW, 46);
 
@@ -2164,6 +2473,14 @@ function setupEventListeners() {
   // ESC Key Listener & Global Keyboard Shortcuts
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (DOM.pageDescModal && !DOM.pageDescModal.classList.contains('hidden')) {
+        closePageDescModal();
+        return;
+      }
+      if (DOM.searchResultsModal && !DOM.searchResultsModal.classList.contains('hidden')) {
+        closeSearchResultsModal();
+        return;
+      }
       if (DOM.backupInspectModal && !DOM.backupInspectModal.classList.contains('hidden')) {
         closeBackupInspectModal();
         return;
@@ -2563,6 +2880,68 @@ function setupEventListeners() {
   if (DOM.backupInspectModal) {
     DOM.backupInspectModal.onclick = (e) => {
       if (e.target === DOM.backupInspectModal) closeBackupInspectModal();
+    };
+  }
+
+  // Page Description Modal Event Listeners
+  if (DOM.btnClosePageDesc) DOM.btnClosePageDesc.onclick = closePageDescModal;
+  if (DOM.btnCancelPageDesc) DOM.btnCancelPageDesc.onclick = closePageDescModal;
+  if (DOM.btnClearPageDesc) DOM.btnClearPageDesc.onclick = clearPageDescModal;
+  if (DOM.btnSavePageDesc) DOM.btnSavePageDesc.onclick = savePageDescModal;
+  if (DOM.inputPageDesc) {
+    DOM.inputPageDesc.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        savePageDescModal();
+      }
+    });
+  }
+  if (DOM.pageDescModal) {
+    DOM.pageDescModal.onclick = (e) => {
+      if (e.target === DOM.pageDescModal) closePageDescModal();
+    };
+  }
+
+  // Manuscript Search Event Listeners
+  if (DOM.inputBookSearch) {
+    DOM.inputBookSearch.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        performBookSearch(DOM.inputBookSearch.value);
+      }
+    });
+    DOM.inputBookSearch.addEventListener('input', () => {
+      const hasVal = Boolean(DOM.inputBookSearch.value.trim());
+      if (DOM.btnClearBookSearch) {
+        DOM.btnClearBookSearch.classList.toggle('hidden', !hasVal);
+      }
+    });
+  }
+
+  if (DOM.btnClearBookSearch) {
+    DOM.btnClearBookSearch.onclick = () => {
+      if (DOM.inputBookSearch) {
+        DOM.inputBookSearch.value = '';
+        DOM.inputBookSearch.focus();
+      }
+      DOM.btnClearBookSearch.classList.add('hidden');
+    };
+  }
+
+  if (DOM.inputModalSearch) {
+    DOM.inputModalSearch.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        performBookSearch(DOM.inputModalSearch.value);
+      }
+    });
+  }
+
+  if (DOM.btnCloseSearchModal) DOM.btnCloseSearchModal.onclick = closeSearchResultsModal;
+  if (DOM.btnDismissSearchModal) DOM.btnDismissSearchModal.onclick = closeSearchResultsModal;
+  if (DOM.searchResultsModal) {
+    DOM.searchResultsModal.onclick = (e) => {
+      if (e.target === DOM.searchResultsModal) closeSearchResultsModal();
     };
   }
 }
