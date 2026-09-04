@@ -9,5 +9,8 @@
   },
   "devDependencies": {
     "sharp": "^0.35.4"
+  },
+  "dependencies": {
+    "jspdf": "^4.2.1"
   }
 }

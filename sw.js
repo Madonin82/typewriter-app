@@ -1,9 +1,10 @@
-const CACHE_NAME = 'typewriter-studio-v1';
+const CACHE_NAME = 'typewriter-studio-v2';
 const PRECACHE_ASSETS = [
   './',
   './index.html',
   './style.css',
   './app.js',
+  './jspdf.umd.min.js',
   './manifest.json',
   './icon.svg',
   './pwa-192x192.png',

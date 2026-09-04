@@ -265,6 +265,15 @@
             <span>Download formatted with page headers</span>
           </div>
         </button>
+        <button id="btn-export-pdf" class="export-card-btn">
+          <span class="export-icon">
+            <svg class="drive-doc-icon" viewBox="0 0 24 24"><path fill="#EA4335" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1.5 14h-1.2v-1.8H9.8V16H8.5v-5h2.8c.9 0 1.5.6 1.5 1.5v1c0 .7-.4 1.3-1.1 1.4L12.5 16zm-1.2-3.3c0-.3-.2-.5-.5-.5H9.8v1.3h1c.3 0 .5-.2.5-.5v-.3zm5.7 3.3h-1.3v-1.8h-1.5V16h-1.3v-5h1.3v1.8h1.5V11H17v5zm-3.5-7V3.5L17.5 9H13.5z"/></svg>
+          </span>
+          <div class="export-info">
+            <strong>PDF Document (.pdf)</strong>
+            <span>Download formatted typewriter manuscript PDF</span>
+          </div>
+        </button>
         <button id="btn-copy-all" class="export-card-btn">
           <span class="export-icon">📋</span>
           <div class="export-info">
@@ -373,7 +382,8 @@
   <!-- ── TOAST NOTIFICATION ── -->
   <div id="toast" class="toast"></div>
 
-  <!-- Core Script -->
+  <!-- Core Scripts -->
+  <script src="jspdf.umd.min.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

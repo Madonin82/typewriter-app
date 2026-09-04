@@ -212,6 +212,7 @@ function initDOM() {
     btnCloseExportModal: document.getElementById('btn-close-export-modal'),
     btnExportTxt: document.getElementById('btn-export-txt'),
     btnExportMd: document.getElementById('btn-export-md'),
+    btnExportPdf: document.getElementById('btn-export-pdf'),
     btnCopyAll: document.getElementById('btn-copy-all'),
     btnExportDriveDoc: document.getElementById('btn-export-drive-doc'),
     btnExportDriveTxt: document.getElementById('btn-export-drive-txt'),
@@ -1546,6 +1547,10 @@ function compileManuscriptText(format = 'txt') {
 }
 
 function exportManuscript(format) {
+  if (format === 'pdf') {
+    exportManuscriptPDF();
+    return;
+  }
   const book = getActiveBook();
   const content = compileManuscriptText(format);
   const ext = format === 'md' ? 'md' : 'txt';
@@ -1564,6 +1569,155 @@ function exportManuscript(format) {
 
   if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
   showToast(`Exported ${filename}`);
+}
+
+function exportManuscriptPDF() {
+  const jsPDFClass = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!jsPDFClass) {
+    showToast("PDF engine is initializing, please try again in a moment.");
+    return;
+  }
+
+  const book = getActiveBook();
+  const cleanTitle = (book ? book.title : 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  const filename = `${cleanTitle}_${new Date().toISOString().slice(0, 10)}.pdf`;
+
+  try {
+    const doc = new jsPDFClass({
+      orientation: 'portrait',
+      unit: 'pt',
+      format: 'letter'
+    });
+
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 72; // Standard 1-inch manuscript margin
+    const contentWidth = pageWidth - (margin * 2);
+    const lineHeight = 18;
+    const bottomLimit = pageHeight - margin;
+    const showTS = Boolean(state.settings && state.settings.showTimestamps);
+
+    const bookTitle = (book && book.title ? book.title : 'Untitled Book').trim();
+    const dateStr = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const pages = (book && book.pages && book.pages.length > 0) ? book.pages : [{ number: 1, chunks: [] }];
+
+    let pdfPageCount = 0;
+
+    pages.forEach((page, pageIdx) => {
+      if (pdfPageCount > 0) {
+        doc.addPage();
+      }
+      pdfPageCount++;
+
+      function drawRunningHeader(isContinuation = false) {
+        doc.setFont('courier', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(110, 110, 110);
+        const headerTitle = bookTitle.toUpperCase() + (isContinuation ? ' (CONT.)' : '');
+        doc.text(headerTitle, margin, 46);
+
+        const headerRight = `PAGE ${page.number}`;
+        const rightW = doc.getTextWidth(headerRight);
+        doc.text(headerRight, pageWidth - margin - rightW, 46);
+
+        doc.setDrawColor(210, 205, 195);
+        doc.setLineWidth(0.75);
+        doc.line(margin, 54, pageWidth - margin, 54);
+      }
+
+      drawRunningHeader(false);
+
+      let cursorY = margin + 14;
+
+      // On Page 1, render Manuscript Title Banner
+      if (pageIdx === 0) {
+        doc.setFont('courier', 'bold');
+        doc.setFontSize(18);
+        doc.setTextColor(20, 20, 20);
+        const titleLines = doc.splitTextToSize(bookTitle, contentWidth);
+        titleLines.forEach(tLine => {
+          doc.text(tLine, margin, cursorY);
+          cursorY += 22;
+        });
+
+        doc.setFont('courier', 'normal');
+        doc.setFontSize(9);
+        doc.setTextColor(130, 125, 120);
+        doc.text(`TYPEWRITER STUDIO MANUSCRIPT  •  ${dateStr.toUpperCase()}`, margin, cursorY);
+        cursorY += 28;
+
+        doc.setDrawColor(225, 220, 210);
+        doc.setLineWidth(0.5);
+        doc.line(margin, cursorY - 14, pageWidth - margin, cursorY - 14);
+      }
+
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(11);
+      doc.setTextColor(28, 28, 28);
+
+      const chunks = page.chunks || [];
+      if (chunks.length === 0) {
+        doc.setFont('courier', 'italic');
+        doc.setTextColor(160, 160, 160);
+        doc.text('[Empty Page]', margin, cursorY);
+      } else {
+        chunks.forEach((chunkItem) => {
+          const text = getChunkText(chunkItem);
+          const ts = getChunkTimestamp(chunkItem);
+          const timeStr = formatChunkTime(ts);
+
+          if (showTS && timeStr) {
+            doc.setFont('courier', 'italic');
+            doc.setFontSize(8.5);
+            doc.setTextColor(140, 135, 130);
+            if (cursorY + 14 > bottomLimit) {
+              doc.addPage();
+              pdfPageCount++;
+              drawRunningHeader(true);
+              cursorY = margin + 14;
+            }
+            doc.text(`[${timeStr}]`, margin, cursorY);
+            cursorY += 13;
+            doc.setFont('courier', 'normal');
+            doc.setFontSize(11);
+            doc.setTextColor(28, 28, 28);
+          }
+
+          const paragraphs = text.split('\n');
+          paragraphs.forEach((para, pIdx) => {
+            if (para === '') {
+              cursorY += lineHeight * 0.7;
+              return;
+            }
+            const lines = doc.splitTextToSize(para, contentWidth);
+            lines.forEach(line => {
+              if (cursorY + lineHeight > bottomLimit) {
+                doc.addPage();
+                pdfPageCount++;
+                drawRunningHeader(true);
+                cursorY = margin + 14;
+                doc.setFont('courier', 'normal');
+                doc.setFontSize(11);
+                doc.setTextColor(28, 28, 28);
+              }
+              doc.text(line, margin, cursorY);
+              cursorY += lineHeight;
+            });
+            if (pIdx < paragraphs.length - 1) {
+              cursorY += 4;
+            }
+          });
+        });
+      }
+    });
+
+    doc.save(filename);
+    if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+    showToast(`Exported ${filename}`);
+  } catch (err) {
+    console.error('PDF export failed:', err);
+    showToast('Failed to export PDF: ' + (err.message || 'Unknown error'));
+  }
 }
 
 function copyManuscriptToClipboard() {
@@ -2230,6 +2384,7 @@ function setupEventListeners() {
   if (DOM.btnExportDriveTxt) DOM.btnExportDriveTxt.onclick = () => saveCurrentBookToDrive(false);
   if (DOM.btnExportTxt) DOM.btnExportTxt.onclick = () => exportManuscript('txt');
   if (DOM.btnExportMd) DOM.btnExportMd.onclick = () => exportManuscript('md');
+  if (DOM.btnExportPdf) DOM.btnExportPdf.onclick = () => exportManuscript('pdf');
   if (DOM.btnCopyAll) DOM.btnCopyAll.onclick = copyManuscriptToClipboard;
 }
 
