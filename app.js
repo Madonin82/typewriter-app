@@ -236,6 +236,19 @@ function initDOM() {
     driveFilesList: document.getElementById('drive-files-list'),
     driveEmptyMessage: document.getElementById('drive-empty-message'),
 
+    backupInspectModal: document.getElementById('backup-inspect-modal'),
+    backupInspectTitle: document.getElementById('backup-inspect-title'),
+    btnCloseBackupInspect: document.getElementById('btn-close-backup-inspect'),
+    btnCancelBackupInspect: document.getElementById('btn-cancel-backup-inspect'),
+    btnConfirmBackupRestore: document.getElementById('btn-confirm-backup-restore'),
+    btnMergeBackupInspect: document.getElementById('btn-merge-backup-inspect'),
+    backupInspectDate: document.getElementById('backup-inspect-date'),
+    backupInspectBooks: document.getElementById('backup-inspect-books'),
+    backupInspectPages: document.getElementById('backup-inspect-pages'),
+    backupInspectWords: document.getElementById('backup-inspect-words'),
+    backupInspectSource: document.getElementById('backup-inspect-source'),
+    backupInspectBooksList: document.getElementById('backup-inspect-books-list'),
+
     toast: document.getElementById('toast')
   };
 }
@@ -309,6 +322,7 @@ function closeOverlay() {
   if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
   if (DOM.driveModal) DOM.driveModal.classList.add('hidden');
   if (DOM.safetyArchiveModal) DOM.safetyArchiveModal.classList.add('hidden');
+  if (DOM.backupInspectModal) DOM.backupInspectModal.classList.add('hidden');
 
   setTimeout(() => {
     if (DOM.draftInput) DOM.draftInput.focus();
@@ -875,8 +889,176 @@ function exportBackupFile() {
   showToast("Saved backup file!");
 }
 
+// Pending Backup Inspection State
+let pendingBackupPayload = null;
+let pendingBackupSourceLabel = '';
+
+function scanBackupPayload(payload) {
+  if (!payload || !payload.books || !Array.isArray(payload.books) || payload.books.length === 0) {
+    return null;
+  }
+
+  let totalWords = 0;
+  let totalPages = 0;
+  const bookSummaries = [];
+
+  payload.books.forEach(b => {
+    let bookWords = 0;
+    const pages = b.pages || [];
+    pages.forEach(p => {
+      bookWords += getPageWordCount(p);
+    });
+    totalWords += bookWords;
+    totalPages += pages.length;
+    bookSummaries.push({
+      id: b.id,
+      title: b.title || 'Untitled Book',
+      pagesCount: pages.length,
+      wordsCount: bookWords
+    });
+  });
+
+  return {
+    raw: payload,
+    date: payload.exportDate || payload.backupDate || null,
+    booksCount: payload.books.length,
+    totalPages: totalPages,
+    totalWords: totalWords,
+    bookSummaries: bookSummaries
+  };
+}
+
+function openBackupInspectModal(payload, sourceLabel = 'Local File') {
+  const scan = scanBackupPayload(payload);
+  if (!scan) {
+    alert("Invalid backup file: The selected file does not contain a valid Typewriter book library.");
+    return;
+  }
+
+  pendingBackupPayload = payload;
+  pendingBackupSourceLabel = sourceLabel;
+
+  if (DOM.backupInspectModal) {
+    DOM.backupInspectModal.classList.remove('hidden');
+
+    if (DOM.backupInspectSource) {
+      DOM.backupInspectSource.textContent = sourceLabel;
+    }
+
+    if (DOM.backupInspectDate) {
+      if (scan.date) {
+        try {
+          const d = new Date(scan.date);
+          DOM.backupInspectDate.textContent = isNaN(d.getTime()) ? 'Unknown' : d.toLocaleDateString() + ' ' + d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        } catch (e) {
+          DOM.backupInspectDate.textContent = 'Unknown';
+        }
+      } else {
+        DOM.backupInspectDate.textContent = 'Unspecified';
+      }
+    }
+
+    if (DOM.backupInspectBooks) DOM.backupInspectBooks.textContent = scan.booksCount;
+    if (DOM.backupInspectPages) DOM.backupInspectPages.textContent = scan.totalPages;
+    if (DOM.backupInspectWords) DOM.backupInspectWords.textContent = scan.totalWords.toLocaleString();
+
+    if (DOM.backupInspectBooksList) {
+      DOM.backupInspectBooksList.innerHTML = '';
+      scan.bookSummaries.forEach((b, idx) => {
+        const li = document.createElement('li');
+        li.className = 'backup-inspect-book-item';
+        li.innerHTML = `
+          <div class="backup-inspect-book-main">
+            <span style="font-size:14px; opacity:0.8;">📖</span>
+            <span class="backup-inspect-book-title" title="${b.title}">${idx + 1}. ${b.title}</span>
+          </div>
+          <span class="backup-inspect-book-meta">${b.pagesCount} pgs • ${b.wordsCount.toLocaleString()} wds</span>
+        `;
+        DOM.backupInspectBooksList.appendChild(li);
+      });
+    }
+  }
+}
+
+function closeBackupInspectModal() {
+  if (DOM.backupInspectModal) {
+    DOM.backupInspectModal.classList.add('hidden');
+  }
+  pendingBackupPayload = null;
+  if (DOM.fileInputRestore) {
+    DOM.fileInputRestore.value = '';
+  }
+}
+
+function executeBackupRestore(replaceMode = true) {
+  if (!pendingBackupPayload || !pendingBackupPayload.books || pendingBackupPayload.books.length === 0) {
+    showToast("No valid backup loaded to restore.");
+    closeBackupInspectModal();
+    return;
+  }
+
+  // 1. Safety Archive of current active workspace before any modification
+  if (state.books && state.books.length > 0) {
+    createSafetyBackupForReset(state.books, state.settings, `Automatic Backup Before Restoring (${pendingBackupSourceLabel || 'Backup File'})`);
+  }
+
+  const incomingBooks = pendingBackupPayload.books;
+
+  if (replaceMode) {
+    // Replace current workspace with the backup
+    state.books = incomingBooks;
+    if (pendingBackupPayload.settings) {
+      state.settings = { ...state.settings, ...pendingBackupPayload.settings };
+      applyTheme();
+      applyFont();
+      applySettingsUI();
+    }
+    state.activeBookId = state.books[0].id;
+    const lastBook = state.books[0];
+    const lastPage = (lastBook.pages && lastBook.pages.length > 0)
+      ? lastBook.pages[lastBook.pages.length - 1]
+      : null;
+    state.currentPageId = lastPage ? lastPage.id : null;
+
+    saveStorage();
+    renderAll();
+    closeBackupInspectModal();
+    closeOverlay();
+    showToast(`Restored all ${state.books.length} books from backup! Previous workspace preserved in Safety Archive.`);
+    playCarriageReturnBell();
+  } else {
+    // Append / merge books into current workspace
+    let addedCount = 0;
+    incomingBooks.forEach(b => {
+      const copy = JSON.parse(JSON.stringify(b));
+      // Give fresh ID if clash or to preserve individuality
+      const exists = state.books.some(curr => curr.id === copy.id);
+      if (exists) {
+        copy.id = 'book_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+        copy.title = copy.title + ' (Imported)';
+      }
+      state.books.push(copy);
+      addedCount++;
+    });
+
+    state.activeBookId = state.books[state.books.length - 1].id;
+    const activeBook = state.books[state.books.length - 1];
+    const lastPage = (activeBook.pages && activeBook.pages.length > 0)
+      ? activeBook.pages[activeBook.pages.length - 1]
+      : null;
+    state.currentPageId = lastPage ? lastPage.id : null;
+
+    saveStorage();
+    renderAll();
+    closeBackupInspectModal();
+    closeOverlay();
+    showToast(`Appended ${addedCount} book${addedCount === 1 ? '' : 's'} to your studio library!`);
+    playCarriageReturnBell();
+  }
+}
+
 function importBackupFile(event) {
-  const file = event.target.files[0];
+  const file = event.target.files && event.target.files[0];
   if (!file) return;
 
   const reader = new FileReader();
@@ -884,21 +1066,14 @@ function importBackupFile(event) {
     try {
       const importedData = JSON.parse(e.target.result);
       if (importedData && importedData.books && importedData.books.length > 0) {
-        state.books = importedData.books;
-        if (importedData.settings) {
-          state.settings = { ...state.settings, ...importedData.settings };
-        }
-        state.activeBookId = state.books[0].id;
-        state.currentPageId = state.books[0].pages[state.books[0].pages.length - 1].id;
-        saveStorage();
-        renderAll();
-        showToast("Backup restored successfully!");
-        closeOverlay();
+        openBackupInspectModal(importedData, file.name || 'Local File');
       } else {
-        alert("Invalid backup file format.");
+        alert("Invalid backup file: The selected file does not contain a recognized Typewriter studio backup.");
+        if (DOM.fileInputRestore) DOM.fileInputRestore.value = '';
       }
     } catch (err) {
-      alert("Error reading backup file.");
+      alert("Could not read backup file. Please ensure it is a valid JSON backup from Typewriter Studio.");
+      if (DOM.fileInputRestore) DOM.fileInputRestore.value = '';
     }
   };
   reader.readAsText(file);
@@ -1896,25 +2071,14 @@ async function restoreDriveBackup(fileId) {
     const importedData = JSON.parse(raw);
 
     if (importedData && importedData.books && importedData.books.length > 0) {
-      if (confirm("Restore this backup? This will update your current books and studio settings.")) {
-        state.books = importedData.books;
-        if (importedData.settings) {
-          state.settings = { ...state.settings, ...importedData.settings };
-        }
-        state.activeBookId = state.books[0].id;
-        state.currentPageId = state.books[0].pages[state.books[0].pages.length - 1].id;
-        saveStorage();
-        renderAll();
-        closeDriveModal();
-        closeOverlay();
-        showToast("Studio state restored from Google Drive!");
-      }
+      closeDriveModal();
+      openBackupInspectModal(importedData, 'Google Drive');
     } else {
       showToast("Selected file is not a valid studio backup JSON.");
     }
   } catch (err) {
     console.error("Restore error:", err);
-    showToast(`Failed to restore backup: ${err.message}`);
+    showToast(`Failed to inspect backup: ${err.message}`);
   }
 }
 
@@ -2000,6 +2164,10 @@ function setupEventListeners() {
   // ESC Key Listener & Global Keyboard Shortcuts
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (DOM.backupInspectModal && !DOM.backupInspectModal.classList.contains('hidden')) {
+        closeBackupInspectModal();
+        return;
+      }
       if (DOM.driveModal && !DOM.driveModal.classList.contains('hidden')) {
         DOM.driveModal.classList.add('hidden');
         return;
@@ -2386,6 +2554,17 @@ function setupEventListeners() {
   if (DOM.btnExportMd) DOM.btnExportMd.onclick = () => exportManuscript('md');
   if (DOM.btnExportPdf) DOM.btnExportPdf.onclick = () => exportManuscript('pdf');
   if (DOM.btnCopyAll) DOM.btnCopyAll.onclick = copyManuscriptToClipboard;
+
+  // Backup Inspection & Safety Restore Modal
+  if (DOM.btnCloseBackupInspect) DOM.btnCloseBackupInspect.onclick = closeBackupInspectModal;
+  if (DOM.btnCancelBackupInspect) DOM.btnCancelBackupInspect.onclick = closeBackupInspectModal;
+  if (DOM.btnConfirmBackupRestore) DOM.btnConfirmBackupRestore.onclick = () => executeBackupRestore(true);
+  if (DOM.btnMergeBackupInspect) DOM.btnMergeBackupInspect.onclick = () => executeBackupRestore(false);
+  if (DOM.backupInspectModal) {
+    DOM.backupInspectModal.onclick = (e) => {
+      if (e.target === DOM.backupInspectModal) closeBackupInspectModal();
+    };
+  }
 }
 
 // ─── INITIALIZATION ─────────────────────────────────────────

@@ -351,6 +351,69 @@
     </div>
   </div>
 
+  <!-- ── BACKUP INSPECTION & RESTORE CONFIRMATION MODAL ── -->
+  <div id="backup-inspect-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-card-wide">
+      <div class="modal-header">
+        <div class="modal-title-with-icon">
+          <span>🔍</span>
+          <h3 id="backup-inspect-title">Inspect Backup File</h3>
+        </div>
+        <button id="btn-close-backup-inspect" class="btn-close">×</button>
+      </div>
+
+      <div class="backup-inspect-warning">
+        <span class="warning-icon">⚠️</span>
+        <div class="warning-text">
+          <strong>Review Before Restoring</strong>
+          <span>Examine the contents of this backup file below. Restoring will replace your current workspace books with the backup contents. An automatic safety snapshot of your current workspace will be created first.</span>
+        </div>
+      </div>
+
+      <div class="backup-inspect-stats-grid">
+        <div class="backup-stat-box">
+          <span class="backup-stat-lbl">Backup Created</span>
+          <strong id="backup-inspect-date" class="backup-stat-val">—</strong>
+        </div>
+        <div class="backup-stat-box">
+          <span class="backup-stat-lbl">Books Count</span>
+          <strong id="backup-inspect-books" class="backup-stat-val">0</strong>
+        </div>
+        <div class="backup-stat-box">
+          <span class="backup-stat-lbl">Total Pages</span>
+          <strong id="backup-inspect-pages" class="backup-stat-val">0</strong>
+        </div>
+        <div class="backup-stat-box">
+          <span class="backup-stat-lbl">Total Words</span>
+          <strong id="backup-inspect-words" class="backup-stat-val">0</strong>
+        </div>
+      </div>
+
+      <div class="backup-inspect-section-hdr">
+        <span>Books & Manuscripts in this Backup</span>
+        <span id="backup-inspect-source" class="backup-inspect-source-badge">Local File</span>
+      </div>
+
+      <div class="backup-inspect-books-container">
+        <ul id="backup-inspect-books-list" class="backup-inspect-books-list">
+          <!-- Populated dynamically -->
+        </ul>
+      </div>
+
+      <div class="backup-inspect-footer">
+        <button id="btn-cancel-backup-inspect" class="btn-drive-action" style="padding:8px 18px; font-size:12px;">Cancel</button>
+        <div style="display:flex; gap:8px;">
+          <button id="btn-merge-backup-inspect" class="btn-drive-action" style="padding:8px 14px; font-size:12px; background:#1b3d22; border-color:#2a7238; color:#7ee896;" title="Add these books to your current library without overwriting existing ones">
+            ➕ Append to Library
+          </button>
+          <button id="btn-confirm-backup-restore" class="btn-drive-action primary" style="padding:8px 18px; font-size:12px; font-weight:600;" title="Restore all books and settings from this backup">
+            📥 Replace & Restore
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── IOS PWA INSTALL GUIDE MODAL ── -->
   <div id="ios-install-modal" class="modal-backdrop hidden">
     <div class="modal-card">
