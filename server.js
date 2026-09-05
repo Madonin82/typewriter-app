@@ -13,7 +13,8 @@ const MIME = {
   '.jpg': 'image/jpeg',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
-  '.pdf': 'application/pdf'
+  '.pdf': 'application/pdf',
+  '.epub': 'application/epub+zip'
 };
 
 const server = http.createServer((req, res) => {

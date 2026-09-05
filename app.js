@@ -219,12 +219,14 @@ function initDOM() {
     btnExportTxt: document.getElementById('btn-export-txt'),
     btnExportMd: document.getElementById('btn-export-md'),
     btnExportPdf: document.getElementById('btn-export-pdf'),
+    btnExportEpub: document.getElementById('btn-export-epub'),
     btnExportJson: document.getElementById('btn-export-json'),
     btnCopyAll: document.getElementById('btn-copy-all'),
     btnExportDriveDoc: document.getElementById('btn-export-drive-doc'),
     btnExportDriveTxt: document.getElementById('btn-export-drive-txt'),
 
     btnDriveBackup: document.getElementById('btn-drive-backup'),
+    btnDriveImport: document.getElementById('btn-drive-import'),
     btnDriveManager: document.getElementById('btn-drive-manager'),
 
     btnInstallPwa: document.getElementById('btn-install-pwa'),
@@ -239,6 +241,8 @@ function initDOM() {
     btnRefreshDrive: document.getElementById('btn-refresh-drive'),
     btnQuickBackupDrive: document.getElementById('btn-quick-backup-drive'),
     btnQuickExportDrive: document.getElementById('btn-quick-export-drive'),
+    btnQuickImportDrive: document.getElementById('btn-quick-import-drive'),
+    btnQuickRestoreDrive: document.getElementById('btn-quick-restore-drive'),
     driveLoadingIndicator: document.getElementById('drive-loading-indicator'),
     driveFilesList: document.getElementById('drive-files-list'),
     driveEmptyMessage: document.getElementById('drive-empty-message'),
@@ -571,7 +575,7 @@ function saveStorage(syncCloud = true) {
 
 function triggerFileDownload(filename, textContent, mimeType = 'application/json') {
   try {
-    const blob = new Blob([textContent], { type: mimeType });
+    const blob = (textContent instanceof Blob) ? textContent : new Blob([textContent], { type: mimeType });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -1356,9 +1360,529 @@ function addSingleManuscriptToSession(rawBook, sourceName = '') {
   playCarriageReturnBell();
 }
 
+function xmlEscape(str) {
+  if (str == null) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+async function parseEpubFile(arrayBuffer, filename) {
+  if (typeof JSZip === 'undefined') {
+    throw new Error("JSZip library is not loaded.");
+  }
+
+  const zip = await JSZip.loadAsync(arrayBuffer);
+
+  // 1. Locate package document (.opf) via META-INF/container.xml
+  let opfPath = null;
+  const containerEntry = zip.file("META-INF/container.xml") || zip.file("meta-inf/container.xml");
+  const parser = new DOMParser();
+
+  if (containerEntry) {
+    try {
+      const containerText = await containerEntry.async("text");
+      const containerDoc = parser.parseFromString(containerText, "application/xml");
+      const rootfileEl = containerDoc.querySelector("rootfile");
+      if (rootfileEl) {
+        opfPath = rootfileEl.getAttribute("full-path");
+      }
+    } catch (e) {
+      console.warn("Could not parse META-INF/container.xml:", e);
+    }
+  }
+
+  // Fallback: search zip entries for any .opf file
+  if (!opfPath) {
+    const allFiles = Object.keys(zip.files);
+    opfPath = allFiles.find(f => /\.opf$/i.test(f));
+  }
+
+  if (!opfPath || !zip.file(opfPath)) {
+    throw new Error("Could not find package document (.opf) inside EPUB archive.");
+  }
+
+  const opfText = await zip.file(opfPath).async("text");
+  const opfDoc = parser.parseFromString(opfText, "application/xml");
+  const opfDir = opfPath.includes('/') ? opfPath.substring(0, opfPath.lastIndexOf('/') + 1) : '';
+
+  function resolveZipPath(base, rel) {
+    if (!rel) return '';
+    rel = decodeURIComponent(rel.split('#')[0]);
+    if (rel.startsWith('/')) return rel.slice(1);
+    const stack = base ? base.split('/').filter(Boolean) : [];
+    const parts = rel.split('/');
+    for (const p of parts) {
+      if (p === '.' || !p) continue;
+      if (p === '..') {
+        if (stack.length > 0) stack.pop();
+      } else {
+        stack.push(p);
+      }
+    }
+    return stack.join('/');
+  }
+
+  // 2. Extract title
+  let title = '';
+  const dcTitle = opfDoc.getElementsByTagName('dc:title')[0] || opfDoc.getElementsByTagName('title')[0];
+  if (dcTitle && dcTitle.textContent) {
+    title = dcTitle.textContent.trim();
+  }
+  if (!title) {
+    title = filename.replace(/\.epub$/i, '').replace(/[_-]/g, ' ').trim() || 'Imported EPUB';
+  }
+
+  // 3. Manifest item map
+  const manifest = new Map();
+  const items = opfDoc.getElementsByTagName('item');
+  for (let i = 0; i < items.length; i++) {
+    const it = items[i];
+    const id = it.getAttribute('id');
+    const href = it.getAttribute('href');
+    const mediaType = (it.getAttribute('media-type') || '').toLowerCase();
+    if (id && href) {
+      manifest.set(id, {
+        path: resolveZipPath(opfDir, href),
+        mediaType: mediaType
+      });
+    }
+  }
+
+  // 4. Reading order via spine
+  const itemrefs = opfDoc.getElementsByTagName('itemref');
+  const chapterPaths = [];
+  for (let i = 0; i < itemrefs.length; i++) {
+    const idref = itemrefs[i].getAttribute('idref');
+    const mItem = manifest.get(idref);
+    if (mItem) {
+      if (mItem.mediaType.includes('html') || mItem.mediaType.includes('xml') || /\.(xhtml|html|htm)$/i.test(mItem.path)) {
+        chapterPaths.push(mItem.path);
+      }
+    }
+  }
+
+  if (chapterPaths.length === 0) {
+    manifest.forEach(mItem => {
+      if (mItem.mediaType.includes('html') || /\.(xhtml|html|htm)$/i.test(mItem.path)) {
+        chapterPaths.push(mItem.path);
+      }
+    });
+  }
+
+  if (chapterPaths.length === 0) {
+    throw new Error("No readable XHTML or HTML chapters found in the EPUB file.");
+  }
+
+  // 5. Parse chapters into typewriter pages
+  const pages = [];
+  const targetWordsPerPage = (state && state.settings && state.settings.wordsPerPage) || 300;
+
+  for (let cIdx = 0; cIdx < chapterPaths.length; cIdx++) {
+    const cPath = chapterPaths[cIdx];
+    const cEntry = zip.file(cPath);
+    if (!cEntry) continue;
+
+    const cText = await cEntry.async("text");
+    const cDoc = parser.parseFromString(cText, "text/html");
+
+    // Clean out non-content elements
+    const unwanted = cDoc.querySelectorAll('script, style, link, meta, head');
+    unwanted.forEach(el => el.remove());
+
+    // Extract chapter title or header
+    let chapterTitle = '';
+    const hEl = cDoc.querySelector('h1, h2, h3');
+    if (hEl && hEl.textContent.trim()) {
+      chapterTitle = hEl.textContent.trim().replace(/\s+/g, ' ');
+    } else {
+      const docTitle = cDoc.querySelector('title');
+      if (docTitle && docTitle.textContent.trim()) {
+        chapterTitle = docTitle.textContent.trim().replace(/\s+/g, ' ');
+      }
+    }
+
+    // Extract paragraphs and content blocks
+    const contentEls = Array.from(cDoc.body ? cDoc.body.querySelectorAll('p, blockquote, li, pre, h1, h2, h3, h4, h5, h6') : []);
+    let paragraphs = [];
+
+    if (contentEls.length > 0) {
+      contentEls.forEach(el => {
+        const t = el.textContent.trim().replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        if (t.length > 0) {
+          paragraphs.push(t);
+        }
+      });
+    } else if (cDoc.body && cDoc.body.textContent.trim()) {
+      paragraphs = cDoc.body.textContent.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+    }
+
+    if (paragraphs.length === 0) {
+      continue; // Skip empty sections (covers/placeholders)
+    }
+
+    // If chapter is large, split into pages according to word count
+    const totalWordsInChapter = paragraphs.reduce((acc, p) => acc + p.split(/\s+/).filter(Boolean).length, 0);
+
+    if (totalWordsInChapter > targetWordsPerPage * 2 && paragraphs.length > 3) {
+      let currentChunks = [];
+      let currentWordCount = 0;
+      let partIdx = 1;
+
+      paragraphs.forEach((pText) => {
+        const pWords = pText.split(/\s+/).filter(Boolean).length;
+        if (currentWordCount + pWords > targetWordsPerPage && currentChunks.length > 0) {
+          pages.push({
+            number: pages.length + 1,
+            description: chapterTitle ? `${chapterTitle} (Part ${partIdx})` : '',
+            chunks: currentChunks
+          });
+          currentChunks = [];
+          currentWordCount = 0;
+          partIdx++;
+        }
+        currentChunks.push({ text: pText });
+        currentWordCount += pWords;
+      });
+
+      if (currentChunks.length > 0) {
+        pages.push({
+          number: pages.length + 1,
+          description: chapterTitle ? (partIdx > 1 ? `${chapterTitle} (Part ${partIdx})` : chapterTitle) : '',
+          chunks: currentChunks
+        });
+      }
+    } else {
+      pages.push({
+        number: pages.length + 1,
+        description: chapterTitle,
+        chunks: paragraphs.map(pText => ({ text: pText }))
+      });
+    }
+  }
+
+  if (pages.length === 0) {
+    pages.push({
+      number: 1,
+      description: '',
+      chunks: [{ text: '' }]
+    });
+  }
+
+  return {
+    title: title,
+    pages: pages
+  };
+}
+
+async function exportManuscriptEPUB() {
+  const book = getActiveBook();
+  if (!book) {
+    showToast("No active manuscript to export.");
+    return;
+  }
+
+  if (typeof JSZip === 'undefined') {
+    showToast("EPUB generator is initializing, please try again in a moment.");
+    return;
+  }
+
+  try {
+    const zip = new JSZip();
+
+    // 1. mimetype MUST be uncompressed first entry in archive
+    zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
+
+    // 2. META-INF/container.xml
+    const containerXml = `<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>`;
+    zip.file('META-INF/container.xml', containerXml);
+
+    // 3. OEBPS/style.css
+    const styleCss = `@charset "utf-8";
+body {
+  font-family: "Courier Prime", "Courier New", Courier, monospace, serif;
+  margin: 5% 8%;
+  line-height: 1.7;
+  color: #1a1a1a;
+  background-color: #faf9f5;
+}
+.title-page {
+  text-align: center;
+  margin-top: 25%;
+}
+h1.book-title {
+  font-size: 2.2em;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  text-transform: uppercase;
+  margin-bottom: 0.4em;
+}
+p.book-subtitle {
+  font-size: 1em;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  color: #666;
+  margin-bottom: 2em;
+}
+.meta-stats {
+  font-size: 0.9em;
+  color: #888;
+  margin-top: 3em;
+}
+.chapter-container {
+  page-break-before: always;
+  margin-top: 2em;
+}
+h2.chapter-title {
+  font-size: 1.4em;
+  letter-spacing: 0.05em;
+  font-weight: 700;
+  border-bottom: 1px solid #ddd;
+  padding-bottom: 0.4em;
+  margin-bottom: 0.4em;
+}
+p.chapter-desc {
+  font-size: 0.95em;
+  font-style: italic;
+  color: #555;
+  margin-bottom: 1.8em;
+}
+p.manuscript-para {
+  margin-top: 0;
+  margin-bottom: 1.2em;
+  text-align: justify;
+  text-indent: 1.5em;
+}
+p.manuscript-para.first {
+  text-indent: 0;
+}`;
+    zip.file('OEBPS/style.css', styleCss);
+
+    let totalWords = 0;
+    book.pages.forEach(p => {
+      totalWords += getPageWordCount(p);
+    });
+
+    const bookUuid = 'urn:uuid:' + (book.id || 'book_' + Date.now()).replace(/[^a-zA-Z0-9-]/g, '-');
+    const bookTitle = book.title || 'Untitled Manuscript';
+    const nowIso = new Date().toISOString();
+
+    // 4. Title Page
+    const titlePageXhtml = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>${xmlEscape(bookTitle)}</title>
+  <link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+  <div class="title-page">
+    <h1 class="book-title">${xmlEscape(bookTitle)}</h1>
+    <p class="book-subtitle">A Typewriter Manuscript</p>
+    <div class="meta-stats">
+      <p>${book.pages.length} Pages • ${totalWords.toLocaleString()} Words</p>
+      <p>Drafted with Typewriter Studio</p>
+    </div>
+  </div>
+</body>
+</html>`;
+    zip.file('OEBPS/titlepage.xhtml', titlePageXhtml);
+
+    // 5. Individual Pages as Chapters
+    const manifestItems = [];
+    const spineItems = [];
+    const navItems = [];
+    const ncxNavPoints = [];
+
+    // Title page references
+    manifestItems.push('<item id="titlepage" href="titlepage.xhtml" media-type="application/xhtml+xml"/>');
+    spineItems.push('<itemref idref="titlepage"/>');
+    navItems.push('<li><a href="titlepage.xhtml">Title Page</a></li>');
+    ncxNavPoints.push(`
+    <navPoint id="nav-title" playOrder="1">
+      <navLabel><text>Title Page</text></navLabel>
+      <content src="titlepage.xhtml"/>
+    </navPoint>`);
+
+    book.pages.forEach((page, idx) => {
+      const pageNum = page.number || (idx + 1);
+      const pageFile = `page_${pageNum}.xhtml`;
+      const pageId = `page-${pageNum}`;
+      const pageTitle = `Page ${pageNum}${page.description ? ': ' + page.description : ''}`;
+
+      let rawParagraphs = [];
+      if (Array.isArray(page.chunks) && page.chunks.length > 0) {
+        page.chunks.forEach(c => {
+          const t = (typeof c === 'string' ? c : (c.text || '')).trim();
+          if (t) {
+            const sub = t.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+            if (sub.length > 0) rawParagraphs.push(...sub);
+            else rawParagraphs.push(t);
+          }
+        });
+      } else if (page.text && page.text.trim()) {
+        rawParagraphs = page.text.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+      }
+
+      if (rawParagraphs.length === 0) {
+        rawParagraphs = ['(Blank page)'];
+      }
+
+      const parasHtml = rawParagraphs.map((pText, pIdx) => {
+        const cls = pIdx === 0 ? 'manuscript-para first' : 'manuscript-para';
+        const formatted = xmlEscape(pText).replace(/\n/g, '<br/>');
+        return `<p class="${cls}">${formatted}</p>`;
+      }).join('\n    ');
+
+      const descHtml = page.description
+        ? `<p class="chapter-desc">${xmlEscape(page.description)}</p>`
+        : '';
+
+      const pageXhtml = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>${xmlEscape(pageTitle)}</title>
+  <link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+  <section epub:type="chapter" class="chapter-container">
+    <h2 class="chapter-title">PAGE ${pageNum}${page.description ? ' — ' + xmlEscape(page.description) : ''}</h2>
+    ${descHtml}
+    ${parasHtml}
+  </section>
+</body>
+</html>`;
+
+      zip.file(`OEBPS/${pageFile}`, pageXhtml);
+
+      manifestItems.push(`<item id="${pageId}" href="${pageFile}" media-type="application/xhtml+xml"/>`);
+      spineItems.push(`<itemref idref="${pageId}"/>`);
+      navItems.push(`<li><a href="${pageFile}">${xmlEscape(pageTitle)}</a></li>`);
+      ncxNavPoints.push(`
+    <navPoint id="nav-p${pageNum}" playOrder="${idx + 2}">
+      <navLabel><text>${xmlEscape(pageTitle)}</text></navLabel>
+      <content src="${pageFile}"/>
+    </navPoint>`);
+    });
+
+    // 6. EPUB 3 Navigation Document (OEBPS/nav.xhtml)
+    const navXhtml = `<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html>
+<html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <title>Table of Contents</title>
+  <link rel="stylesheet" type="text/css" href="style.css"/>
+</head>
+<body>
+  <nav epub:type="toc" id="toc">
+    <h1>Table of Contents</h1>
+    <ol>
+      ${navItems.join('\n      ')}
+    </ol>
+  </nav>
+</body>
+</html>`;
+    zip.file('OEBPS/nav.xhtml', navXhtml);
+
+    // 7. EPUB 2 NCX Document (OEBPS/toc.ncx)
+    const tocNcx = `<?xml version="1.0" encoding="UTF-8"?>
+<ncx xmlns="http://www.daisy.org/z3986/2005/ncx/" version="2005-1">
+  <head>
+    <meta name="dtb:uid" content="${bookUuid}"/>
+    <meta name="dtb:depth" content="1"/>
+    <meta name="dtb:totalPageCount" content="${book.pages.length}"/>
+    <meta name="dtb:maxPageNumber" content="${book.pages.length}"/>
+  </head>
+  <docTitle><text>${xmlEscape(bookTitle)}</text></docTitle>
+  <navMap>
+    ${ncxNavPoints.join('')}
+  </navMap>
+</ncx>`;
+    zip.file('OEBPS/toc.ncx', tocNcx);
+
+    // 8. OEBPS/content.opf
+    const contentOpf = `<?xml version="1.0" encoding="utf-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="book-id">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="book-id">${bookUuid}</dc:identifier>
+    <dc:title>${xmlEscape(bookTitle)}</dc:title>
+    <dc:language>en</dc:language>
+    <dc:creator>Typewriter Author</dc:creator>
+    <dc:date>${nowIso.slice(0, 10)}</dc:date>
+    <meta property="dcterms:modified">${nowIso}</meta>
+  </metadata>
+  <manifest>
+    <item id="style" href="style.css" media-type="text/css"/>
+    <item id="toc" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="ncx" href="toc.ncx" media-type="application/x-dtbncx+xml"/>
+    ${manifestItems.join('\n    ')}
+  </manifest>
+  <spine toc="ncx">
+    ${spineItems.join('\n    ')}
+  </spine>
+</package>`;
+    zip.file('OEBPS/content.opf', contentOpf);
+
+    // 9. Generate and download EPUB blob
+    const epubBlob = await zip.generateAsync({
+      type: 'blob',
+      mimeType: 'application/epub+zip',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 9 }
+    });
+
+    const cleanTitle = bookTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const filename = `${cleanTitle}_${nowIso.slice(0, 10)}.epub`;
+
+    triggerFileDownload(filename, epubBlob, 'application/epub+zip');
+    if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+    showToast(`Exported EPUB eBook "${filename}"!`);
+    playCarriageReturnBell();
+  } catch (err) {
+    console.error("EPUB export error:", err);
+    showToast(`EPUB export failed: ${err.message || 'Unknown error'}`);
+  }
+}
+
 function importSingleManuscriptFile(event) {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
+
+  const isEpub = /\.epub$/i.test(file.name) || (file.type && file.type.includes('epub'));
+
+  if (isEpub) {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const parsedBook = await parseEpubFile(e.target.result, file.name);
+        addSingleManuscriptToSession(parsedBook, file.name);
+      } catch (err) {
+        console.error("EPUB import error:", err);
+        alert(`Could not import EPUB: ${err.message || 'Invalid or unrecognized EPUB format.'}`);
+      }
+      if (DOM.fileInputImportManuscript) {
+        DOM.fileInputImportManuscript.value = '';
+      }
+    };
+    reader.onerror = () => {
+      alert("Error reading file.");
+      if (DOM.fileInputImportManuscript) DOM.fileInputImportManuscript.value = '';
+    };
+    reader.readAsArrayBuffer(file);
+    return;
+  }
 
   const reader = new FileReader();
   reader.onload = (e) => {
@@ -1432,6 +1956,9 @@ function showImportManuscriptPicker(books, filename) {
 function closeImportManuscriptModal() {
   if (DOM.importManuscriptModal) {
     DOM.importManuscriptModal.classList.add('hidden');
+  }
+  if (DOM.btnImportAllToSession) {
+    DOM.btnImportAllToSession.classList.remove('hidden');
   }
   pendingImportMultiBooks = null;
   if (DOM.fileInputImportManuscript) {
@@ -2134,6 +2661,7 @@ function renderActivePage(lastChunkIsNew = false) {
   if (DOM.inkStream) {
     DOM.inkStream.innerHTML = '';
     DOM.inkStream.classList.toggle('has-timestamps', showTS);
+    DOM.inkStream.classList.toggle('has-content', (page.chunks.length > 0) || Boolean(state.buffer && state.buffer.length > 0));
 
     const count = page.chunks.length;
     const isAnimated = lastChunkIsNew && Boolean(state.settings.typewriterAnim) && count > 0;
@@ -2171,6 +2699,11 @@ function renderActivePage(lastChunkIsNew = false) {
           textSpan.textContent = text;
         }
         row.appendChild(textSpan);
+
+        // Tap/click commit on the page reveals or toggles timestamp in right margin
+        row.addEventListener('click', (e) => {
+          row.classList.toggle('show-time');
+        });
 
         DOM.inkStream.appendChild(row);
       } else {
@@ -2409,6 +2942,10 @@ function compileManuscriptText(format = 'txt') {
 function exportManuscript(format) {
   if (format === 'pdf') {
     exportManuscriptPDF();
+    return;
+  }
+  if (format === 'epub') {
+    exportManuscriptEPUB();
     return;
   }
   if (format === 'json') {
@@ -2721,17 +3258,43 @@ async function fetchDriveFiles() {
   return data.files || [];
 }
 
-async function downloadDriveFile(fileId) {
+let lastFetchedDriveFiles = [];
+
+async function downloadDriveFileText(fileId, mimeType = '') {
+  const token = await getGoogleDriveToken();
+  const isDoc = mimeType === 'application/vnd.google-apps.document';
+  const url = isDoc
+    ? `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=text/plain`
+    : `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`;
+
+  const response = await fetch(url, {
+    headers: { 'Authorization': `Bearer ${token}` }
+  });
+
+  if (!response.ok) {
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error?.message || `Failed to download file (${response.status})`);
+  }
+
+  return await response.text();
+}
+
+async function downloadDriveFileBinary(fileId) {
   const token = await getGoogleDriveToken();
   const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`, {
     headers: { 'Authorization': `Bearer ${token}` }
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to download file from Google Drive (${response.status})`);
+    const errData = await response.json().catch(() => ({}));
+    throw new Error(errData.error?.message || `Failed to download binary file (${response.status})`);
   }
 
-  return await response.text();
+  return await response.arrayBuffer();
+}
+
+async function downloadDriveFile(fileId) {
+  return await downloadDriveFileText(fileId);
 }
 
 async function deleteDriveFile(fileId, fileName) {
@@ -2758,7 +3321,7 @@ async function deleteDriveFile(fileId, fileName) {
 async function restoreDriveBackup(fileId) {
   try {
     showToast("Downloading backup from Google Drive...");
-    const raw = await downloadDriveFile(fileId);
+    const raw = await downloadDriveFileText(fileId);
     const importedData = JSON.parse(raw);
 
     if (importedData && importedData.books && importedData.books.length > 0) {
@@ -2770,6 +3333,177 @@ async function restoreDriveBackup(fileId) {
   } catch (err) {
     console.error("Restore error:", err);
     showToast(`Failed to inspect backup: ${err.message}`);
+  }
+}
+
+async function importDriveFileToSession(file) {
+  if (!file || !file.id) return;
+
+  try {
+    showToast(`Importing "${file.name}" from Google Drive...`);
+    
+    const isEpub = /\.epub$/i.test(file.name) || file.mimeType === 'application/epub+zip';
+    const isDoc = file.mimeType === 'application/vnd.google-apps.document';
+    const isJson = file.name.endsWith('.json') || file.mimeType === 'application/json';
+
+    if (isEpub) {
+      const buffer = await downloadDriveFileBinary(file.id);
+      const parsedBook = await parseEpubFile(buffer, file.name);
+      addSingleManuscriptToSession(parsedBook, file.name);
+      closeDriveModal();
+      closeImportManuscriptModal();
+      return;
+    }
+
+    const rawText = await downloadDriveFileText(file.id, file.mimeType);
+
+    if (isJson) {
+      const result = parseManuscriptFile(rawText, file.name);
+      if (result.type === 'single') {
+        addSingleManuscriptToSession(result.book, file.name);
+        closeDriveModal();
+        closeImportManuscriptModal();
+      } else if (result.type === 'multiple') {
+        closeDriveModal();
+        showImportManuscriptPicker(result.books, file.name);
+      }
+      return;
+    }
+
+    // Google Doc, Plain Text (.txt), or Markdown (.md)
+    const result = parseManuscriptFile(rawText, file.name);
+    addSingleManuscriptToSession(result.book, file.name);
+    closeDriveModal();
+    closeImportManuscriptModal();
+  } catch (err) {
+    console.error("Import from Drive failed:", err);
+    showToast(`Could not import: ${err.message || 'Unknown error'}`);
+    alert(`Could not import "${file.name}" from Google Drive: ${err.message || 'Invalid format.'}`);
+  }
+}
+
+function showDriveFilesImportPicker(files) {
+  if (!DOM.importManuscriptModal) return;
+  DOM.importManuscriptModal.classList.remove('hidden');
+
+  if (DOM.importManuscriptTitle) {
+    DOM.importManuscriptTitle.textContent = "Import from Google Drive";
+  }
+  if (DOM.importManuscriptDesc) {
+    DOM.importManuscriptDesc.textContent = `Select a manuscript, document, or eBook from your Google Drive to add as a new book to your session:`;
+  }
+  if (DOM.btnImportAllToSession) {
+    DOM.btnImportAllToSession.classList.add('hidden');
+  }
+
+  if (DOM.importManuscriptList) {
+    DOM.importManuscriptList.innerHTML = '';
+    files.forEach((f) => {
+      const isDoc = f.mimeType === 'application/vnd.google-apps.document';
+      const isEpub = f.name.endsWith('.epub') || f.mimeType === 'application/epub+zip';
+      const isJson = f.name.endsWith('.json') || f.mimeType === 'application/json';
+      const isBackup = isJson && (f.name.includes('session') || f.name.includes('backup'));
+      const isMd = f.name.endsWith('.md') || f.mimeType === 'text/markdown';
+      const icon = isDoc ? '📄' : isEpub ? '📚' : isBackup ? '💾' : isMd ? '📝' : isJson ? '📋' : '📄';
+      const typeLabel = isDoc ? 'Google Doc' : isEpub ? 'EPUB eBook' : isBackup ? 'Session Backup' : isMd ? 'Markdown' : isJson ? 'JSON Manuscript' : 'Text File';
+      const dateStr = f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString() : '';
+
+      const li = document.createElement('li');
+      li.className = 'backup-inspect-book-item';
+      li.style.display = 'flex';
+      li.style.justifyContent = 'space-between';
+      li.style.alignItems = 'center';
+      li.style.padding = '10px 14px';
+
+      li.innerHTML = `
+        <div class="backup-inspect-book-main">
+          <span style="font-size:18px; margin-right:8px;">${icon}</span>
+          <div>
+            <strong class="backup-inspect-book-title" style="display:block; font-size:13px; color:#e0e0e0;">${f.name}</strong>
+            <span class="backup-inspect-book-meta" style="font-size:11px; color:#888;">${typeLabel} • ${dateStr}</span>
+          </div>
+        </div>
+        <div style="display:flex; gap:6px;">
+          ${isBackup ? `<button class="btn-drive-action primary btn-pick-restore" style="padding:6px 12px; font-size:11px;">📂 Restore Session</button>` : ''}
+          <button class="btn-drive-action import btn-pick-import" style="padding:6px 12px; font-size:11px; font-weight:600;">
+            ${isBackup ? '📥 Pick Book...' : '➕ Import to Session'}
+          </button>
+        </div>
+      `;
+
+      const btnPick = li.querySelector('.btn-pick-import');
+      if (btnPick) {
+        btnPick.onclick = () => importDriveFileToSession(f);
+      }
+
+      const btnRestore = li.querySelector('.btn-pick-restore');
+      if (btnRestore) {
+        btnRestore.onclick = () => {
+          closeImportManuscriptModal();
+          restoreDriveBackup(f.id);
+        };
+      }
+
+      DOM.importManuscriptList.appendChild(li);
+    });
+  }
+}
+
+async function handleQuickImportFromDrive() {
+  try {
+    if (!lastFetchedDriveFiles || lastFetchedDriveFiles.length === 0) {
+      showToast("Fetching files from Google Drive...");
+      await refreshDriveFiles();
+    }
+
+    const files = lastFetchedDriveFiles || [];
+    const importable = files.filter(f => {
+      const isDoc = f.mimeType === 'application/vnd.google-apps.document';
+      const isEpub = f.name.endsWith('.epub') || f.mimeType === 'application/epub+zip';
+      const isJson = f.name.endsWith('.json') || f.mimeType === 'application/json';
+      const isMd = f.name.endsWith('.md') || f.mimeType === 'text/markdown';
+      const isTxt = f.name.endsWith('.txt') || f.mimeType === 'text/plain';
+      return isDoc || isEpub || isJson || isMd || isTxt;
+    });
+
+    if (importable.length === 0) {
+      showToast("No compatible manuscripts or documents found on Google Drive.");
+      return;
+    }
+
+    showDriveFilesImportPicker(importable);
+  } catch (err) {
+    console.error("Drive import error:", err);
+    showToast(`Google Drive: ${err.message}`);
+  }
+}
+
+async function handleQuickRestoreFromDrive() {
+  try {
+    if (!lastFetchedDriveFiles || lastFetchedDriveFiles.length === 0) {
+      showToast("Fetching files from Google Drive...");
+      await refreshDriveFiles();
+    }
+
+    const files = lastFetchedDriveFiles || [];
+    const backupFiles = files.filter(f => {
+      return f.name.endsWith('.json') || f.mimeType === 'application/json';
+    });
+
+    if (backupFiles.length === 0) {
+      showToast("No session backup files (.json) found on your Google Drive.");
+      return;
+    }
+
+    if (backupFiles.length === 1) {
+      restoreDriveBackup(backupFiles[0].id);
+      return;
+    }
+
+    showDriveFilesImportPicker(backupFiles);
+  } catch (err) {
+    console.error("Drive restore error:", err);
+    showToast(`Google Drive: ${err.message}`);
   }
 }
 
@@ -2794,6 +3528,7 @@ async function refreshDriveFiles() {
     DOM.driveLoadingIndicator.classList.add('hidden');
 
     if (!files || files.length === 0) {
+      lastFetchedDriveFiles = [];
       DOM.driveEmptyMessage.classList.remove('hidden');
       return;
     }
@@ -2808,6 +3543,7 @@ async function refreshDriveFiles() {
 
 function renderDriveFilesList(files) {
   if (!DOM.driveFilesList) return;
+  lastFetchedDriveFiles = files || [];
   DOM.driveFilesList.innerHTML = '';
   DOM.driveFilesList.classList.remove('hidden');
 
@@ -2816,8 +3552,14 @@ function renderDriveFilesList(files) {
     li.className = 'drive-file-item';
 
     const isDoc = file.mimeType === 'application/vnd.google-apps.document';
+    const isEpub = file.name.endsWith('.epub') || file.mimeType === 'application/epub+zip';
     const isJson = file.name.endsWith('.json') || file.mimeType === 'application/json';
-    const icon = isDoc ? '📄' : isJson ? '💾' : '📝';
+    const isBackup = isJson && (file.name.includes('session') || file.name.includes('backup'));
+    const isMd = file.name.endsWith('.md') || file.mimeType === 'text/markdown';
+    const isTxt = file.name.endsWith('.txt') || file.mimeType === 'text/plain';
+
+    const icon = isDoc ? '📄' : isEpub ? '📚' : isBackup ? '💾' : isMd ? '📝' : isJson ? '📋' : '📄';
+    const typeLabel = isDoc ? 'Google Doc' : isEpub ? 'EPUB eBook' : isBackup ? 'Full Session Backup' : isMd ? 'Markdown' : isJson ? 'JSON Manuscript' : 'Text File';
     const dateStr = file.modifiedTime ? new Date(file.modifiedTime).toLocaleString() : '';
 
     li.innerHTML = `
@@ -2825,15 +3567,22 @@ function renderDriveFilesList(files) {
         <span class="drive-file-icon">${icon}</span>
         <div class="drive-file-details">
           <span class="drive-file-name" title="${file.name}">${file.name}</span>
-          <span class="drive-file-subtext">${isDoc ? 'Google Doc' : isJson ? 'Studio Backup' : 'Text File'} • ${dateStr}</span>
+          <span class="drive-file-subtext">${typeLabel} • ${dateStr}</span>
         </div>
       </div>
       <div class="drive-file-actions">
-        ${isJson ? `<button class="btn-drive-action primary btn-restore-item" title="Restore this backup into Studio">Restore</button>` : ''}
+        ${(isDoc || isEpub || isMd || isTxt || (isJson && !isBackup)) ? `<button class="btn-drive-action import btn-import-item" title="Import this manuscript into your current session as a new book">📥 Import</button>` : ''}
+        ${isBackup ? `<button class="btn-drive-action import btn-import-item" title="Pick an individual book from this backup to add to your session">📥 Import Book...</button>` : ''}
+        ${isJson ? `<button class="btn-drive-action primary btn-restore-item" title="Inspect and restore this full session backup">📂 Restore</button>` : ''}
         ${file.webViewLink ? `<a href="${file.webViewLink}" target="_blank" rel="noopener noreferrer" class="btn-drive-action" title="Open file in Google Drive">Open ↗</a>` : ''}
         <button class="btn-drive-action btn-delete-item" title="Delete file">🗑️</button>
       </div>
     `;
+
+    const btnImport = li.querySelector('.btn-import-item');
+    if (btnImport) {
+      btnImport.onclick = () => importDriveFileToSession(file);
+    }
 
     const btnRestore = li.querySelector('.btn-restore-item');
     if (btnRestore) {
@@ -3007,6 +3756,12 @@ function setupEventListeners() {
       const ghost = document.getElementById('ink-ghost');
       if (ghost) {
         ghost.textContent = state.buffer;
+        if (DOM.inkStream) {
+          const book = getActiveBook();
+          const page = getActivePage(book);
+          const hasChunks = page && page.chunks && page.chunks.length > 0;
+          DOM.inkStream.classList.toggle('has-content', hasChunks || Boolean(state.buffer && state.buffer.length > 0));
+        }
         // Auto-scroll to ensure ghost text stays visible above the input box as it grows
         requestAnimationFrame(() => {
           if (DOM.writingSurface) {
@@ -3066,9 +3821,15 @@ function setupEventListeners() {
 
   // Google Drive buttons
   if (DOM.btnDriveBackup) DOM.btnDriveBackup.onclick = saveBackupToDrive;
+  if (DOM.btnDriveImport) DOM.btnDriveImport.onclick = () => {
+    openDriveModal();
+    handleQuickImportFromDrive();
+  };
   if (DOM.btnDriveManager) DOM.btnDriveManager.onclick = openDriveModal;
   if (DOM.btnQuickBackupDrive) DOM.btnQuickBackupDrive.onclick = saveBackupToDrive;
   if (DOM.btnQuickExportDrive) DOM.btnQuickExportDrive.onclick = () => saveCurrentBookToDrive(true);
+  if (DOM.btnQuickImportDrive) DOM.btnQuickImportDrive.onclick = handleQuickImportFromDrive;
+  if (DOM.btnQuickRestoreDrive) DOM.btnQuickRestoreDrive.onclick = handleQuickRestoreFromDrive;
   if (DOM.btnRefreshDrive) DOM.btnRefreshDrive.onclick = refreshDriveFiles;
   if (DOM.btnCloseDriveModal) DOM.btnCloseDriveModal.onclick = closeDriveModal;
 
@@ -3297,6 +4058,7 @@ function setupEventListeners() {
   if (DOM.btnExportTxt) DOM.btnExportTxt.onclick = () => exportManuscript('txt');
   if (DOM.btnExportMd) DOM.btnExportMd.onclick = () => exportManuscript('md');
   if (DOM.btnExportPdf) DOM.btnExportPdf.onclick = () => exportManuscript('pdf');
+  if (DOM.btnExportEpub) DOM.btnExportEpub.onclick = () => exportManuscript('epub');
   if (DOM.btnExportJson) DOM.btnExportJson.onclick = () => exportManuscript('json');
   if (DOM.btnCopyAll) DOM.btnCopyAll.onclick = copyManuscriptToClipboard;
 

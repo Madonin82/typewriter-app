@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Typewriter - Forward-Only Micro-Drafting Studio</title>
-  <meta name="description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, offline PWA desktop installation, and Google Drive export.">
+  <meta name="description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, EPUB eBook import/export, offline PWA desktop installation, and Google Drive export.">
   <meta property="og:title" content="Typewriter - Forward-Only Micro-Drafting Studio">
-  <meta property="og:description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, offline PWA desktop installation, and Google Drive export.">
+  <meta property="og:description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, EPUB eBook import/export, offline PWA desktop installation, and Google Drive export.">
   
   <!-- PWA & Mobile Web Standards -->
   <link rel="manifest" href="manifest.json">
@@ -102,8 +102,9 @@
       <div class="panel-action" id="btn-new-page"><span>📄</span> + New Page</div>
       <div class="panel-action" id="btn-export-modal-toggle"><span>📥</span> Export Current Manuscript</div>
       <div class="panel-action" id="btn-import-manuscript"><span>📤</span> Import Manuscript / Book</div>
-      <input type="file" id="file-input-import-manuscript" accept=".json,.txt,.md,text/plain,text/markdown,application/json" class="hidden">
+      <input type="file" id="file-input-import-manuscript" accept=".json,.txt,.md,.epub,text/plain,text/markdown,application/json,application/epub+zip" class="hidden">
       <div class="panel-action" id="btn-drive-backup"><span><svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#34A853" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/><path fill="#EA4335" d="M22 18.5l-3.5-6h-7.5l3.5 6z"/></svg></span> Backup Session to Google Drive</div>
+      <div class="panel-action" id="btn-drive-import"><span>📥</span> Import from Google Drive</div>
       <div class="panel-action" id="btn-drive-manager"><span>📁</span> Files on Google Drive</div>
       <div class="panel-action" id="btn-pwa-install-left"><span>💻</span> Install Desktop App</div>
       <div class="panel-action" id="btn-backup-cloud"><span>💾</span> Backup Full Session / Instance (.json)</div>
@@ -164,6 +165,7 @@
           <option value="sepia">Vintage Sepia</option>
           <option value="dark">Midnight Ink (Dark)</option>
           <option value="matrix">The Matrix (CRT Green)</option>
+          <option value="imessage">iMessage (iOS Blue)</option>
         </select>
       </div>
 
@@ -294,6 +296,13 @@
             <span>Download formatted typewriter manuscript PDF</span>
           </div>
         </button>
+        <button id="btn-export-epub" class="export-card-btn">
+          <span class="export-icon">📚</span>
+          <div class="export-info">
+            <strong>EPUB eBook (.epub)</strong>
+            <span>Download standard eBook for Apple Books, Kindle, e-readers</span>
+          </div>
+        </button>
         <button id="btn-export-json" class="export-card-btn">
           <span class="export-icon">💾</span>
           <div class="export-info">
@@ -328,8 +337,10 @@
       <p class="modal-desc">Manuscripts and studio backups saved to your Google Drive account:</p>
       
       <div class="drive-action-bar">
-        <button id="btn-quick-backup-drive" class="drive-pill-btn">💾 Backup Full Session to Drive</button>
-        <button id="btn-quick-export-drive" class="drive-pill-btn">📄 Export Current Book to Drive</button>
+        <button id="btn-quick-backup-drive" class="drive-pill-btn" title="Save full studio session backup to Google Drive">💾 Backup Session</button>
+        <button id="btn-quick-export-drive" class="drive-pill-btn" title="Export active book to Google Drive">📄 Export Book</button>
+        <button id="btn-quick-import-drive" class="drive-pill-btn import" title="Import a book or document from Google Drive into current session">📥 Import Book to Session</button>
+        <button id="btn-quick-restore-drive" class="drive-pill-btn import" title="Restore a full session backup from Google Drive">📂 Load Session Backup</button>
       </div>
 
       <div id="drive-files-container" class="drive-files-container">
@@ -559,6 +570,7 @@
   <div id="toast" class="toast"></div>
 
   <!-- Core Scripts -->
+  <script src="jszip.min.js"></script>
   <script src="jspdf.umd.min.js"></script>
   <script src="app.js"></script>
 </body>
