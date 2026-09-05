@@ -7,9 +7,10 @@
 // Firebase Configuration for Project
 const firebaseConfig = {
   projectId: "gen-lang-client-0081756947",
-  appId: "1:757537539472:web:f4cd43fd3f2d55f16d5f15",
+  appId: "1:757537539472:web:bcc67a351da194606d5f15",
   apiKey: "AIzaSyBlYBw9rVhOSCAFNco2tK7iu7TWvGnv3wk",
   authDomain: "gen-lang-client-0081756947.firebaseapp.com",
+  firestoreDatabaseId: "ai-studio-typewriterapp-321f95fd-1653-46ce-b75a-a79c58bffe68",
   storageBucket: "gen-lang-client-0081756947.firebasestorage.app",
   messagingSenderId: "757537539472"
 };
@@ -489,7 +490,16 @@ function initFirebase() {
         firebase.initializeApp(firebaseConfig);
       }
       auth = firebase.auth();
-      db = firebase.firestore();
+      try {
+        if (firebaseConfig.firestoreDatabaseId) {
+          db = firebase.app().firestore(firebaseConfig.firestoreDatabaseId);
+        } else {
+          db = firebase.firestore();
+        }
+      } catch (dbErr) {
+        console.warn("Named Firestore init fallback:", dbErr);
+        db = firebase.firestore();
+      }
 
       auth.onAuthStateChanged((user) => {
         if (user) {
@@ -594,20 +604,40 @@ function renderUserUI() {
   }
 }
 
-function syncToFirestore() {
-  if (!db || !currentUser || state.settings.firebaseSyncEnabled === false) return;
-  if (DOM.syncStatus) DOM.syncStatus.textContent = "🔄 Syncing...";
+let firestoreDebounceTimer = null;
 
-  db.collection("users").doc(currentUser.uid).set({
-    books: state.books,
-    settings: state.settings,
-    lastSynced: firebase.firestore.FieldValue.serverTimestamp()
-  }, { merge: true }).then(() => {
-    if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Firestore Synced";
-  }).catch((e) => {
-    console.warn("Firestore sync error:", e);
-    if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Local (Sync paused)";
-  });
+function syncToFirestore(immediate = false) {
+  if (!db || !currentUser || state.settings.firebaseSyncEnabled === false) return;
+
+  if (firestoreDebounceTimer) {
+    clearTimeout(firestoreDebounceTimer);
+    firestoreDebounceTimer = null;
+  }
+
+  const executeSync = () => {
+    if (!db || !currentUser || state.settings.firebaseSyncEnabled === false) return;
+    if (DOM.syncStatus) DOM.syncStatus.textContent = "🔄 Syncing...";
+
+    db.collection("users").doc(currentUser.uid).set({
+      books: state.books,
+      settings: state.settings,
+      lastSynced: firebase.firestore.FieldValue.serverTimestamp()
+    }, { merge: true }).then(() => {
+      if (DOM.syncStatus) {
+        DOM.syncStatus.textContent = googleAccessToken ? "☁️ Firestore + Drive Active" : "☁️ Firestore Synced";
+      }
+    }).catch((e) => {
+      console.error("Firestore sync error:", e);
+      if (DOM.syncStatus) DOM.syncStatus.textContent = "⚠️ Sync Error";
+      showToast(`Firestore Sync: ${e.message || 'Permission denied or network issue'}`);
+    });
+  };
+
+  if (immediate) {
+    executeSync();
+  } else {
+    firestoreDebounceTimer = setTimeout(executeSync, 800);
+  }
 }
 
 function loadFromFirestore(uid) {
