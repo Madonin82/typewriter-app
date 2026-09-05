@@ -178,6 +178,7 @@ body.theme-imessage #page-sheet {
   width: 100% !important;
   max-width: 680px !important;
   padding: 20px 0 !important;
+  margin-top: auto !important;
   margin-left: auto !important;
   margin-right: 0 !important;
   transition: none !important;
@@ -470,10 +471,18 @@ body.theme-imessage .btn-timestamp-toggle.active {
   color: #ffffff !important;
 }
 
-body.theme-imessage #esc-hint {
+body.theme-imessage #esc-hint,
+body.theme-imessage .btn-esc-menu {
   color: #8e8e93 !important;
-  background: rgba(28, 28, 30, 0.75) !important;
+  background: transparent !important;
   border: 1px solid #3a3a3c !important;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif !important;
+}
+
+body.theme-imessage #esc-hint:hover,
+body.theme-imessage .btn-esc-menu:hover {
+  background: rgba(255, 255, 255, 0.1) !important;
+  color: #ffffff !important;
 }
 
 /* ─── FONT SELECTIONS ──────────────────────────────────────── */
@@ -508,16 +517,17 @@ html, body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  padding: 40px 30px 220px;
+  padding: 40px 30px 106px;
   overflow-y: auto;
   transition: filter 0.3s cubic-bezier(0.4, 0, 0.2, 1), transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   -webkit-overflow-scrolling: touch;
   scroll-behavior: smooth;
+  box-sizing: border-box;
 }
 
 @media (max-width: 600px) {
   #writing-surface {
-    padding: 24px 12px 120px;
+    padding: 20px 12px 84px;
   }
 }
 
@@ -530,7 +540,7 @@ html, body {
 .page {
   width: 100%;
   max-width: 700px;
-  min-height: calc(100dvh - 260px);
+  min-height: auto;
   background: var(--paper);
   position: relative;
   display: flex;
@@ -538,12 +548,13 @@ html, body {
   padding: 20px 20px 20px;
   box-sizing: border-box;
   flex-shrink: 0;
+  margin-top: auto;
   transition: background-color 0.25s ease;
 }
 
 .page.is-locked {
   min-height: auto;
-  padding-bottom: 60px;
+  padding-bottom: 40px;
 }
 
 .ink-stream {
@@ -555,7 +566,7 @@ html, body {
   tab-size: 4;
   -moz-tab-size: 4;
   font-family: var(--font-family);
-  margin-top: auto;
+  margin-top: 0;
   transition: transform 0.2s ease;
 }
 
@@ -1467,41 +1478,44 @@ input[type="range"] {
   font-family: 'Inter', sans-serif;
 }
 
-/* ─── ESC HINT / TRIGGER ───────────────────────────────────── */
-#esc-hint {
-  position: fixed;
-  bottom: 18px;
-  right: 22px;
+/* ─── ESC HINT / TRIGGER IN FOOTER ─────────────────────────── */
+#esc-hint,
+.btn-esc-menu {
+  background: transparent;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  color: var(--ink-faded, #666666);
   font-size: 11px;
-  color: var(--ink-faded);
-  letter-spacing: 0.08em;
-  z-index: 200;
-  opacity: 0.55;
+  padding: 2px 8px;
+  border-radius: 12px;
   cursor: pointer;
-  padding: 4px 8px;
-  border-radius: 4px;
-  border: 1px solid transparent;
-  transition: opacity 0.3s ease, border-color 0.2s ease, background 0.2s ease;
+  transition: all 0.18s ease;
+  line-height: 1.2;
+  font-family: 'Inter', sans-serif;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  white-space: nowrap;
   user-select: none;
 }
 
-#esc-hint:hover {
-  opacity: 1;
-  background: rgba(0, 0, 0, 0.06);
-  border-color: rgba(0, 0, 0, 0.15);
-}
-
-body.theme-dark #esc-hint:hover {
-  background: rgba(255, 255, 255, 0.08);
+body.theme-dark #esc-hint,
+body.theme-dark .btn-esc-menu {
   border-color: rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.7);
 }
 
-#esc-hint.fade {
-  opacity: 0.2;
-}
-
-#esc-hint.fade:hover {
+#esc-hint:hover,
+.btn-esc-menu:hover {
   opacity: 1;
+  background: rgba(0, 0, 0, 0.05);
+  border-color: rgba(0, 0, 0, 0.3);
+  color: var(--ink, #141210);
+}
+
+body.theme-dark #esc-hint:hover,
+body.theme-dark .btn-esc-menu:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #ffffff;
 }
 
 /* ─── EXPORT MODAL ─────────────────────────────────────────── */
@@ -1977,6 +1991,11 @@ body.theme-dark #esc-hint:hover {
   .page-word-counter,
   .char-counter {
     font-size: 10px !important;
+  }
+  .btn-esc-menu,
+  .btn-timestamp-toggle {
+    font-size: 10px !important;
+    padding: 2px 6px !important;
   }
   .btn-commit-mini {
     padding: 3px 9px !important;
