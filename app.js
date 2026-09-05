@@ -2245,9 +2245,24 @@ function commitDraft() {
 
 function adjustDraftInputHeight() {
   if (!DOM.draftInput) return;
+  const isMobile = window.innerWidth <= 600;
+  const minHeight = isMobile ? 22 : 24;
+  const maxHeight = isMobile ? 120 : 160;
+
+  if (!DOM.draftInput.value) {
+    DOM.draftInput.style.height = `${minHeight}px`;
+    DOM.draftInput.style.overflowY = 'hidden';
+    if (DOM.draftInputBackdrop) {
+      DOM.draftInputBackdrop.scrollTop = 0;
+    }
+    return;
+  }
+
   DOM.draftInput.style.height = 'auto';
-  const newHeight = Math.min(Math.max(DOM.draftInput.scrollHeight, 58), 180);
+  const scrollH = DOM.draftInput.scrollHeight;
+  const newHeight = Math.min(Math.max(scrollH, minHeight), maxHeight);
   DOM.draftInput.style.height = `${newHeight}px`;
+  DOM.draftInput.style.overflowY = scrollH > maxHeight ? 'auto' : 'hidden';
 
   if (DOM.draftInputBackdrop) {
     DOM.draftInputBackdrop.scrollTop = DOM.draftInput.scrollTop;
@@ -2662,6 +2677,8 @@ function renderActivePage(lastChunkIsNew = false) {
     DOM.inkStream.innerHTML = '';
     DOM.inkStream.classList.toggle('has-timestamps', showTS);
     DOM.inkStream.classList.toggle('has-content', (page.chunks.length > 0) || Boolean(state.buffer && state.buffer.length > 0));
+    DOM.inkStream.classList.remove('slid-open', 'is-sliding');
+    DOM.inkStream.style.transform = '';
 
     const count = page.chunks.length;
     const isAnimated = lastChunkIsNew && Boolean(state.settings.typewriterAnim) && count > 0;
@@ -2700,9 +2717,14 @@ function renderActivePage(lastChunkIsNew = false) {
         }
         row.appendChild(textSpan);
 
-        // Tap/click commit on the page reveals or toggles timestamp in right margin
+        // Tap/click commit on the page toggles slide to reveal timestamps in right margin
         row.addEventListener('click', (e) => {
-          row.classList.toggle('show-time');
+          if (state.settings.theme === 'imessage') {
+            const isSlid = DOM.inkStream.classList.toggle('slid-open');
+            DOM.inkStream.style.transform = isSlid ? 'translateX(-68px)' : 'translateX(0px)';
+          } else {
+            row.classList.toggle('show-time');
+          }
         });
 
         DOM.inkStream.appendChild(row);
@@ -2837,6 +2859,18 @@ function renderActivePage(lastChunkIsNew = false) {
 }
 
 function updateDraftInputCursorAlignment() {
+  if (state.settings.theme === 'imessage' || window.innerWidth <= 600) {
+    if (DOM.draftInput) {
+      DOM.draftInput.style.textIndent = '0px';
+      DOM.draftInput.style.paddingLeft = '0px';
+    }
+    if (DOM.draftInputBackdrop) {
+      DOM.draftInputBackdrop.style.textIndent = '0px';
+      DOM.draftInputBackdrop.style.paddingLeft = '0px';
+    }
+    return;
+  }
+
   const inkCursor = document.getElementById('ink-cursor-anchor') || document.getElementById('ink-cursor');
   if (!inkCursor || !DOM.pageSheet || !DOM.draftInput || !DOM.draftBox) return;
 
@@ -2846,8 +2880,8 @@ function updateDraftInputCursorAlignment() {
 
   if (!pageRect.width || !cursorRect.height) return;
 
-  // Measure X position of inkCursor relative to draft box text inner padding (20px)
-  const cursorX = cursorRect.left - (draftBoxRect.left + 20);
+  // Measure X position of inkCursor relative to draft box text inner padding (16px)
+  const cursorX = cursorRect.left - (draftBoxRect.left + 16);
 
   const draftBoxWidth = draftBoxRect.width || 700;
   // Keep at least 140px of typing room in draft input before line wrapping
@@ -2882,12 +2916,20 @@ function applyTheme() {
   document.body.className = document.body.className.replace(/\btheme-\S+/g, '');
   document.body.classList.add(`theme-${state.settings.theme}`);
   if (DOM.settingTheme) DOM.settingTheme.value = state.settings.theme;
+  if (DOM.inkStream) {
+    DOM.inkStream.classList.remove('slid-open', 'is-sliding');
+    DOM.inkStream.style.transform = '';
+  }
+  adjustDraftInputHeight();
+  updateDraftInputCursorAlignment();
 }
 
 function applyFont() {
   document.body.className = document.body.className.replace(/\bfont-\S+/g, '');
   document.body.classList.add(`font-${state.settings.font}`);
   if (DOM.settingFont) DOM.settingFont.value = state.settings.font;
+  adjustDraftInputHeight();
+  updateDraftInputCursorAlignment();
 }
 
 function updateCommitHint() {
@@ -3715,7 +3757,9 @@ function setupEventListeners() {
         const visualHeight = window.visualViewport.height;
         const offsetTop = window.visualViewport.offsetTop;
         const diff = layoutHeight - visualHeight - offsetTop;
-        draftOverlay.style.bottom = Math.max(24, diff + 24) + 'px';
+        const isMobile = window.innerWidth <= 600;
+        const baseBottom = isMobile ? 10 : 20;
+        draftOverlay.style.bottom = (diff > 10 ? diff + 6 : baseBottom) + 'px';
       }
     };
     window.visualViewport.addEventListener('resize', adjustForKeyboard);
@@ -3757,8 +3801,7 @@ function setupEventListeners() {
       if (ghost) {
         ghost.textContent = state.buffer;
         if (DOM.inkStream) {
-          const book = getActiveBook();
-          const page = getActivePage(book);
+          const page = getCurrentPage();
           const hasChunks = page && page.chunks && page.chunks.length > 0;
           DOM.inkStream.classList.toggle('has-content', hasChunks || Boolean(state.buffer && state.buffer.length > 0));
         }
@@ -4144,6 +4187,162 @@ function setupEventListeners() {
       if (e.target === DOM.searchResultsModal) closeSearchResultsModal();
     };
   }
+
+  setupImessageGestures();
+  window.addEventListener('resize', adjustDraftInputHeight);
+}
+
+// ─── iMESSAGE SLIDE GESTURES ────────────────────────────────
+function setupImessageGestures() {
+  if (!DOM.writingSurface) return;
+
+  let startX = 0;
+  let startY = 0;
+  let isDragging = false;
+  let isHorizontal = null;
+  let hasMoved = false;
+
+  const getStream = () => {
+    if (state.settings.theme !== 'imessage' || !state.settings.showTimestamps) return null;
+    return DOM.inkStream;
+  };
+
+  // Touch handling for mobile & tablets
+  DOM.writingSurface.addEventListener('touchstart', (e) => {
+    const stream = getStream();
+    if (!stream || e.touches.length !== 1) return;
+    startX = e.touches[0].clientX;
+    startY = e.touches[0].clientY;
+    isDragging = true;
+    isHorizontal = null;
+    hasMoved = false;
+  }, { passive: true });
+
+  DOM.writingSurface.addEventListener('touchmove', (e) => {
+    if (!isDragging) return;
+    const stream = getStream();
+    if (!stream) return;
+
+    const dx = e.touches[0].clientX - startX;
+    const dy = e.touches[0].clientY - startY;
+
+    if (isHorizontal === null) {
+      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) {
+        isHorizontal = Math.abs(dx) > Math.abs(dy);
+      }
+    }
+
+    if (isHorizontal) {
+      hasMoved = true;
+      let offset = dx;
+      if (stream.classList.contains('slid-open')) {
+        offset -= 68;
+      }
+      if (offset < -72) {
+        offset = -72 + (offset + 72) * 0.25;
+      } else if (offset > 0) {
+        offset = offset * 0.15;
+      }
+      stream.classList.add('is-sliding');
+      stream.style.transform = `translateX(${offset}px)`;
+    }
+  }, { passive: true });
+
+  const finishGesture = () => {
+    if (!isDragging) return;
+    isDragging = false;
+    const stream = getStream();
+    if (!stream) return;
+
+    stream.classList.remove('is-sliding');
+    stream.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1)';
+
+    if (hasMoved) {
+      const match = stream.style.transform.match(/translateX\(([-\d.]+)px\)/);
+      const currentX = match ? parseFloat(match[1]) : 0;
+      if (currentX < -32) {
+        stream.classList.add('slid-open');
+        stream.style.transform = 'translateX(-68px)';
+      } else {
+        stream.classList.remove('slid-open');
+        stream.style.transform = 'translateX(0px)';
+      }
+    }
+
+    setTimeout(() => {
+      if (stream) stream.style.transition = '';
+    }, 300);
+  };
+
+  DOM.writingSurface.addEventListener('touchend', finishGesture, { passive: true });
+  DOM.writingSurface.addEventListener('touchcancel', finishGesture, { passive: true });
+
+  // Mouse drag support for desktop
+  let isMouseDown = false;
+  DOM.writingSurface.addEventListener('mousedown', (e) => {
+    if (e.button !== 0) return;
+    const stream = getStream();
+    if (!stream) return;
+    startX = e.clientX;
+    startY = e.clientY;
+    isMouseDown = true;
+    hasMoved = false;
+  });
+
+  window.addEventListener('mousemove', (e) => {
+    if (!isMouseDown) return;
+    const stream = getStream();
+    if (!stream) return;
+    const dx = e.clientX - startX;
+    if (Math.abs(dx) > 5) {
+      hasMoved = true;
+      let offset = dx;
+      if (stream.classList.contains('slid-open')) {
+        offset -= 68;
+      }
+      if (offset < -72) {
+        offset = -72 + (offset + 72) * 0.25;
+      } else if (offset > 0) {
+        offset = offset * 0.15;
+      }
+      stream.classList.add('is-sliding');
+      stream.style.transform = `translateX(${offset}px)`;
+    }
+  });
+
+  window.addEventListener('mouseup', () => {
+    if (!isMouseDown) return;
+    isMouseDown = false;
+    const stream = getStream();
+    if (!stream) return;
+    stream.classList.remove('is-sliding');
+    stream.style.transition = 'transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1)';
+    if (hasMoved) {
+      const match = stream.style.transform.match(/translateX\(([-\d.]+)px\)/);
+      const currentX = match ? parseFloat(match[1]) : 0;
+      if (currentX < -32) {
+        stream.classList.add('slid-open');
+        stream.style.transform = 'translateX(-68px)';
+      } else {
+        stream.classList.remove('slid-open');
+        stream.style.transform = 'translateX(0px)';
+      }
+    }
+    setTimeout(() => {
+      if (stream) stream.style.transition = '';
+    }, 300);
+  });
+
+  // Tap background to close slid timestamps
+  DOM.writingSurface.addEventListener('click', (e) => {
+    if (hasMoved) return;
+    const stream = getStream();
+    if (!stream) return;
+    if (!e.target.closest('.ink-chunk-row') && stream.classList.contains('slid-open')) {
+      stream.classList.remove('slid-open');
+      stream.style.transform = 'translateX(0px)';
+    }
+  });
 }
 
 // ─── INITIALIZATION ─────────────────────────────────────────

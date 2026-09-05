@@ -166,33 +166,41 @@ body.theme-imessage {
 
 body.theme-imessage #writing-surface {
   background-color: #000000;
+  overflow-x: hidden !important;
+  padding-left: 14px;
+  padding-right: 14px;
 }
 
 body.theme-imessage #page-sheet {
   background: transparent !important;
   box-shadow: none !important;
   border: none !important;
-  transition: padding 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  width: 100% !important;
+  max-width: 680px !important;
+  padding: 20px 0 !important;
+  margin-left: auto !important;
+  margin-right: 0 !important;
+  transition: none !important;
 }
 
-body.theme-imessage #page-sheet.has-timestamps {
-  padding-left: 20px !important;
-  padding-right: 96px !important;
-}
-
+body.theme-imessage #page-sheet.has-timestamps,
 body.theme-imessage #page-sheet:not(.has-timestamps) {
-  padding-left: 20px !important;
-  padding-right: 20px !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
 }
 
 @media (max-width: 600px) {
-  body.theme-imessage #page-sheet.has-timestamps {
-    padding-left: 12px !important;
-    padding-right: 76px !important;
+  body.theme-imessage #writing-surface {
+    padding-left: 12px;
+    padding-right: 12px;
   }
+  body.theme-imessage #page-sheet {
+    padding: 16px 0 !important;
+  }
+  body.theme-imessage #page-sheet.has-timestamps,
   body.theme-imessage #page-sheet:not(.has-timestamps) {
-    padding-left: 12px !important;
-    padding-right: 12px !important;
+    padding-left: 0 !important;
+    padding-right: 0 !important;
   }
 }
 
@@ -206,6 +214,18 @@ body.theme-imessage .ink-stream.has-timestamps {
   padding: 0 !important;
   box-shadow: none !important;
   width: 100% !important;
+  position: relative !important;
+  touch-action: pan-y;
+  will-change: transform;
+  transition: transform 0.28s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+body.theme-imessage .ink-stream.has-timestamps.is-sliding {
+  transition: none !important;
+}
+
+body.theme-imessage .ink-stream.has-timestamps.slid-open {
+  transform: translateX(-68px) !important;
 }
 
 body.theme-imessage .ink-stream.has-timestamps .ink-chunk-row {
@@ -214,7 +234,7 @@ body.theme-imessage .ink-stream.has-timestamps .ink-chunk-row {
   justify-content: flex-end !important;
   align-items: center !important;
   margin-bottom: 0 !important;
-  max-width: 100% !important;
+  width: 100% !important;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
@@ -246,49 +266,37 @@ body.theme-imessage .ink-stream.has-timestamps .ink-chunk-row:active .ink-chunk 
   transform: scale(0.985);
 }
 
-/* Timestamps hidden in the right margin unless user taps/clicks commit */
+/* Timestamps are always there, positioned offscreen to the right of the row */
 body.theme-imessage .ink-stream.has-timestamps .commit-timestamp {
   position: absolute !important;
-  left: auto !important;
-  right: -86px !important;
+  left: calc(100% + 12px) !important;
+  right: auto !important;
   top: 50% !important;
-  transform: translateY(-50%) translateX(6px) !important;
-  width: 76px !important;
+  transform: translateY(-50%) !important;
+  width: auto !important;
   text-align: left !important;
   font-size: 11px !important;
   font-weight: 500 !important;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif !important;
   color: #8e8e93 !important;
-  opacity: 0 !important;
-  pointer-events: none !important;
-  transition: opacity 0.22s cubic-bezier(0.16, 1, 0.3, 1), transform 0.22s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  opacity: 1 !important;
   user-select: none !important;
   white-space: nowrap !important;
+  pointer-events: none !important;
   display: block !important;
   margin-bottom: 0 !important;
-}
-
-body.theme-imessage .ink-stream.has-timestamps .ink-chunk-row.show-time .commit-timestamp {
-  opacity: 1 !important;
-  transform: translateY(-50%) translateX(0) !important;
-  pointer-events: auto !important;
-}
-
-@media (hover: hover) and (pointer: fine) {
-  body.theme-imessage .ink-stream.has-timestamps .ink-chunk-row:hover .commit-timestamp {
-    opacity: 0.7 !important;
-    transform: translateY(-50%) translateX(0) !important;
-  }
-  body.theme-imessage .ink-stream.has-timestamps .ink-chunk-row.show-time:hover .commit-timestamp {
-    opacity: 1 !important;
-  }
+  letter-spacing: -0.2px !important;
 }
 
 @media (max-width: 600px) {
   body.theme-imessage .ink-stream.has-timestamps .commit-timestamp {
-    right: -72px !important;
-    width: 64px !important;
+    position: absolute !important;
+    left: calc(100% + 10px) !important;
+    right: auto !important;
+    top: 50% !important;
+    transform: translateY(-50%) !important;
     font-size: 10px !important;
+    margin-bottom: 0 !important;
   }
 }
 
@@ -365,7 +373,15 @@ body.theme-imessage #draft-box {
   border: 1px solid #3a3a3c !important;
   border-radius: 22px !important;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6) !important;
-  padding: 14px 18px 12px !important;
+  padding: 10px 16px 8px !important;
+}
+
+body.theme-imessage #draft-box textarea {
+  min-height: 24px;
+  max-height: 160px;
+  line-height: 24px !important;
+  font-size: 16px !important;
+  box-sizing: border-box;
 }
 
 body.theme-imessage #draft-box textarea,
@@ -374,17 +390,19 @@ body.theme-imessage #draft-input-backdrop {
   caret-color: #0B84FE !important;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", Helvetica, Arial, sans-serif !important;
   font-size: 16px !important;
-  line-height: 1.45 !important;
+  line-height: 24px !important;
   letter-spacing: -0.2px !important;
 }
 
 body.theme-imessage #draft-input-backdrop {
   color: #ffffff !important;
+  line-height: 24px !important;
 }
 
 body.theme-imessage #draft-box textarea::placeholder {
   color: #8e8e93 !important;
   opacity: 0.85 !important;
+  line-height: 24px !important;
 }
 
 body.theme-imessage .ink-cursor {
@@ -499,7 +517,7 @@ html, body {
 
 @media (max-width: 600px) {
   #writing-surface {
-    padding: 30px 16px 210px;
+    padding: 24px 12px 120px;
   }
 }
 
@@ -733,12 +751,12 @@ input:checked + .toggle-slider:before {
 /* ─── FLOATING DRAFT BOX ───────────────────────────────────── */
 #draft-overlay {
   position: fixed;
-  bottom: 24px;
+  bottom: 20px;
   left: 0;
   right: 0;
   display: flex;
   justify-content: center;
-  padding: 0 30px;
+  padding: 0 24px;
   pointer-events: none;
   z-index: 50;
   box-sizing: border-box;
@@ -746,7 +764,9 @@ input:checked + .toggle-slider:before {
 
 @media (max-width: 600px) {
   #draft-overlay {
-    padding: 0 16px;
+    bottom: 10px;
+    padding: 0 10px;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
   }
 }
 
@@ -762,9 +782,9 @@ input:checked + .toggle-slider:before {
   margin: 0;
   background: var(--draft-bg);
   border: 1px solid var(--draft-border);
-  border-radius: 6px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.06);
-  padding: 16px 20px 14px;
+  border-radius: 12px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.14), 0 2px 8px rgba(0, 0, 0, 0.05);
+  padding: 10px 16px 8px;
   backdrop-filter: blur(8px);
   transition: transform 0.2s ease, opacity 0.2s ease;
   box-sizing: border-box;
@@ -776,21 +796,24 @@ input:checked + .toggle-slider:before {
   outline: none;
   resize: none;
   font-family: var(--font-family);
-  font-size: 17px;
-  line-height: 1.85;
+  font-size: 16px;
+  line-height: 24px;
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-wrap: break-word;
   color: transparent !important;
   caret-color: var(--draft-text);
   background: transparent;
-  min-height: 58px;
-  max-height: 180px;
+  min-height: 24px;
+  max-height: 160px;
+  height: 24px;
   tab-size: 4;
   -moz-tab-size: 4;
   box-sizing: border-box;
   padding: 0;
+  margin: 0;
   text-indent: 0;
+  overflow-y: hidden;
   transition: text-indent 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
@@ -802,8 +825,8 @@ input:checked + .toggle-slider:before {
   bottom: 0;
   pointer-events: none;
   font-family: var(--font-family);
-  font-size: 17px;
-  line-height: 1.85;
+  font-size: 16px;
+  line-height: 24px;
   color: var(--draft-text);
   white-space: pre-wrap;
   word-wrap: break-word;
@@ -811,6 +834,7 @@ input:checked + .toggle-slider:before {
   tab-size: 4;
   -moz-tab-size: 4;
   padding: 0;
+  margin: 0;
   text-indent: 0;
   transition: text-indent 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   overflow-y: hidden;
@@ -824,16 +848,17 @@ input:checked + .toggle-slider:before {
 
 #draft-box textarea::placeholder {
   color: #999999 !important;
+  line-height: 24px !important;
 }
 
 .draft-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 8px;
-  padding-top: 10px;
+  margin-top: 6px;
+  padding-top: 6px;
   border-top: 1px solid rgba(0, 0, 0, 0.08);
-  gap: 12px;
+  gap: 10px;
 }
 
 body.theme-dark .draft-footer {
@@ -1902,15 +1927,61 @@ body.theme-dark #esc-hint:hover {
     padding-bottom: 64px;
   }
   #draft-overlay {
-    padding-bottom: 20px;
+    padding-bottom: 0;
   }
   #draft-box {
-    margin: 0 12px;
-    padding: 12px 14px;
+    margin: 0;
+    padding: 10px 14px 8px;
   }
 }
 
 @media (max-width: 600px) {
+  #draft-overlay {
+    bottom: 10px !important;
+    padding: 0 10px !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+  }
+  #draft-box {
+    margin: 0 !important;
+    padding: 8px 12px 6px !important;
+    border-radius: 12px !important;
+  }
+  body.theme-imessage #draft-box {
+    border-radius: 18px !important;
+  }
+  #draft-box textarea,
+  #draft-input-backdrop {
+    font-size: 16px !important;
+    line-height: 22px !important;
+    min-height: 22px !important;
+  }
+  #draft-box textarea {
+    height: 22px;
+    max-height: 120px !important;
+  }
+  #draft-box textarea::placeholder {
+    line-height: 22px !important;
+  }
+  .draft-footer {
+    margin-top: 4px !important;
+    padding-top: 4px !important;
+    gap: 6px !important;
+  }
+  .commit-hint {
+    display: none !important;
+  }
+  .page-meta-info {
+    max-width: 100px !important;
+    font-size: 10px !important;
+  }
+  .page-word-counter,
+  .char-counter {
+    font-size: 10px !important;
+  }
+  .btn-commit-mini {
+    padding: 3px 9px !important;
+    font-size: 11px !important;
+  }
   .page.has-timestamps {
     padding-left: 20px;
   }
