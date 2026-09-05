@@ -4,14 +4,14 @@
  * Firebase Project: typewriter-app-6e624
  */
 
-// Firebase Configuration for Project: typewriter-app-6e624
+// Firebase Configuration for Project
 const firebaseConfig = {
-  apiKey: "AIzaSyB5UvSiArIv_YnmbWyjSG0so6MJc5S1A9E",
-  authDomain: "typewriter-app-6e624.firebaseapp.com",
-  projectId: "typewriter-app-6e624",
-  storageBucket: "typewriter-app-6e624.firebasestorage.app",
-  messagingSenderId: "1010879061490",
-  appId: "1:1010879061490:web:83c43a410788f62d401f6b"
+  projectId: "gen-lang-client-0081756947",
+  appId: "1:757537539472:web:f4cd43fd3f2d55f16d5f15",
+  apiKey: "AIzaSyBlYBw9rVhOSCAFNco2tK7iu7TWvGnv3wk",
+  authDomain: "gen-lang-client-0081756947.firebaseapp.com",
+  storageBucket: "gen-lang-client-0081756947.firebasestorage.app",
+  messagingSenderId: "757537539472"
 };
 
 let auth = null;
@@ -218,6 +218,7 @@ function initDOM() {
     tabBtnToggleDrive: document.getElementById('tab-btn-toggle-drive'),
     tabDriveToggleTitle: document.getElementById('tab-drive-toggle-title'),
     tabDriveToggleDesc: document.getElementById('tab-drive-toggle-desc'),
+    tabBtnDriveManager: document.getElementById('tab-btn-drive-manager'),
     settingFirebaseSync: document.getElementById('setting-firebase-sync'),
     tabSyncStatusDesc: document.getElementById('tab-sync-status-desc'),
     btnOpenEreaderMini: document.getElementById('btn-open-ereader-mini'),
@@ -4528,6 +4529,9 @@ async function saveCurrentBookToDrive(asDoc = false) {
     if (result.webViewLink) {
       console.log("Drive document created:", result.webViewLink);
     }
+    if (DOM.driveModal && !DOM.driveModal.classList.contains('hidden')) {
+      refreshDriveFiles();
+    }
   } catch (err) {
     console.error("Save to Drive error:", err);
     showToast(`Google Drive: ${err.message || 'Failed to save.'}`);
@@ -4554,6 +4558,9 @@ async function saveBackupToDrive() {
     });
 
     showToast(`Full session/instance backup saved to Google Drive as "${result.name}"!`);
+    if (DOM.driveModal && !DOM.driveModal.classList.contains('hidden')) {
+      refreshDriveFiles();
+    }
   } catch (err) {
     console.error("Drive backup error:", err);
     showToast(`Drive backup: ${err.message || 'Failed to save.'}`);
