@@ -511,21 +511,25 @@ function handleGoogleSignIn() {
   if (!auth) initFirebase();
   if (auth) {
     const provider = new firebase.auth.GoogleAuthProvider();
+    provider.addScope('https://www.googleapis.com/auth/drive');
     provider.addScope('https://www.googleapis.com/auth/drive.file');
-    provider.setCustomParameters({ prompt: 'consent' });
-    auth.signInWithPopup(provider).then((result) => {
+    provider.setCustomParameters({ prompt: 'select_account consent' });
+    return auth.signInWithPopup(provider).then((result) => {
       if (result.credential && result.credential.accessToken) {
         googleAccessToken = result.credential.accessToken;
         sessionStorage.setItem('google_drive_access_token', googleAccessToken);
       }
       showToast(`Welcome, ${result.user.displayName || 'Author'}! Synced with Firestore & Google Drive.`);
       renderUserUI();
+      return googleAccessToken;
     }).catch((error) => {
       console.error("Auth error:", error);
       showToast(`Sign in error: ${error.message}`);
+      throw error;
     });
   } else {
     showToast("Firebase Auth initializing...");
+    return Promise.reject(new Error("Firebase Auth initializing..."));
   }
 }
 
@@ -545,8 +549,9 @@ async function getGoogleDriveToken() {
 
   if (!auth) initFirebase();
   const provider = new firebase.auth.GoogleAuthProvider();
+  provider.addScope('https://www.googleapis.com/auth/drive');
   provider.addScope('https://www.googleapis.com/auth/drive.file');
-  provider.setCustomParameters({ prompt: 'consent' });
+  provider.setCustomParameters({ prompt: 'select_account consent' });
 
   try {
     const result = await auth.signInWithPopup(provider);
@@ -556,7 +561,7 @@ async function getGoogleDriveToken() {
       renderUserUI();
       return googleAccessToken;
     }
-    throw new Error("Google Drive access token was not provided by Google. Please check your project's OAuth configuration.");
+    throw new Error("Google Drive access token was not provided by Google. Please ensure popup blocker is disabled and try again.");
   } catch (err) {
     console.error("Google Drive Auth error:", err);
     showToast(`Google Drive Auth: ${err.message || 'Authorization failed'}`);
@@ -4569,7 +4574,7 @@ async function saveBackupToDrive() {
 
 async function fetchDriveFiles() {
   const token = await getGoogleDriveToken();
-  const url = `https://www.googleapis.com/drive/v3/files?spaces=drive&fields=files(id,name,mimeType,modifiedTime,size,webViewLink)&orderBy=modifiedTime%20desc&pageSize=50`;
+  const url = `https://www.googleapis.com/drive/v3/files?q=trashed%3Dfalse&spaces=drive&fields=files(id,name,mimeType,modifiedTime,size,webViewLink)&orderBy=modifiedTime%20desc&pageSize=100`;
 
   const response = await fetch(url, {
     headers: { 'Authorization': `Bearer ${token}` }
@@ -4673,36 +4678,37 @@ async function importDriveFileToSession(file) {
   try {
     showToast(`Importing "${file.name}" from Google Drive...`);
     
-    const isEpub = /\.epub$/i.test(file.name) || file.mimeType === 'application/epub+zip';
+    const fileName = file.name || 'Untitled';
+    const isEpub = /\.epub$/i.test(fileName) || file.mimeType === 'application/epub+zip';
     const isDoc = file.mimeType === 'application/vnd.google-apps.document';
-    const isJson = file.name.endsWith('.json') || file.mimeType === 'application/json';
+    const isJson = fileName.endsWith('.json') || file.mimeType === 'application/json';
 
     if (isEpub) {
       const buffer = await downloadDriveFileBinary(file.id);
       closeDriveModal();
       closeImportManuscriptModal();
-      handleEpubFileChoice(buffer, file.name);
+      handleEpubFileChoice(buffer, fileName);
       return;
     }
 
     const rawText = await downloadDriveFileText(file.id, file.mimeType);
 
     if (isJson) {
-      const result = parseManuscriptFile(rawText, file.name);
+      const result = parseManuscriptFile(rawText, fileName);
       if (result.type === 'single') {
-        addSingleManuscriptToSession(result.book, file.name);
+        addSingleManuscriptToSession(result.book, fileName);
         closeDriveModal();
         closeImportManuscriptModal();
       } else if (result.type === 'multiple') {
         closeDriveModal();
-        showImportManuscriptPicker(result.books, file.name);
+        showImportManuscriptPicker(result.books, fileName);
       }
       return;
     }
 
     // Google Doc, Plain Text (.txt), or Markdown (.md)
-    const result = parseManuscriptFile(rawText, file.name);
-    addSingleManuscriptToSession(result.book, file.name);
+    const result = parseManuscriptFile(rawText, fileName);
+    addSingleManuscriptToSession(result.book, fileName);
     closeDriveModal();
     closeImportManuscriptModal();
   } catch (err) {
@@ -4729,11 +4735,12 @@ function showDriveFilesImportPicker(files) {
   if (DOM.importManuscriptList) {
     DOM.importManuscriptList.innerHTML = '';
     files.forEach((f) => {
+      const fileName = f.name || 'Untitled';
       const isDoc = f.mimeType === 'application/vnd.google-apps.document';
-      const isEpub = f.name.endsWith('.epub') || f.mimeType === 'application/epub+zip';
-      const isJson = f.name.endsWith('.json') || f.mimeType === 'application/json';
-      const isBackup = isJson && (f.name.includes('session') || f.name.includes('backup'));
-      const isMd = f.name.endsWith('.md') || f.mimeType === 'text/markdown';
+      const isEpub = fileName.endsWith('.epub') || f.mimeType === 'application/epub+zip';
+      const isJson = fileName.endsWith('.json') || f.mimeType === 'application/json';
+      const isBackup = isJson && (fileName.toLowerCase().includes('session') || fileName.toLowerCase().includes('backup') || fileName.toLowerCase().includes('typewriter'));
+      const isMd = fileName.endsWith('.md') || f.mimeType === 'text/markdown';
       const icon = isDoc ? '📄' : isEpub ? '📚' : isBackup ? '💾' : isMd ? '📝' : isJson ? '📋' : '📄';
       const typeLabel = isDoc ? 'Google Doc' : isEpub ? 'EPUB eBook' : isBackup ? 'Session Backup' : isMd ? 'Markdown' : isJson ? 'JSON Manuscript' : 'Text File';
       const dateStr = f.modifiedTime ? new Date(f.modifiedTime).toLocaleDateString() : '';
@@ -4749,7 +4756,7 @@ function showDriveFilesImportPicker(files) {
         <div class="backup-inspect-book-main">
           <span style="font-size:18px; margin-right:8px;">${icon}</span>
           <div>
-            <strong class="backup-inspect-book-title" style="display:block; font-size:13px; color:#e0e0e0;">${f.name}</strong>
+            <strong class="backup-inspect-book-title" style="display:block; font-size:13px; color:#e0e0e0;">${escapeHtml(fileName)}</strong>
             <span class="backup-inspect-book-meta" style="font-size:11px; color:#888;">${typeLabel} • ${dateStr}</span>
           </div>
         </div>
@@ -4788,11 +4795,12 @@ async function handleQuickImportFromDrive() {
 
     const files = lastFetchedDriveFiles || [];
     const importable = files.filter(f => {
+      const fileName = f.name || '';
       const isDoc = f.mimeType === 'application/vnd.google-apps.document';
-      const isEpub = f.name.endsWith('.epub') || f.mimeType === 'application/epub+zip';
-      const isJson = f.name.endsWith('.json') || f.mimeType === 'application/json';
-      const isMd = f.name.endsWith('.md') || f.mimeType === 'text/markdown';
-      const isTxt = f.name.endsWith('.txt') || f.mimeType === 'text/plain';
+      const isEpub = fileName.endsWith('.epub') || f.mimeType === 'application/epub+zip';
+      const isJson = fileName.endsWith('.json') || f.mimeType === 'application/json';
+      const isMd = fileName.endsWith('.md') || f.mimeType === 'text/markdown';
+      const isTxt = fileName.endsWith('.txt') || f.mimeType === 'text/plain';
       return isDoc || isEpub || isJson || isMd || isTxt;
     });
 
@@ -4817,7 +4825,8 @@ async function handleQuickRestoreFromDrive() {
 
     const files = lastFetchedDriveFiles || [];
     const backupFiles = files.filter(f => {
-      return f.name.endsWith('.json') || f.mimeType === 'application/json';
+      const fileName = f.name || '';
+      return fileName.endsWith('.json') || f.mimeType === 'application/json';
     });
 
     if (backupFiles.length === 0) {
@@ -4859,14 +4868,48 @@ async function refreshDriveFiles() {
 
     if (!files || files.length === 0) {
       lastFetchedDriveFiles = [];
+      DOM.driveEmptyMessage.innerHTML = `
+        <div style="padding: 16px 0; text-align: center;">
+          <p style="margin-bottom: 10px;">No files found on your Google Drive yet.</p>
+          <div style="display:flex; justify-content:center; gap:8px;">
+            <button id="btn-empty-backup-now" class="drive-pill-btn" style="padding:6px 14px; font-size:12px;">💾 Backup Studio Now</button>
+            <button id="btn-empty-export-now" class="drive-pill-btn" style="padding:6px 14px; font-size:12px;">📄 Export Active Book</button>
+          </div>
+        </div>
+      `;
+      const btnEmptyBackup = document.getElementById('btn-empty-backup-now');
+      if (btnEmptyBackup) btnEmptyBackup.onclick = saveBackupToDrive;
+      const btnEmptyExport = document.getElementById('btn-empty-export-now');
+      if (btnEmptyExport) btnEmptyExport.onclick = () => saveCurrentBookToDrive(true);
       DOM.driveEmptyMessage.classList.remove('hidden');
       return;
     }
 
     renderDriveFilesList(files);
   } catch (err) {
+    console.warn("Drive files fetch warning:", err);
     DOM.driveLoadingIndicator.classList.add('hidden');
-    DOM.driveEmptyMessage.textContent = `Could not load Google Drive files: ${err.message}`;
+    DOM.driveEmptyMessage.innerHTML = `
+      <div style="padding: 18px 0; text-align: center;">
+        <p style="color: #ff9999; margin-bottom: 12px; font-size: 13px;">${escapeHtml(err.message || 'Could not connect to Google Drive.')}</p>
+        <button id="btn-drive-connect-action" class="drive-pill-btn import" style="padding: 8px 18px; font-size: 12px; font-weight: 600; cursor: pointer;">
+          🔑 Sign In &amp; Connect Google Drive
+        </button>
+      </div>
+    `;
+    const btnConnect = document.getElementById('btn-drive-connect-action');
+    if (btnConnect) {
+      btnConnect.onclick = async () => {
+        try {
+          googleAccessToken = null;
+          sessionStorage.removeItem('google_drive_access_token');
+          await getGoogleDriveToken();
+          await refreshDriveFiles();
+        } catch (authErr) {
+          console.error("Modal auth error:", authErr);
+        }
+      };
+    }
     DOM.driveEmptyMessage.classList.remove('hidden');
   }
 }
@@ -4881,12 +4924,13 @@ function renderDriveFilesList(files) {
     const li = document.createElement('li');
     li.className = 'drive-file-item';
 
+    const fileName = file.name || 'Untitled';
     const isDoc = file.mimeType === 'application/vnd.google-apps.document';
-    const isEpub = file.name.endsWith('.epub') || file.mimeType === 'application/epub+zip';
-    const isJson = file.name.endsWith('.json') || file.mimeType === 'application/json';
-    const isBackup = isJson && (file.name.includes('session') || file.name.includes('backup'));
-    const isMd = file.name.endsWith('.md') || file.mimeType === 'text/markdown';
-    const isTxt = file.name.endsWith('.txt') || file.mimeType === 'text/plain';
+    const isEpub = fileName.endsWith('.epub') || file.mimeType === 'application/epub+zip';
+    const isJson = fileName.endsWith('.json') || file.mimeType === 'application/json';
+    const isBackup = isJson && (fileName.toLowerCase().includes('session') || fileName.toLowerCase().includes('backup') || fileName.toLowerCase().includes('typewriter'));
+    const isMd = fileName.endsWith('.md') || file.mimeType === 'text/markdown';
+    const isTxt = fileName.endsWith('.txt') || file.mimeType === 'text/plain';
 
     const icon = isDoc ? '📄' : isEpub ? '📚' : isBackup ? '💾' : isMd ? '📝' : isJson ? '📋' : '📄';
     const typeLabel = isDoc ? 'Google Doc' : isEpub ? 'EPUB eBook' : isBackup ? 'Full Session Backup' : isMd ? 'Markdown' : isJson ? 'JSON Manuscript' : 'Text File';
@@ -4896,7 +4940,7 @@ function renderDriveFilesList(files) {
       <div class="drive-file-main">
         <span class="drive-file-icon">${icon}</span>
         <div class="drive-file-details">
-          <span class="drive-file-name" title="${file.name}">${file.name}</span>
+          <span class="drive-file-name" title="${escapeHtml(fileName)}">${escapeHtml(fileName)}</span>
           <span class="drive-file-subtext">${typeLabel} • ${dateStr}</span>
         </div>
       </div>
@@ -4904,7 +4948,7 @@ function renderDriveFilesList(files) {
         ${(isDoc || isEpub || isMd || isTxt || (isJson && !isBackup)) ? `<button class="btn-drive-action import btn-import-item" title="Import this manuscript into your current session as a new book">📥 Import</button>` : ''}
         ${isBackup ? `<button class="btn-drive-action import btn-import-item" title="Pick an individual book from this backup to add to your session">📥 Import Book...</button>` : ''}
         ${isJson ? `<button class="btn-drive-action primary btn-restore-item" title="Inspect and restore this full session backup">📂 Restore</button>` : ''}
-        ${file.webViewLink ? `<a href="${file.webViewLink}" target="_blank" rel="noopener noreferrer" class="btn-drive-action" title="Open file in Google Drive">Open ↗</a>` : ''}
+        ${file.webViewLink ? `<a href="${escapeHtml(file.webViewLink)}" target="_blank" rel="noopener noreferrer" class="btn-drive-action" title="Open file in Google Drive">Open ↗</a>` : ''}
         <button class="btn-drive-action btn-delete-item" title="Delete file">🗑️</button>
       </div>
     `;
@@ -4921,7 +4965,7 @@ function renderDriveFilesList(files) {
 
     const btnDel = li.querySelector('.btn-delete-item');
     if (btnDel) {
-      btnDel.onclick = () => deleteDriveFile(file.id, file.name);
+      btnDel.onclick = () => deleteDriveFile(file.id, fileName);
     }
 
     DOM.driveFilesList.appendChild(li);
