@@ -83,6 +83,7 @@
           <!-- Populated dynamically -->
         </select>
         <button id="btn-new-book" title="Create New Book">+</button>
+        <button id="btn-import-book-quick" title="Import Manuscript or Book into Session">📤</button>
         <button id="btn-rename-book" title="Rename Current Book">✏️</button>
       </div>
 
@@ -99,12 +100,14 @@
 
       <div class="panel-divider"></div>
       <div class="panel-action" id="btn-new-page"><span>📄</span> + New Page</div>
-      <div class="panel-action" id="btn-export-modal-toggle"><span>📥</span> Export Manuscript</div>
-      <div class="panel-action" id="btn-drive-backup"><span><svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#34A853" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/><path fill="#EA4335" d="M22 18.5l-3.5-6h-7.5l3.5 6z"/></svg></span> Backup to Google Drive</div>
+      <div class="panel-action" id="btn-export-modal-toggle"><span>📥</span> Export Current Manuscript</div>
+      <div class="panel-action" id="btn-import-manuscript"><span>📤</span> Import Manuscript / Book</div>
+      <input type="file" id="file-input-import-manuscript" accept=".json,.txt,.md,text/plain,text/markdown,application/json" class="hidden">
+      <div class="panel-action" id="btn-drive-backup"><span><svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#34A853" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/><path fill="#EA4335" d="M22 18.5l-3.5-6h-7.5l3.5 6z"/></svg></span> Backup Session to Google Drive</div>
       <div class="panel-action" id="btn-drive-manager"><span>📁</span> Files on Google Drive</div>
       <div class="panel-action" id="btn-pwa-install-left"><span>💻</span> Install Desktop App</div>
-      <div class="panel-action" id="btn-backup-cloud"><span>💾</span> Backup File (.json)</div>
-      <div class="panel-action" id="btn-restore-cloud"><span>📂</span> Load Backup File</div>
+      <div class="panel-action" id="btn-backup-cloud"><span>💾</span> Backup Full Session / Instance (.json)</div>
+      <div class="panel-action" id="btn-restore-cloud"><span>📂</span> Load Full Session / Instance</div>
       <div class="panel-action" id="btn-safety-archive"><span>🛡️</span> Safety Archive (<span id="safety-archive-badge">0</span>)</div>
       <input type="file" id="file-input-restore" accept=".json" class="hidden">
     </div>
@@ -291,6 +294,13 @@
             <span>Download formatted typewriter manuscript PDF</span>
           </div>
         </button>
+        <button id="btn-export-json" class="export-card-btn">
+          <span class="export-icon">💾</span>
+          <div class="export-info">
+            <strong>Manuscript Data (.json)</strong>
+            <span>Download single book data file ready to re-import</span>
+          </div>
+        </button>
         <button id="btn-copy-all" class="export-card-btn">
           <span class="export-icon">📋</span>
           <div class="export-info">
@@ -318,7 +328,7 @@
       <p class="modal-desc">Manuscripts and studio backups saved to your Google Drive account:</p>
       
       <div class="drive-action-bar">
-        <button id="btn-quick-backup-drive" class="drive-pill-btn">💾 Backup Current Studio to Drive</button>
+        <button id="btn-quick-backup-drive" class="drive-pill-btn">💾 Backup Full Session to Drive</button>
         <button id="btn-quick-export-drive" class="drive-pill-btn">📄 Export Current Book to Drive</button>
       </div>
 
@@ -368,13 +378,13 @@
     </div>
   </div>
 
-  <!-- ── BACKUP INSPECTION & RESTORE CONFIRMATION MODAL ── -->
+  <!-- ── FULL SESSION / INSTANCE BACKUP INSPECTION & RESTORE CONFIRMATION MODAL ── -->
   <div id="backup-inspect-modal" class="modal-backdrop hidden">
     <div class="modal-card modal-card-wide">
       <div class="modal-header">
         <div class="modal-title-with-icon">
           <span>🔍</span>
-          <h3 id="backup-inspect-title">Inspect Backup File</h3>
+          <h3 id="backup-inspect-title">Inspect Full Session / Instance Backup</h3>
         </div>
         <button id="btn-close-backup-inspect" class="btn-close">×</button>
       </div>
@@ -382,18 +392,18 @@
       <div class="backup-inspect-warning">
         <span class="warning-icon">⚠️</span>
         <div class="warning-text">
-          <strong>Review Before Restoring</strong>
-          <span>Examine the contents of this backup file below. Restoring will replace your current workspace books with the backup contents. An automatic safety snapshot of your current workspace will be created first.</span>
+          <strong>Review Before Loading Full Session</strong>
+          <span>Examine the contents of this full session backup below. Loading will replace your current workspace session with all books and settings in this instance backup. An automatic safety snapshot of your current session will be created first.</span>
         </div>
       </div>
 
       <div class="backup-inspect-stats-grid">
         <div class="backup-stat-box">
-          <span class="backup-stat-lbl">Backup Created</span>
+          <span class="backup-stat-lbl">Session Backup Date</span>
           <strong id="backup-inspect-date" class="backup-stat-val">—</strong>
         </div>
         <div class="backup-stat-box">
-          <span class="backup-stat-lbl">Books Count</span>
+          <span class="backup-stat-lbl">Total Books</span>
           <strong id="backup-inspect-books" class="backup-stat-val">0</strong>
         </div>
         <div class="backup-stat-box">
@@ -407,7 +417,7 @@
       </div>
 
       <div class="backup-inspect-section-hdr">
-        <span>Books & Manuscripts in this Backup</span>
+        <span>Books & Manuscripts in this Session Backup</span>
         <span id="backup-inspect-source" class="backup-inspect-source-badge">Local File</span>
       </div>
 
@@ -420,13 +430,40 @@
       <div class="backup-inspect-footer">
         <button id="btn-cancel-backup-inspect" class="btn-drive-action" style="padding:8px 18px; font-size:12px;">Cancel</button>
         <div style="display:flex; gap:8px;">
-          <button id="btn-merge-backup-inspect" class="btn-drive-action" style="padding:8px 14px; font-size:12px; background:#1b3d22; border-color:#2a7238; color:#7ee896;" title="Add these books to your current library without overwriting existing ones">
-            ➕ Append to Library
+          <button id="btn-merge-backup-inspect" class="btn-drive-action" style="padding:8px 14px; font-size:12px; background:#1b3d22; border-color:#2a7238; color:#7ee896;" title="Add these books to your current session library without overwriting existing ones">
+            ➕ Append Books to Current Session
           </button>
-          <button id="btn-confirm-backup-restore" class="btn-drive-action primary" style="padding:8px 18px; font-size:12px; font-weight:600;" title="Restore all books and settings from this backup">
-            📥 Replace & Restore
+          <button id="btn-confirm-backup-restore" class="btn-drive-action primary" style="padding:8px 18px; font-size:12px; font-weight:600;" title="Replace current session and load all books and settings from this instance backup">
+            📥 Replace Full Session
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── IMPORT MANUSCRIPT / BOOK PICKER MODAL ── -->
+  <div id="import-manuscript-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-with-icon">
+          <span>📤</span>
+          <h3 id="import-manuscript-title">Import Manuscript into Session</h3>
+        </div>
+        <button id="btn-close-import-manuscript" class="btn-close">×</button>
+      </div>
+      <p id="import-manuscript-desc" class="modal-desc">
+        Select a manuscript from this file to add to your current session without replacing your existing books:
+      </p>
+      <div class="backup-inspect-books-container" style="max-height: 280px; margin-bottom: 16px;">
+        <ul id="import-manuscript-list" class="backup-inspect-books-list">
+          <!-- Populated dynamically -->
+        </ul>
+      </div>
+      <div class="backup-inspect-footer">
+        <button id="btn-cancel-import-manuscript" class="btn-drive-action" style="padding:8px 18px; font-size:12px;">Cancel</button>
+        <button id="btn-import-all-to-session" class="btn-drive-action primary" style="padding:8px 18px; font-size:12px; font-weight:600;">
+          ➕ Import All Books to Session
+        </button>
       </div>
     </div>
   </div>

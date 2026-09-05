@@ -169,11 +169,14 @@ function initDOM() {
 
     selectBookSlot: document.getElementById('select-book-slot'),
     btnNewBook: document.getElementById('btn-new-book'),
+    btnImportBookQuick: document.getElementById('btn-import-book-quick'),
     btnRenameBook: document.getElementById('btn-rename-book'),
     btnDeleteBook: document.getElementById('btn-delete-book'),
 
     pagesList: document.getElementById('pages-list'),
     btnNewPage: document.getElementById('btn-new-page'),
+    btnImportManuscript: document.getElementById('btn-import-manuscript'),
+    fileInputImportManuscript: document.getElementById('file-input-import-manuscript'),
     btnBackupCloud: document.getElementById('btn-backup-cloud'),
     btnRestoreCloud: document.getElementById('btn-restore-cloud'),
     fileInputRestore: document.getElementById('file-input-restore'),
@@ -216,6 +219,7 @@ function initDOM() {
     btnExportTxt: document.getElementById('btn-export-txt'),
     btnExportMd: document.getElementById('btn-export-md'),
     btnExportPdf: document.getElementById('btn-export-pdf'),
+    btnExportJson: document.getElementById('btn-export-json'),
     btnCopyAll: document.getElementById('btn-copy-all'),
     btnExportDriveDoc: document.getElementById('btn-export-drive-doc'),
     btnExportDriveTxt: document.getElementById('btn-export-drive-txt'),
@@ -251,6 +255,15 @@ function initDOM() {
     backupInspectWords: document.getElementById('backup-inspect-words'),
     backupInspectSource: document.getElementById('backup-inspect-source'),
     backupInspectBooksList: document.getElementById('backup-inspect-books-list'),
+
+    // Import Manuscript Modal
+    importManuscriptModal: document.getElementById('import-manuscript-modal'),
+    importManuscriptTitle: document.getElementById('import-manuscript-title'),
+    importManuscriptDesc: document.getElementById('import-manuscript-desc'),
+    importManuscriptList: document.getElementById('import-manuscript-list'),
+    btnCloseImportManuscript: document.getElementById('btn-close-import-manuscript'),
+    btnCancelImportManuscript: document.getElementById('btn-cancel-import-manuscript'),
+    btnImportAllToSession: document.getElementById('btn-import-all-to-session'),
 
     // Page Description Modal
     pageDescModal: document.getElementById('page-desc-modal'),
@@ -917,13 +930,14 @@ function exportBackupFile() {
   const backupData = JSON.stringify({
     version: 1,
     exportDate: new Date().toISOString(),
+    sessionType: 'full_session_instance',
     books: state.books,
     settings: state.settings
   }, null, 2);
 
-  const filename = `typewriter_backup_${new Date().toISOString().slice(0, 10)}.json`;
+  const filename = `typewriter_full_session_${new Date().toISOString().slice(0, 10)}.json`;
   triggerFileDownload(filename, backupData, 'application/json');
-  showToast("Saved backup file!");
+  showToast("Saved full session/instance backup file!");
 }
 
 // Pending Backup Inspection State
@@ -1061,10 +1075,10 @@ function executeBackupRestore(replaceMode = true) {
     renderAll();
     closeBackupInspectModal();
     closeOverlay();
-    showToast(`Restored all ${state.books.length} books from backup! Previous workspace preserved in Safety Archive.`);
+    showToast(`Restored full session (${state.books.length} books) from backup! Previous session preserved in Safety Archive.`);
     playCarriageReturnBell();
   } else {
-    // Append / merge books into current workspace
+    // Append / merge books into current session
     let addedCount = 0;
     incomingBooks.forEach(b => {
       const copy = JSON.parse(JSON.stringify(b));
@@ -1089,7 +1103,7 @@ function executeBackupRestore(replaceMode = true) {
     renderAll();
     closeBackupInspectModal();
     closeOverlay();
-    showToast(`Appended ${addedCount} book${addedCount === 1 ? '' : 's'} to your studio library!`);
+    showToast(`Appended ${addedCount} book${addedCount === 1 ? '' : 's'} to your current session!`);
     playCarriageReturnBell();
   }
 }
@@ -1105,15 +1119,352 @@ function importBackupFile(event) {
       if (importedData && importedData.books && importedData.books.length > 0) {
         openBackupInspectModal(importedData, file.name || 'Local File');
       } else {
-        alert("Invalid backup file: The selected file does not contain a recognized Typewriter studio backup.");
+        alert("Invalid backup file: The selected file does not contain a recognized Typewriter full session/instance backup.");
         if (DOM.fileInputRestore) DOM.fileInputRestore.value = '';
       }
     } catch (err) {
-      alert("Could not read backup file. Please ensure it is a valid JSON backup from Typewriter Studio.");
+      alert("Could not read backup file. Please ensure it is a valid JSON full session backup from Typewriter Studio.");
       if (DOM.fileInputRestore) DOM.fileInputRestore.value = '';
     }
   };
   reader.readAsText(file);
+}
+
+// ─── SINGLE BOOK / MANUSCRIPT IMPORT & EXPORT ───────────────
+
+let pendingImportMultiBooks = null;
+
+function parseManuscriptFile(rawText, filename) {
+  const isJsonExt = /\.json$/i.test(filename);
+  const trimmed = (rawText || '').trim();
+
+  // 1. Try JSON parsing if file is .json or begins with JSON object/array markers
+  if (isJsonExt || trimmed.startsWith('{') || trimmed.startsWith('[')) {
+    try {
+      const data = JSON.parse(trimmed);
+
+      // Case A: Single manuscript export format { type: 'single_manuscript', book: { ... } }
+      if (data && data.type === 'single_manuscript' && data.book) {
+        return { type: 'single', book: data.book };
+      }
+      // Case B: Safety backup single book { type: 'safety_backup_single_book', books: [ ... ] }
+      if (data && data.type === 'safety_backup_single_book' && Array.isArray(data.books) && data.books.length > 0) {
+        return { type: 'single', book: data.books[0] };
+      }
+      // Case C: Object having book property
+      if (data && data.book && (data.book.title || data.book.pages)) {
+        return { type: 'single', book: data.book };
+      }
+      // Case D: Direct Book object { id, title, pages }
+      if (data && (Array.isArray(data.pages) || (data.title && (data.chunks || Array.isArray(data.pages))))) {
+        return { type: 'single', book: data };
+      }
+      // Case E: Session backup with array of books
+      if (data && Array.isArray(data.books) && data.books.length > 0) {
+        if (data.books.length === 1) {
+          return { type: 'single', book: data.books[0] };
+        } else {
+          return { type: 'multiple', books: data.books, filename: filename };
+        }
+      }
+      // Case F: Array of book objects directly
+      if (Array.isArray(data) && data.length > 0 && data[0] && (data[0].title || data[0].pages)) {
+        if (data.length === 1) {
+          return { type: 'single', book: data[0] };
+        } else {
+          return { type: 'multiple', books: data, filename: filename };
+        }
+      }
+      // Case G: Simple note/document object { title, content / text }
+      if (data && (data.title || data.content || data.text)) {
+        return {
+          type: 'single',
+          book: {
+            title: data.title || filename.replace(/\.json$/i, ''),
+            pages: [{ number: 1, text: data.content || data.text || '', chunks: [] }]
+          }
+        };
+      }
+    } catch (jsonErr) {
+      if (isJsonExt) {
+        throw new Error("Could not parse JSON manuscript file. Ensure the file contains valid JSON.");
+      }
+    }
+  }
+
+  // 2. Plain Text (.txt) or Markdown (.md) Parsing
+  let title = filename.replace(/\.(txt|md|text|markdown)$/i, '').replace(/[_-]/g, ' ').trim();
+  let text = trimmed;
+
+  // Extract top-level Markdown title (# Title)
+  const titleMatch = text.match(/^#\s+(.+)$/m);
+  if (titleMatch) {
+    title = titleMatch[1].trim();
+    text = text.replace(/^#\s+.+$/m, '').trim();
+  }
+
+  // Detect explicit page divider lines:
+  // e.g. "--- PAGE 1 (Title) ---", "## Page 1 (Title)", "=== PAGE 1 ===", or FormFeed "\f"
+  const pageSepRegex = /(?:^|\n)(?:---+\s*PAGE\s+\d+(?:\s*\((.*?)\))?\s*---+|##+\s*Page\s+\d+(?:\s*\((.*?)\))?|===+\s*PAGE\s+\d+\s*===+|\f)/gi;
+  const hasPageMarkers = pageSepRegex.test(text);
+  pageSepRegex.lastIndex = 0;
+
+  const pages = [];
+
+  if (hasPageMarkers) {
+    const parts = [];
+    let match;
+    let lastIndex = 0;
+    let prevDesc = '';
+
+    while ((match = pageSepRegex.exec(text)) !== null) {
+      const matchIndex = match.index;
+      if (matchIndex > lastIndex || lastIndex === 0) {
+        const chunk = text.slice(lastIndex, matchIndex).trim();
+        if (chunk.length > 0) {
+          parts.push({ desc: prevDesc, content: chunk });
+        }
+      }
+      prevDesc = (match[1] || match[2] || '').trim();
+      lastIndex = pageSepRegex.lastIndex;
+    }
+    const finalChunk = text.slice(lastIndex).trim();
+    if (finalChunk.length > 0) {
+      parts.push({ desc: prevDesc, content: finalChunk });
+    }
+
+    if (parts.length > 0) {
+      parts.forEach((p, idx) => {
+        const paragraphs = p.content.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+        const chunks = paragraphs.map(pGraph => ({ text: pGraph }));
+        pages.push({
+          number: idx + 1,
+          description: p.desc || '',
+          chunks: chunks.length > 0 ? chunks : [{ text: p.content }]
+        });
+      });
+    }
+  }
+
+  // If no explicit page markers, split text into pages naturally by paragraph & word count
+  if (pages.length === 0) {
+    const paragraphs = text.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+    const targetWordsPerPage = (state && state.settings && state.settings.wordsPerPage) || 300;
+
+    let currentPageChunks = [];
+    let currentWordCount = 0;
+
+    paragraphs.forEach((pGraph) => {
+      const wordsInP = pGraph.split(/\s+/).filter(Boolean).length;
+      if (currentWordCount + wordsInP > targetWordsPerPage && currentPageChunks.length > 0) {
+        pages.push({
+          number: pages.length + 1,
+          description: '',
+          chunks: currentPageChunks
+        });
+        currentPageChunks = [];
+        currentWordCount = 0;
+      }
+      currentPageChunks.push({ text: pGraph });
+      currentWordCount += wordsInP;
+    });
+
+    if (currentPageChunks.length > 0 || pages.length === 0) {
+      pages.push({
+        number: pages.length + 1,
+        description: '',
+        chunks: currentPageChunks.length > 0 ? currentPageChunks : [{ text: '' }]
+      });
+    }
+  }
+
+  return {
+    type: 'single',
+    book: {
+      title: title || 'Imported Manuscript',
+      pages: pages
+    }
+  };
+}
+
+function addSingleManuscriptToSession(rawBook, sourceName = '') {
+  if (!rawBook) return;
+
+  // 1. Sanitize title
+  let title = (rawBook.title || sourceName || `Manuscript ${state.books.length + 1}`).trim();
+  if (state.books.some(b => b.title.toLowerCase() === title.toLowerCase())) {
+    title = `${title} (Imported)`;
+  }
+
+  // 2. Sanitize pages
+  const rawPages = Array.isArray(rawBook.pages) && rawBook.pages.length > 0
+    ? rawBook.pages
+    : [{ number: 1, chunks: [], description: '' }];
+
+  const sanitizedPages = rawPages.map((p, pIdx) => {
+    let rawChunks = [];
+    if (Array.isArray(p.chunks)) {
+      rawChunks = p.chunks;
+    } else if (typeof p.text === 'string' && p.text.trim()) {
+      rawChunks = [{ text: p.text }];
+    } else if (typeof p.content === 'string' && p.content.trim()) {
+      rawChunks = [{ text: p.content }];
+    }
+
+    const sanitizedChunks = rawChunks.map((c, cIdx) => {
+      const text = typeof c === 'string' ? c : (c.text || '');
+      return {
+        id: 'chunk_' + Date.now() + '_' + pIdx + '_' + cIdx + '_' + Math.random().toString(36).substr(2, 4),
+        text: text,
+        createdAt: (c && c.createdAt) || Date.now(),
+        wpm: (c && c.wpm) || 0,
+        timeStr: (c && c.timeStr) || ''
+      };
+    }).filter(c => c.text.length > 0);
+
+    return {
+      id: 'page_' + Date.now() + '_' + pIdx + '_' + Math.random().toString(36).substr(2, 4),
+      number: pIdx + 1,
+      description: (p.description || '').trim(),
+      chunks: sanitizedChunks,
+      locked: Boolean(p.locked),
+      createdAt: p.createdAt || Date.now()
+    };
+  });
+
+  const newBook = {
+    id: 'book_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+    title: title,
+    pages: sanitizedPages,
+    createdAt: Date.now()
+  };
+
+  // 3. Append to session without altering existing books
+  state.books.push(newBook);
+  state.activeBookId = newBook.id;
+  state.currentPageId = newBook.pages[0].id;
+
+  saveStorage();
+  renderAll();
+
+  let totalWords = 0;
+  newBook.pages.forEach(pg => {
+    totalWords += getPageWordCount(pg);
+  });
+
+  showToast(`Added manuscript "${newBook.title}" (${newBook.pages.length} pg${newBook.pages.length === 1 ? '' : 's'}, ${totalWords.toLocaleString()} wds) to session!`);
+  playCarriageReturnBell();
+}
+
+function importSingleManuscriptFile(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const result = parseManuscriptFile(e.target.result, file.name);
+      if (result.type === 'single') {
+        addSingleManuscriptToSession(result.book, file.name);
+      } else if (result.type === 'multiple') {
+        showImportManuscriptPicker(result.books, file.name);
+      }
+    } catch (err) {
+      console.error("Import manuscript error:", err);
+      alert(`Could not import manuscript: ${err.message || 'Invalid or unrecognized file format.'}`);
+    }
+    if (DOM.fileInputImportManuscript) {
+      DOM.fileInputImportManuscript.value = '';
+    }
+  };
+  reader.readAsText(file);
+}
+
+function showImportManuscriptPicker(books, filename) {
+  pendingImportMultiBooks = books;
+  if (!DOM.importManuscriptModal) return;
+
+  DOM.importManuscriptModal.classList.remove('hidden');
+  if (DOM.importManuscriptTitle) {
+    DOM.importManuscriptTitle.textContent = "Import Manuscript to Session";
+  }
+  if (DOM.importManuscriptDesc) {
+    DOM.importManuscriptDesc.textContent = `File "${filename}" contains ${books.length} manuscripts. Choose which one to add to your current session without replacing your existing books:`;
+  }
+  if (DOM.importManuscriptList) {
+    DOM.importManuscriptList.innerHTML = '';
+    books.forEach((b, idx) => {
+      const pages = b.pages || [];
+      let words = 0;
+      pages.forEach(p => { words += getPageWordCount(p); });
+
+      const li = document.createElement('li');
+      li.className = 'backup-inspect-book-item';
+      li.style.display = 'flex';
+      li.style.justifyContent = 'space-between';
+      li.style.alignItems = 'center';
+      li.style.padding = '10px 14px';
+
+      li.innerHTML = `
+        <div class="backup-inspect-book-main">
+          <span style="font-size:16px; margin-right:8px;">📖</span>
+          <div>
+            <strong class="backup-inspect-book-title" style="display:block; font-size:13px; color:#e0e0e0;">${idx + 1}. ${b.title || 'Untitled Manuscript'}</strong>
+            <span class="backup-inspect-book-meta" style="font-size:11px; color:#888;">${pages.length} pgs • ${words.toLocaleString()} words</span>
+          </div>
+        </div>
+        <button class="btn-drive-action primary btn-pick-import-single" style="padding:6px 14px; font-size:11px; font-weight:600;">
+          ➕ Import Book
+        </button>
+      `;
+
+      const btnPick = li.querySelector('.btn-pick-import-single');
+      btnPick.onclick = () => {
+        addSingleManuscriptToSession(b, b.title);
+        closeImportManuscriptModal();
+      };
+
+      DOM.importManuscriptList.appendChild(li);
+    });
+  }
+}
+
+function closeImportManuscriptModal() {
+  if (DOM.importManuscriptModal) {
+    DOM.importManuscriptModal.classList.add('hidden');
+  }
+  pendingImportMultiBooks = null;
+  if (DOM.fileInputImportManuscript) {
+    DOM.fileInputImportManuscript.value = '';
+  }
+}
+
+function importAllPendingBooksToSession() {
+  if (!pendingImportMultiBooks || pendingImportMultiBooks.length === 0) return;
+  const count = pendingImportMultiBooks.length;
+  pendingImportMultiBooks.forEach(b => {
+    addSingleManuscriptToSession(b, b.title);
+  });
+  closeImportManuscriptModal();
+  showToast(`Imported all ${count} manuscripts into your current session!`);
+}
+
+function exportSingleManuscriptJSON() {
+  const book = getActiveBook();
+  if (!book) return;
+  const cleanTitle = (book.title || 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  const filename = `${cleanTitle}_manuscript_${new Date().toISOString().slice(0, 10)}.json`;
+
+  const payload = JSON.stringify({
+    type: 'single_manuscript',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    book: book
+  }, null, 2);
+
+  triggerFileDownload(filename, payload, 'application/json');
+  if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+  showToast(`Exported single manuscript "${book.title}" (.json)!`);
 }
 
 // ─── BOOK & PAGE MANAGEMENT ─────────────────────────────────
@@ -2060,6 +2411,10 @@ function exportManuscript(format) {
     exportManuscriptPDF();
     return;
   }
+  if (format === 'json') {
+    exportSingleManuscriptJSON();
+    return;
+  }
   const book = getActiveBook();
   const content = compileManuscriptText(format);
   const ext = format === 'md' ? 'md' : 'txt';
@@ -2323,11 +2678,12 @@ async function saveBackupToDrive() {
     const backupData = JSON.stringify({
       version: 1,
       exportDate: new Date().toISOString(),
+      sessionType: 'full_session_instance',
       books: state.books,
       settings: state.settings
     }, null, 2);
 
-    const fileName = `typewriter_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    const fileName = `typewriter_full_session_${new Date().toISOString().slice(0, 10)}.json`;
 
     const result = await uploadToGoogleDrive({
       name: fileName,
@@ -2336,7 +2692,7 @@ async function saveBackupToDrive() {
       isDoc: false
     });
 
-    showToast(`Backup saved to Google Drive as "${result.name}"!`);
+    showToast(`Full session/instance backup saved to Google Drive as "${result.name}"!`);
   } catch (err) {
     console.error("Drive backup error:", err);
     showToast(`Drive backup: ${err.message || 'Failed to save.'}`);
@@ -2509,6 +2865,10 @@ function setupEventListeners() {
       }
       if (DOM.backupInspectModal && !DOM.backupInspectModal.classList.contains('hidden')) {
         closeBackupInspectModal();
+        return;
+      }
+      if (DOM.importManuscriptModal && !DOM.importManuscriptModal.classList.contains('hidden')) {
+        closeImportManuscriptModal();
         return;
       }
       if (DOM.driveModal && !DOM.driveModal.classList.contains('hidden')) {
@@ -2692,6 +3052,17 @@ function setupEventListeners() {
   if (DOM.btnBackupCloud) DOM.btnBackupCloud.onclick = exportBackupFile;
   if (DOM.btnRestoreCloud) DOM.btnRestoreCloud.onclick = () => DOM.fileInputRestore && DOM.fileInputRestore.click();
   if (DOM.fileInputRestore) DOM.fileInputRestore.onchange = importBackupFile;
+
+  // Import Single Manuscript / Book
+  if (DOM.btnImportManuscript) {
+    DOM.btnImportManuscript.onclick = () => DOM.fileInputImportManuscript && DOM.fileInputImportManuscript.click();
+  }
+  if (DOM.btnImportBookQuick) {
+    DOM.btnImportBookQuick.onclick = () => DOM.fileInputImportManuscript && DOM.fileInputImportManuscript.click();
+  }
+  if (DOM.fileInputImportManuscript) {
+    DOM.fileInputImportManuscript.onchange = importSingleManuscriptFile;
+  }
 
   // Google Drive buttons
   if (DOM.btnDriveBackup) DOM.btnDriveBackup.onclick = saveBackupToDrive;
@@ -2926,7 +3297,18 @@ function setupEventListeners() {
   if (DOM.btnExportTxt) DOM.btnExportTxt.onclick = () => exportManuscript('txt');
   if (DOM.btnExportMd) DOM.btnExportMd.onclick = () => exportManuscript('md');
   if (DOM.btnExportPdf) DOM.btnExportPdf.onclick = () => exportManuscript('pdf');
+  if (DOM.btnExportJson) DOM.btnExportJson.onclick = () => exportManuscript('json');
   if (DOM.btnCopyAll) DOM.btnCopyAll.onclick = copyManuscriptToClipboard;
+
+  // Import Manuscript Picker Modal
+  if (DOM.btnCloseImportManuscript) DOM.btnCloseImportManuscript.onclick = closeImportManuscriptModal;
+  if (DOM.btnCancelImportManuscript) DOM.btnCancelImportManuscript.onclick = closeImportManuscriptModal;
+  if (DOM.btnImportAllToSession) DOM.btnImportAllToSession.onclick = importAllPendingBooksToSession;
+  if (DOM.importManuscriptModal) {
+    DOM.importManuscriptModal.onclick = (e) => {
+      if (e.target === DOM.importManuscriptModal) closeImportManuscriptModal();
+    };
+  }
 
   // Backup Inspection & Safety Restore Modal
   if (DOM.btnCloseBackupInspect) DOM.btnCloseBackupInspect.onclick = closeBackupInspectModal;
