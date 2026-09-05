@@ -21,7 +21,7 @@
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Special+Elite&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Special+Elite&family=Inter:wght@400;500;600;700&family=Literata:ital,opsz,wght@0,7..72,400;0,7..72,600;0,7..72,700;1,7..72,400&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   
   <!-- Official Firebase SDK (Compat) -->
@@ -64,6 +64,7 @@
             <span class="meta-separator">•</span>
             <button id="esc-hint" class="btn-esc-menu" title="Click or press ESC to open studio menu">ESC — menu</button>
             <button id="btn-toggle-timestamps" class="btn-timestamp-toggle" title="Toggle commit timestamps in left margin">⏱️ Timestamps</button>
+            <button id="btn-open-ereader-mini" class="btn-timestamp-toggle" title="Open in E-Reader Mode">📖 E-Reader</button>
           </div>
           <div class="draft-footer-actions">
             <span class="commit-hint" id="commit-hint">Commit with <kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
@@ -101,25 +102,16 @@
 
       <div class="panel-divider"></div>
       <div class="panel-action" id="btn-new-page"><span>📄</span> + New Page</div>
-      <div class="panel-action" id="btn-export-modal-toggle"><span>📥</span> Export Current Manuscript</div>
-      <div class="panel-action" id="btn-import-manuscript"><span>📤</span> Import Manuscript / Book</div>
       <input type="file" id="file-input-import-manuscript" accept=".json,.txt,.md,.epub,text/plain,text/markdown,application/json,application/epub+zip" class="hidden">
-      <div class="panel-action" id="btn-drive-backup"><span><svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#34A853" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/><path fill="#EA4335" d="M22 18.5l-3.5-6h-7.5l3.5 6z"/></svg></span> Backup Session to Google Drive</div>
-      <div class="panel-action" id="btn-drive-import"><span>📥</span> Import from Google Drive</div>
-      <div class="panel-action" id="btn-drive-manager"><span>📁</span> Files on Google Drive</div>
-      <div class="panel-action" id="btn-pwa-install-left"><span>💻</span> Install Desktop App</div>
-      <div class="panel-action" id="btn-backup-cloud"><span>💾</span> Backup Full Session / Instance (.json)</div>
-      <div class="panel-action" id="btn-restore-cloud"><span>📂</span> Load Full Session / Instance</div>
-      <div class="panel-action" id="btn-safety-archive"><span>🛡️</span> Safety Archive (<span id="safety-archive-badge">0</span>)</div>
       <input type="file" id="file-input-restore" accept=".json" class="hidden">
     </div>
 
-    <!-- Center: Main Brand, Auth & Navigation -->
+    <!-- Center: Main Brand, Auth & Tabbed Studio Interface -->
     <div id="panel-center">
       <div class="menu-label">TYPEWRITER STUDIO</div>
       <p class="menu-sublabel">Forward-Only Micro-Drafting</p>
 
-      <!-- Firebase Google Sign In Container -->
+      <!-- Firebase / Google Auth Bar -->
       <div class="auth-center-block">
         <button id="btn-google-signin" class="menu-btn google">
           <svg class="google-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.1c-.22-.66-.35-1.36-.35-2.1s.13-1.44.35-2.1V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
@@ -136,12 +128,232 @@
         </div>
       </div>
 
-      <div class="panel-divider" style="width:240px; background:#2a2a2a;"></div>
-      <button id="btn-resume" class="menu-btn primary-action">Resume Writing</button>
-      <button id="btn-install-pwa" class="menu-btn install-pwa"><span>💻</span> Install Desktop App</button>
-      <div class="panel-divider" style="width:240px; background:#2a2a2a;"></div>
-      <button id="btn-delete-book" class="menu-btn danger-subtle">Delete Current Book</button>
-      <button id="btn-clear-all" class="menu-btn danger">Reset All Books & Data</button>
+      <!-- Tabbed Menu Navigation -->
+      <div class="menu-tabs-nav" id="menu-tabs-nav" role="tablist">
+        <button class="menu-tab-btn active" data-tab="tab-current-project" role="tab" aria-selected="true">
+          <span>📁</span> Current Project
+        </button>
+        <button class="menu-tab-btn" data-tab="tab-import-restore" role="tab" aria-selected="false">
+          <span>📥</span> Import &amp; Restore
+        </button>
+        <button class="menu-tab-btn" data-tab="tab-export-publish" role="tab" aria-selected="false">
+          <span>📤</span> Export &amp; Publish
+        </button>
+        <button class="menu-tab-btn" data-tab="tab-backups-sync" role="tab" aria-selected="false">
+          <span>☁️</span> Backups &amp; Sync
+        </button>
+      </div>
+
+      <!-- Tab Content Area -->
+      <div class="menu-tabs-container">
+        
+        <!-- Tab 1: Current Project -->
+        <div id="tab-current-project" class="menu-tab-panel active" role="tabpanel">
+          <div class="tab-panel-header">
+            <h4 class="tab-panel-title">Current Project</h4>
+            <p class="tab-panel-desc">Manage your active writing workspace, pages, and local drafts.</p>
+          </div>
+
+          <div class="tab-actions-grid">
+            <button id="tab-btn-read-draft" class="tab-action-card primary-highlight">
+              <span class="tab-action-icon">📖</span>
+              <div class="tab-action-info">
+                <strong>Read in E-Reader</strong>
+                <span>Preview and read current manuscript in book reader mode</span>
+              </div>
+            </button>
+
+            <button id="tab-btn-new-draft" class="tab-action-card">
+              <span class="tab-action-icon">➕</span>
+              <div class="tab-action-info">
+                <strong>New Draft</strong>
+                <span>Create a fresh book manuscript in this studio</span>
+              </div>
+            </button>
+
+            <button id="tab-btn-load-draft" class="tab-action-card">
+              <span class="tab-action-icon">📚</span>
+              <div class="tab-action-info">
+                <strong>Load Local Draft</strong>
+                <span>Switch between saved local drafts and manuscripts</span>
+              </div>
+            </button>
+
+            <button id="tab-btn-new-page" class="tab-action-card">
+              <span class="tab-action-icon">📄</span>
+              <div class="tab-action-info">
+                <strong>New Page</strong>
+                <span>Add a fresh blank sheet to current draft</span>
+              </div>
+            </button>
+
+            <button id="tab-btn-delete-draft" class="tab-action-card danger-card">
+              <span class="tab-action-icon">🗑️</span>
+              <div class="tab-action-info">
+                <strong>Delete Current Draft</strong>
+                <span>Delete active draft (auto-saved to Safety Archive)</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tab 2: Import & Restore -->
+        <div id="tab-import-restore" class="menu-tab-panel" role="tabpanel">
+          <div class="tab-panel-header">
+            <h4 class="tab-panel-title">Import &amp; Restore</h4>
+            <p class="tab-panel-desc">Load local JSON backups and import documents from Google Drive or EPUB files.</p>
+          </div>
+
+          <div class="tab-actions-grid">
+            <button id="tab-btn-open-epub-reader" class="tab-action-card primary-highlight">
+              <span class="tab-action-icon">📖</span>
+              <div class="tab-action-info">
+                <strong>Open EPUB in E-Reader</strong>
+                <span>Read published book EPUBs with full publisher styling</span>
+              </div>
+            </button>
+            <input type="file" id="file-input-epub-reader" accept=".epub,application/epub+zip" class="hidden">
+
+            <button id="tab-btn-load-json" class="tab-action-card">
+              <span class="tab-action-icon">💾</span>
+              <div class="tab-action-info">
+                <strong>Load JSON Backup</strong>
+                <span>Restore complete studio session or book .json file</span>
+              </div>
+            </button>
+
+            <button id="tab-btn-import-drive" class="tab-action-card drive-highlight">
+              <span class="tab-action-icon">
+                <svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#34A853" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/><path fill="#EA4335" d="M22 18.5l-3.5-6h-7.5l3.5 6z"/></svg>
+              </span>
+              <div class="tab-action-info">
+                <strong>Import .txt/.md from Drive</strong>
+                <span>Fetch and import files or documents from Google Drive</span>
+              </div>
+            </button>
+
+            <button id="tab-btn-import-local" class="tab-action-card">
+              <span class="tab-action-icon">📤</span>
+              <div class="tab-action-info">
+                <strong>Import Local File (.txt, .md, .epub)</strong>
+                <span>Load raw text, markdown document, or EPUB eBook</span>
+              </div>
+            </button>
+
+            <button id="tab-btn-safety-archive" class="tab-action-card">
+              <span class="tab-action-icon">🛡️</span>
+              <div class="tab-action-info">
+                <strong>Safety Archive (<span id="safety-archive-badge">0</span>)</strong>
+                <span>Recover automatically protected draft backups</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tab 3: Export & Publish -->
+        <div id="tab-export-publish" class="menu-tab-panel" role="tabpanel">
+          <div class="tab-panel-header">
+            <h4 class="tab-panel-title">Export &amp; Publish</h4>
+            <p class="tab-panel-desc">Export your manuscript into reading, publishing, and document formats.</p>
+          </div>
+
+          <div class="tab-actions-grid">
+            <button id="tab-btn-export-pdf" class="tab-action-card">
+              <span class="tab-action-icon">
+                <svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#EA4335" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1.5 14h-1.2v-1.8H9.8V16H8.5v-5h2.8c.9 0 1.5.6 1.5 1.5v1c0 .7-.4 1.3-1.1 1.4L12.5 16zm-1.2-3.3c0-.3-.2-.5-.5-.5H9.8v1.3h1c.3 0 .5-.2.5-.5v-.3zm5.7 3.3h-1.3v-1.8h-1.5V16h-1.3v-5h1.3v1.8h1.5V11H17v5zm-3.5-7V3.5L17.5 9H13.5z"/></svg>
+              </span>
+              <div class="tab-action-info">
+                <strong>Download PDF</strong>
+                <span>Formatted typewriter manuscript PDF ready for print</span>
+              </div>
+            </button>
+
+            <button id="tab-btn-export-epub" class="tab-action-card">
+              <span class="tab-action-icon">📚</span>
+              <div class="tab-action-info">
+                <strong>Download EPUB</strong>
+                <span>Standard eBook format for Apple Books, Kindle, e-readers</span>
+              </div>
+            </button>
+
+            <button id="tab-btn-export-drive-doc" class="tab-action-card drive-highlight">
+              <span class="tab-action-icon">
+                <svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+              </span>
+              <div class="tab-action-info">
+                <strong>Export to Google Docs</strong>
+                <span>Create an editable document in your Google Drive</span>
+              </div>
+            </button>
+
+            <button id="tab-btn-export-all-dialog" class="tab-action-card">
+              <span class="tab-action-icon">📋</span>
+              <div class="tab-action-info">
+                <strong>All Export Options (.txt, .md, Copy)</strong>
+                <span>View full format selector dialog &amp; clipboard export</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+        <!-- Tab 4: Backups & Sync -->
+        <div id="tab-backups-sync" class="menu-tab-panel" role="tabpanel">
+          <div class="tab-panel-header">
+            <h4 class="tab-panel-title">Backups &amp; Sync</h4>
+            <p class="tab-panel-desc">Manage local JSON backups, Google Drive storage, and Firestore sync.</p>
+          </div>
+
+          <div class="tab-actions-grid">
+            <button id="tab-btn-download-json-backup" class="tab-action-card primary-highlight">
+              <span class="tab-action-icon">💾</span>
+              <div class="tab-action-info">
+                <strong>Download JSON Backup</strong>
+                <span>Download full session snapshot file with all books</span>
+              </div>
+            </button>
+
+            <button id="tab-btn-toggle-drive" class="tab-action-card drive-highlight">
+              <span class="tab-action-icon">
+                <svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#34A853" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/><path fill="#EA4335" d="M22 18.5l-3.5-6h-7.5l3.5 6z"/></svg>
+              </span>
+              <div class="tab-action-info">
+                <strong id="tab-drive-toggle-title">Connect Google Drive</strong>
+                <span id="tab-drive-toggle-desc">Sign in with Google to sync and manage Drive files</span>
+              </div>
+            </button>
+
+            <div class="tab-action-card sync-card">
+              <span class="tab-action-icon">☁️</span>
+              <div class="tab-action-info">
+                <div class="sync-title-row">
+                  <strong>Toggle Firebase Sync</strong>
+                  <label class="toggle-switch" title="Toggle Firebase Cloud Sync">
+                    <input type="checkbox" id="setting-firebase-sync" checked>
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+                <span id="tab-sync-status-desc">Persistent Firestore cloud synchronization</span>
+              </div>
+            </div>
+
+            <button id="tab-btn-drive-manager" class="tab-action-card">
+              <span class="tab-action-icon">📁</span>
+              <div class="tab-action-info">
+                <strong>Google Drive Manager</strong>
+                <span>Inspect and manage backups saved on Google Drive</span>
+              </div>
+            </button>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Action Bottom Row -->
+      <div class="menu-center-footer">
+        <button id="btn-resume" class="menu-btn primary-action">Resume Writing</button>
+        <button id="btn-install-pwa" class="menu-btn install-pwa"><span>💻</span> Install Desktop App</button>
+        <button id="btn-clear-all" class="menu-btn danger-subtle" title="Reset all studio books and state">Reset All Books</button>
+      </div>
     </div>
 
     <!-- Right: Studio Settings -->
@@ -554,6 +766,286 @@
       </div>
       <div style="margin-top:16px; text-align:right;">
         <button id="btn-close-ios-modal-btn" class="menu-btn" style="min-width:100px; padding:6px 16px;">Got It</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── E-READER MODE FULLSCREEN OVERLAY ── -->
+  <div id="ereader-overlay" class="ereader-overlay hidden">
+    <!-- Header Bar -->
+    <header id="ereader-header" class="ereader-header">
+      <div class="ereader-header-left">
+        <button id="btn-ereader-exit" class="ereader-btn" title="Exit E-Reader Mode (ESC)">
+          <span>←</span> Studio
+        </button>
+        <button id="btn-ereader-toc" class="ereader-btn" title="Table of Contents (T)">
+          <span>📑</span> Contents
+        </button>
+        <button id="btn-ereader-bookmarks" class="ereader-btn" title="Bookmarks (B)">
+          <span>🔖</span> Bookmarks
+        </button>
+      </div>
+
+      <div class="ereader-header-center">
+        <div class="ereader-title-container">
+          <span id="ereader-book-title" class="ereader-book-title">Published Book Title</span>
+          <span id="ereader-chapter-title" class="ereader-chapter-title">Chapter 1</span>
+        </div>
+      </div>
+
+      <div class="ereader-header-right">
+        <button id="btn-ereader-open-epub" class="ereader-btn" title="Open another EPUB file">
+          <span>📂</span> Open EPUB
+        </button>
+        <button id="btn-ereader-search" class="ereader-btn" title="Search in Book">
+          <span>🔍</span>
+        </button>
+        <button id="btn-ereader-style" class="ereader-btn" title="Reading & Typography Settings (A)">
+          <span>Aa</span>
+        </button>
+        <button id="btn-ereader-fullscreen" class="ereader-btn" title="Toggle Fullscreen (F)">
+          <span id="ereader-fs-icon">⛶</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- TOC & Bookmarks Drawer Sidebar -->
+    <aside id="ereader-sidebar" class="ereader-sidebar hidden">
+      <div class="ereader-sidebar-header">
+        <div class="ereader-sidebar-tabs">
+          <button id="ereader-tab-toc" class="ereader-sidebar-tab active">Table of Contents</button>
+          <button id="ereader-tab-bm" class="ereader-sidebar-tab">Bookmarks (<span id="ereader-bm-count">0</span>)</button>
+        </div>
+        <button id="btn-close-ereader-sidebar" class="btn-close">×</button>
+      </div>
+
+      <div id="ereader-sidebar-toc-panel" class="ereader-sidebar-panel active">
+        <div class="ereader-book-meta-card">
+          <div id="ereader-cover-preview" class="ereader-cover-preview hidden"></div>
+          <div class="ereader-meta-info">
+            <strong id="ereader-meta-title">Book Title</strong>
+            <span id="ereader-meta-author">Author</span>
+            <span id="ereader-meta-stats">0 chapters • ~0 words</span>
+          </div>
+        </div>
+        <ul id="ereader-toc-list" class="ereader-toc-list">
+          <!-- Populated with EPUB nav tree -->
+        </ul>
+      </div>
+
+      <div id="ereader-sidebar-bm-panel" class="ereader-sidebar-panel">
+        <div class="ereader-bm-actions">
+          <button id="btn-add-bookmark" class="ereader-action-pill">
+            <span>🔖</span> Add Bookmark at Current Position
+          </button>
+        </div>
+        <ul id="ereader-bookmarks-list" class="ereader-bookmarks-list">
+          <!-- Populated dynamically -->
+        </ul>
+      </div>
+    </aside>
+
+    <!-- Search in Book Popover -->
+    <div id="ereader-search-bar" class="ereader-search-bar hidden">
+      <span class="search-modal-icon">🔍</span>
+      <input type="text" id="ereader-search-input" placeholder="Search phrase or term in book..." autocomplete="off">
+      <span id="ereader-search-count" class="ereader-search-count">0/0</span>
+      <button id="btn-ereader-search-prev" class="ereader-nav-arrow" title="Previous match">▲</button>
+      <button id="btn-ereader-search-next" class="ereader-nav-arrow" title="Next match">▼</button>
+      <button id="btn-close-ereader-search" class="btn-close">×</button>
+    </div>
+
+    <!-- Style & Display Popover -->
+    <div id="ereader-style-popover" class="ereader-style-popover hidden">
+      <div class="ereader-popover-header">
+        <strong>Reader &amp; Typography Settings</strong>
+        <button id="btn-close-ereader-style" class="btn-close">×</button>
+      </div>
+
+      <!-- Publisher Defaults Master Switch -->
+      <div class="ereader-publisher-toggle-box">
+        <div class="publisher-toggle-info">
+          <strong>Publisher Defaults</strong>
+          <span>Render original publisher CSS, fonts, margins &amp; drop caps</span>
+        </div>
+        <label class="toggle-switch">
+          <input type="checkbox" id="ereader-opt-publisher-defaults" checked>
+          <span class="toggle-slider"></span>
+        </label>
+      </div>
+
+      <div id="ereader-custom-styles-section" class="ereader-custom-section disabled">
+        <!-- Themes -->
+        <div class="ereader-setting-row">
+          <label>Reading Theme</label>
+          <div class="ereader-theme-picker">
+            <button class="ereader-theme-chip active" data-rtheme="paper" title="Paper Light">
+              <span class="theme-swatch paper"></span> Paper
+            </button>
+            <button class="ereader-theme-chip" data-rtheme="sepia" title="Warm Sepia">
+              <span class="theme-swatch sepia"></span> Sepia
+            </button>
+            <button class="ereader-theme-chip" data-rtheme="slate" title="Slate Dark">
+              <span class="theme-swatch slate"></span> Slate
+            </button>
+            <button class="ereader-theme-chip" data-rtheme="black" title="OLED Black">
+              <span class="theme-swatch black"></span> Black
+            </button>
+            <button class="ereader-theme-chip" data-rtheme="typewriter" title="Typewriter Vintage">
+              <span class="theme-swatch typewriter"></span> Type
+            </button>
+          </div>
+        </div>
+
+        <!-- Typography / Font Family -->
+        <div class="ereader-setting-row">
+          <label>Font Family</label>
+          <div class="ereader-font-picker">
+            <button class="ereader-font-chip active" data-rfont="publisher">Publisher</button>
+            <button class="ereader-font-chip" data-rfont="literata">Literata</button>
+            <button class="ereader-font-chip" data-rfont="georgia">Georgia</button>
+            <button class="ereader-font-chip" data-rfont="inter">Inter</button>
+            <button class="ereader-font-chip" data-rfont="courier">Courier</button>
+          </div>
+        </div>
+
+        <!-- Font Size & Line Height -->
+        <div class="ereader-setting-row dual">
+          <div class="ereader-setting-half">
+            <label>Font Size</label>
+            <div class="ereader-stepper">
+              <button id="btn-font-dec" class="stepper-btn">A-</button>
+              <span id="ereader-font-size-val">18px</span>
+              <button id="btn-font-inc" class="stepper-btn">A+</button>
+            </div>
+          </div>
+          <div class="ereader-setting-half">
+            <label>Line Spacing</label>
+            <div class="ereader-segmented">
+              <button class="ereader-line-chip" data-rline="1.4">1.4</button>
+              <button class="ereader-line-chip active" data-rline="1.65">1.6</button>
+              <button class="ereader-line-chip" data-rline="1.9">1.9</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Text Alignment & Margins -->
+        <div class="ereader-setting-row dual">
+          <div class="ereader-setting-half">
+            <label>Alignment</label>
+            <div class="ereader-segmented">
+              <button class="ereader-align-chip" data-ralign="left">Left</button>
+              <button class="ereader-align-chip active" data-ralign="justify">Justify</button>
+            </div>
+          </div>
+          <div class="ereader-setting-half">
+            <label>Page Width</label>
+            <div class="ereader-segmented">
+              <button class="ereader-width-chip" data-rwidth="620">Narrow</button>
+              <button class="ereader-width-chip active" data-rwidth="780">Medium</button>
+              <button class="ereader-width-chip" data-rwidth="960">Wide</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2-Page Spread Toggle (Desktop) -->
+        <div class="ereader-setting-row spread-row">
+          <div class="spread-toggle-info">
+            <label>Two-Page Spread (Desktop)</label>
+            <span style="font-size:11px; color:#888;">Display two book pages side-by-side</span>
+          </div>
+          <label class="toggle-switch">
+            <input type="checkbox" id="ereader-opt-two-page">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Reading Stage -->
+    <main id="ereader-stage" class="ereader-stage theme-paper">
+      <!-- Left Prev Chapter Button -->
+      <button id="btn-ereader-prev" class="ereader-stage-nav-btn prev" title="Previous Chapter (Left Arrow / PageUp)">
+        <span>‹</span>
+      </button>
+
+      <!-- Sandboxed Reading Container -->
+      <div id="ereader-viewport-wrapper" class="ereader-viewport-wrapper">
+        <div id="ereader-viewport" class="ereader-viewport font-publisher">
+          <div id="ereader-loading" class="ereader-loading hidden">
+            <div class="ereader-spinner"></div>
+            <span>Loading chapter...</span>
+          </div>
+          <div id="ereader-content-container" class="ereader-content-container">
+            <!-- Rendered chapter content injected here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Next Chapter Button -->
+      <button id="btn-ereader-next" class="ereader-stage-nav-btn next" title="Next Chapter (Right Arrow / PageDown / Space)">
+        <span>›</span>
+      </button>
+    </main>
+
+    <!-- Footer Progress Scrubber Bar -->
+    <footer id="ereader-footer" class="ereader-footer">
+      <div class="ereader-footer-progress-bar" id="ereader-progress-track">
+        <div id="ereader-progress-fill" class="ereader-progress-fill"></div>
+      </div>
+
+      <div class="ereader-footer-content">
+        <div class="ereader-footer-left">
+          <button id="btn-footer-prev-chap" class="ereader-footer-btn" title="Previous Chapter">‹ Prev</button>
+          <span id="ereader-chapter-index-label" class="ereader-chapter-index-label">Chapter 1 of 12</span>
+          <button id="btn-footer-next-chap" class="ereader-footer-btn" title="Next Chapter">Next ›</button>
+        </div>
+
+        <div class="ereader-footer-center">
+          <span id="ereader-book-progress-pct" class="ereader-book-progress-pct">0% read</span>
+          <span class="meta-separator">•</span>
+          <span id="ereader-reading-time-est" class="ereader-reading-time-est">~0 min left</span>
+        </div>
+
+        <div class="ereader-footer-right">
+          <span id="ereader-chapter-word-count" class="ereader-chapter-word-count">0 words in chapter</span>
+        </div>
+      </div>
+    </footer>
+  </div>
+
+  <!-- ── EPUB IMPORT CHOICE MODAL ── -->
+  <div id="epub-choice-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-with-icon">
+          <span>📚</span>
+          <h3 id="epub-choice-title">Open EPUB eBook</h3>
+        </div>
+        <button id="btn-close-epub-choice" class="btn-close">×</button>
+      </div>
+      <p id="epub-choice-desc" class="modal-desc">How would you like to open this published EPUB eBook?</p>
+      
+      <div class="epub-choice-options">
+        <button id="btn-epub-choice-reader" class="epub-choice-card primary">
+          <span class="epub-choice-icon">📖</span>
+          <div class="epub-choice-info">
+            <strong>Open in E-Reader Mode (Recommended)</strong>
+            <span>Preserves exact publisher typography, stylesheets, illustrations, chapter layouts &amp; full table of contents navigation.</span>
+          </div>
+        </button>
+
+        <button id="btn-epub-choice-typewriter" class="epub-choice-card">
+          <span class="epub-choice-icon">🖋️</span>
+          <div class="epub-choice-info">
+            <strong>Convert to Typewriter Workspace</strong>
+            <span>Extracts text into forward-drafting typewriter pages for drafting and extending in your writing studio.</span>
+          </div>
+        </button>
+      </div>
+
+      <div style="margin-top:16px; text-align:right;">
+        <button id="btn-cancel-epub-choice" class="btn-drive-action" style="padding:6px 16px; font-size:12px;">Cancel</button>
       </div>
     </div>
   </div>
