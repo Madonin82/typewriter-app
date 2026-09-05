@@ -1,7 +1,7 @@
 /**
  * Typewriter Studio - Application Core
  * Forward-Only Micro-Drafting Engine with Firebase Auth & Firestore Sync
- * Firebase Project: typewriter-app-6e624
+ * Firebase Project: gen-lang-client-0081756947
  */
 
 // Firebase Configuration for Project
