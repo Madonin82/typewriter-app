@@ -64,7 +64,9 @@ let state = {
     volume: 50,
     soundEnabled: true,
     showTimestamps: false,
-    typewriterAnim: true
+    typewriterAnim: false,
+    autoAddSpace: false,
+    settingsVersion: 2
   }
 };
 
@@ -200,6 +202,7 @@ function initDOM() {
     settingVolume: document.getElementById('setting-volume'),
     btnSoundToggle: document.getElementById('btn-sound-toggle'),
     settingTypewriterAnim: document.getElementById('setting-typewriter-anim'),
+    settingAutoSpace: document.getElementById('setting-auto-space'),
     settingShowTimestamps: document.getElementById('setting-show-timestamps'),
     btnToggleTimestamps: document.getElementById('btn-toggle-timestamps'),
 
@@ -333,6 +336,7 @@ function updateNetworkStatus(online) {
 
 function openOverlay() {
   overlayOpen = true;
+  applySettingsUI();
   if (DOM.escOverlay) DOM.escOverlay.classList.add('open');
   if (DOM.writingSurface) DOM.writingSurface.classList.add('blurred');
   if (DOM.escHint) DOM.escHint.classList.remove('fade');
@@ -509,7 +513,14 @@ function loadFromFirestore(uid) {
 function loadStorage() {
   try {
     const savedSettings = localStorage.getItem('typewriter_settings');
-    if (savedSettings) state.settings = { ...state.settings, ...JSON.parse(savedSettings) };
+    if (savedSettings) {
+      const parsed = JSON.parse(savedSettings);
+      if (!parsed.settingsVersion || parsed.settingsVersion < 2) {
+        parsed.typewriterAnim = false;
+        parsed.settingsVersion = 2;
+      }
+      state.settings = { ...state.settings, ...parsed };
+    }
 
     const savedBooks = localStorage.getItem('typewriter_books');
     if (savedBooks) state.books = JSON.parse(savedBooks);
@@ -530,6 +541,7 @@ function loadStorage() {
 
 function saveStorage(syncCloud = true) {
   try {
+    state.settings.settingsVersion = 2;
     localStorage.setItem('typewriter_settings', JSON.stringify(state.settings));
     localStorage.setItem('typewriter_books', JSON.stringify(state.books));
     if (state.activeBookId) {
@@ -1274,8 +1286,18 @@ function commitDraft() {
     return;
   }
 
-  const text = rawText;
+  let text = rawText;
   if (!text) return;
+
+  // Auto add space after each commit if enabled in settings
+  if (state.settings.autoAddSpace) {
+    if (!/\s$/.test(text)) {
+      text += ' ';
+      if (currentKeystrokeSession.snapshots.length > 0) {
+        currentKeystrokeSession.snapshots.push({ text: text, delay: 35 });
+      }
+    }
+  }
 
   // Calculate WPM
   let commitWPM = 0;
@@ -1763,7 +1785,7 @@ function renderActivePage(lastChunkIsNew = false) {
     DOM.inkStream.classList.toggle('has-timestamps', showTS);
 
     const count = page.chunks.length;
-    const isAnimated = lastChunkIsNew && state.settings.typewriterAnim !== false && count > 0;
+    const isAnimated = lastChunkIsNew && Boolean(state.settings.typewriterAnim) && count > 0;
     let animatedTextElem = null;
     let animatedFullText = '';
 
@@ -1859,6 +1881,7 @@ function renderActivePage(lastChunkIsNew = false) {
             activeTypewriterTimer = setTimeout(replayNextSnapshot, nextDelay);
           } else {
             activeTypewriterTimer = null;
+            animatedTextElem.textContent = animatedFullText;
             playCarriageReturnBell();
             if (DOM.writingSurface) {
               DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'smooth' });
@@ -1993,12 +2016,15 @@ function updateCommitHint() {
 }
 
 function applySettingsUI() {
-  if (DOM.settingMaxChars) DOM.settingMaxChars.value = state.settings.maxChars;
-  if (DOM.settingWordsPerPage) DOM.settingWordsPerPage.value = state.settings.wordsPerPage;
-  if (DOM.settingCommitKey) DOM.settingCommitKey.value = state.settings.commitKey;
-  if (DOM.settingVolume) DOM.settingVolume.value = state.settings.volume;
+  if (DOM.settingMaxChars) DOM.settingMaxChars.value = state.settings.maxChars || 200;
+  if (DOM.settingWordsPerPage) DOM.settingWordsPerPage.value = state.settings.wordsPerPage || 300;
+  if (DOM.settingTheme) DOM.settingTheme.value = state.settings.theme || 'cream';
+  if (DOM.settingFont) DOM.settingFont.value = state.settings.font || 'courier';
+  if (DOM.settingCommitKey) DOM.settingCommitKey.value = state.settings.commitKey || 'ctrl-enter';
+  if (DOM.settingVolume) DOM.settingVolume.value = (state.settings.volume !== undefined) ? state.settings.volume : 50;
   if (DOM.btnSoundToggle) DOM.btnSoundToggle.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
-  if (DOM.settingTypewriterAnim) DOM.settingTypewriterAnim.checked = state.settings.typewriterAnim !== false;
+  if (DOM.settingTypewriterAnim) DOM.settingTypewriterAnim.checked = Boolean(state.settings.typewriterAnim);
+  if (DOM.settingAutoSpace) DOM.settingAutoSpace.checked = Boolean(state.settings.autoAddSpace);
   if (DOM.settingShowTimestamps) DOM.settingShowTimestamps.checked = Boolean(state.settings.showTimestamps);
   if (DOM.btnToggleTimestamps) DOM.btnToggleTimestamps.classList.toggle('active', Boolean(state.settings.showTimestamps));
   updateCommitHint();
@@ -2749,7 +2775,11 @@ function setupEventListeners() {
           font: 'courier',
           commitKey: 'ctrl-enter',
           soundEnabled: true,
-          volume: 50
+          volume: 50,
+          showTimestamps: false,
+          typewriterAnim: false,
+          autoAddSpace: false,
+          settingsVersion: 2
         };
         applyTheme();
         applyFont();
@@ -2769,6 +2799,14 @@ function setupEventListeners() {
       saveStorage();
       renderAll();
     };
+    DOM.settingMaxChars.oninput = (e) => {
+      const v = parseInt(e.target.value, 10);
+      if (v && v >= 20) {
+        state.settings.maxChars = v;
+        saveStorage();
+        updateCharCounter();
+      }
+    };
   }
 
   if (DOM.settingWordsPerPage) {
@@ -2776,6 +2814,14 @@ function setupEventListeners() {
       state.settings.wordsPerPage = Math.max(50, parseInt(e.target.value, 10) || 300);
       saveStorage();
       renderAll();
+    };
+    DOM.settingWordsPerPage.oninput = (e) => {
+      const v = parseInt(e.target.value, 10);
+      if (v && v >= 50) {
+        state.settings.wordsPerPage = v;
+        saveStorage();
+        updatePageWordCounter();
+      }
     };
   }
 
@@ -2823,7 +2869,15 @@ function setupEventListeners() {
     DOM.settingTypewriterAnim.onchange = (e) => {
       state.settings.typewriterAnim = e.target.checked;
       saveStorage();
-      showToast(state.settings.typewriterAnim ? "100 WPM Typewriter animation ON" : "100 WPM Typewriter animation OFF");
+      showToast(state.settings.typewriterAnim ? "Replay keystrokes ON" : "Replay keystrokes OFF");
+    };
+  }
+
+  if (DOM.settingAutoSpace) {
+    DOM.settingAutoSpace.onchange = (e) => {
+      state.settings.autoAddSpace = e.target.checked;
+      saveStorage();
+      showToast(state.settings.autoAddSpace ? "Auto-space after commit ON" : "Auto-space after commit OFF");
     };
   }
 
@@ -2831,6 +2885,7 @@ function setupEventListeners() {
     DOM.btnToggleTimestamps.onclick = () => {
       state.settings.showTimestamps = !state.settings.showTimestamps;
       saveStorage();
+      applySettingsUI();
       renderAll();
       showToast(state.settings.showTimestamps ? "Left margin timestamps enabled" : "Left margin timestamps hidden");
     };
@@ -2840,6 +2895,7 @@ function setupEventListeners() {
     DOM.settingShowTimestamps.onchange = (e) => {
       state.settings.showTimestamps = e.target.checked;
       saveStorage();
+      applySettingsUI();
       renderAll();
     };
   }
@@ -2969,6 +3025,14 @@ function init() {
         console.warn('PWA ServiceWorker registration failed:', err);
       });
   }
+
+  // Ensure all options and manuscripts are preserved when exiting
+  window.addEventListener('beforeunload', () => {
+    saveStorage(false);
+  });
+  window.addEventListener('pagehide', () => {
+    saveStorage(false);
+  });
 
   // Focus drafting input on start
   setTimeout(() => {
