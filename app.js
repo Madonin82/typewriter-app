@@ -10,7 +10,7 @@ const firebaseConfig = {
   appId: "1:757537539472:web:bcc67a351da194606d5f15",
   apiKey: "AIzaSyBlYBw9rVhOSCAFNco2tK7iu7TWvGnv3wk",
   authDomain: "gen-lang-client-0081756947.firebaseapp.com",
-  firestoreDatabaseId: "ai-studio-typewriterapp-321f95fd-1653-46ce-b75a-a79c58bffe68",
+  firestoreDatabaseId: "(default)",
   storageBucket: "gen-lang-client-0081756947.firebasestorage.app",
   messagingSenderId: "757537539472"
 };
@@ -490,16 +490,7 @@ function initFirebase() {
         firebase.initializeApp(firebaseConfig);
       }
       auth = firebase.auth();
-      try {
-        if (firebaseConfig.firestoreDatabaseId) {
-          db = firebase.app().firestore(firebaseConfig.firestoreDatabaseId);
-        } else {
-          db = firebase.firestore();
-        }
-      } catch (dbErr) {
-        console.warn("Named Firestore init fallback:", dbErr);
-        db = firebase.firestore();
-      }
+      db = firebase.firestore();
 
       auth.onAuthStateChanged((user) => {
         if (user) {
