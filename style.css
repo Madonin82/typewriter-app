@@ -198,12 +198,12 @@ html, body {
 .page {
   width: 100%;
   max-width: 700px;
-  min-height: calc(100dvh - 260px);
+  min-height: 100dvh;
   background: var(--paper);
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 20px 20px 20px;
+  padding: 20px 20px 50px;
   box-sizing: border-box;
   flex-shrink: 0;
   transition: background-color 0.25s ease;
@@ -462,20 +462,22 @@ input:checked + .toggle-slider:before {
   outline: none;
   resize: none;
   font-family: var(--font-family);
-  font-size: 17px;
-  line-height: 1.85;
+  font-size: 16px;
+  line-height: 1.5;
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-wrap: break-word;
   color: transparent !important;
   caret-color: var(--draft-text);
   background: transparent;
-  min-height: 58px;
+  min-height: 28px;
+  height: 28px;
   max-height: 180px;
   tab-size: 4;
   -moz-tab-size: 4;
   box-sizing: border-box;
   padding: 0;
+  margin: 0;
   text-indent: 0;
   transition: text-indent 0.18s cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -488,8 +490,8 @@ input:checked + .toggle-slider:before {
   bottom: 0;
   pointer-events: none;
   font-family: var(--font-family);
-  font-size: 17px;
-  line-height: 1.85;
+  font-size: 16px;
+  line-height: 1.5;
   color: var(--draft-text);
   white-space: pre-wrap;
   word-wrap: break-word;
@@ -497,6 +499,7 @@ input:checked + .toggle-slider:before {
   tab-size: 4;
   -moz-tab-size: 4;
   padding: 0;
+  margin: 0;
   text-indent: 0;
   transition: text-indent 0.18s cubic-bezier(0.16, 1, 0.3, 1);
   overflow-y: hidden;
@@ -1765,6 +1768,32 @@ body.theme-dark #esc-hint:hover {
 }
 
 @media (max-width: 600px) {
+  #writing-surface {
+    padding: 24px 12px 220px;
+  }
+  .page {
+    padding: 16px 14px 40px;
+  }
+  .page.has-timestamps {
+    padding-left: 88px;
+  }
+  .commit-timestamp {
+    left: -80px;
+    width: 74px;
+    font-size: 10px;
+    line-height: 1.25;
+    letter-spacing: -0.3px;
+    text-align: right;
+    white-space: normal;
+    word-break: break-word;
+  }
+  #draft-overlay {
+    padding: 0 10px;
+    bottom: 12px;
+  }
+  #draft-box {
+    padding: 12px 14px 10px;
+  }
   .backup-inspect-stats-grid {
     grid-template-columns: repeat(2, 1fr);
   }

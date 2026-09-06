@@ -2302,26 +2302,94 @@ function commitDraft() {
   }
 
   if (DOM.writingSurface) {
-    requestAnimationFrame(() => {
-      DOM.writingSurface.scrollTo({
-        top: DOM.writingSurface.scrollHeight,
-        behavior: 'smooth'
-      });
-    });
+    scrollToPageBottom(true);
   }
 
   DOM.draftInput.focus();
 }
 
+function getActiveTextBottomElement() {
+  const cursor = document.getElementById('ink-cursor');
+  if (cursor) return cursor;
+  
+  const ghost = document.getElementById('ink-ghost');
+  if (ghost) return ghost;
+
+  if (DOM.inkStream) {
+    const lastRow = DOM.inkStream.querySelector('.ink-chunk-row:last-child');
+    if (lastRow) return lastRow;
+    const lastChunk = DOM.inkStream.querySelector('.ink-chunk:last-child');
+    if (lastChunk) return lastChunk;
+    return DOM.inkStream;
+  }
+  return null;
+}
+
+function updateWritingSurfacePadding() {
+  if (!DOM.writingSurface) return;
+  const windowHeight = window.innerHeight;
+  const targetPadding = Math.max(260, windowHeight - 120);
+  DOM.writingSurface.style.paddingBottom = `${targetPadding}px`;
+}
+
+function scrollToPageBottom(smooth = true) {
+  if (!DOM.writingSurface) return;
+  const page = getCurrentPage();
+  if (page && page.locked) return;
+
+  updateWritingSurfacePadding();
+
+  const runAlignment = () => {
+    if (!DOM.writingSurface) return;
+    const draftBox = document.getElementById('draft-box');
+    if (!draftBox) return;
+
+    const lastTarget = getActiveTextBottomElement();
+    if (!lastTarget) return;
+
+    const draftRect = draftBox.getBoundingClientRect();
+    const targetRect = lastTarget.getBoundingClientRect();
+
+    if (!targetRect || (targetRect.top === 0 && targetRect.bottom === 0)) return;
+
+    const isMobile = window.innerWidth <= 600;
+    const targetGap = isMobile ? 12 : 16;
+
+    const desiredBottom = draftRect.top - targetGap;
+    const currentBottom = targetRect.bottom;
+    const delta = currentBottom - desiredBottom;
+
+    if (Math.abs(delta) > 0.5) {
+      const currentScroll = DOM.writingSurface.scrollTop;
+      const maxScroll = DOM.writingSurface.scrollHeight - DOM.writingSurface.clientHeight;
+      const newScrollTop = Math.min(maxScroll, Math.max(0, currentScroll + delta));
+
+      DOM.writingSurface.scrollTo({
+        top: newScrollTop,
+        behavior: smooth ? 'smooth' : 'auto'
+      });
+    }
+  };
+
+  requestAnimationFrame(runAlignment);
+  if (smooth) {
+    setTimeout(runAlignment, 120);
+    setTimeout(runAlignment, 250);
+  }
+}
+
 function adjustDraftInputHeight() {
   if (!DOM.draftInput) return;
   DOM.draftInput.style.height = 'auto';
-  const newHeight = Math.min(Math.max(DOM.draftInput.scrollHeight, 58), 180);
+  const singleRowHeight = 28;
+  const newHeight = Math.min(Math.max(DOM.draftInput.scrollHeight, singleRowHeight), 180);
   DOM.draftInput.style.height = `${newHeight}px`;
 
   if (DOM.draftInputBackdrop) {
     DOM.draftInputBackdrop.scrollTop = DOM.draftInput.scrollTop;
   }
+
+  updateWritingSurfacePadding();
 }
 
 function updateCharCounter() {
@@ -2822,7 +2890,7 @@ function renderActivePage(lastChunkIsNew = false) {
             playKeyClickSound();
 
             if (DOM.writingSurface) {
-              DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'auto' });
+              scrollToPageBottom(false);
             }
             updateDraftInputCursorAlignment();
 
@@ -2833,7 +2901,7 @@ function renderActivePage(lastChunkIsNew = false) {
             animatedTextElem.textContent = animatedFullText;
             playCarriageReturnBell();
             if (DOM.writingSurface) {
-              DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'smooth' });
+              scrollToPageBottom(true);
             }
             if (wpm > 0) {
               showToast(`⚡ Committed at ${wpm} WPM!`);
@@ -2853,7 +2921,7 @@ function renderActivePage(lastChunkIsNew = false) {
             playKeyClickSound();
 
             if (DOM.writingSurface) {
-              DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'auto' });
+              scrollToPageBottom(false);
             }
             updateDraftInputCursorAlignment();
 
@@ -2863,7 +2931,7 @@ function renderActivePage(lastChunkIsNew = false) {
             activeTypewriterTimer = null;
             playCarriageReturnBell();
             if (DOM.writingSurface) {
-              DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'smooth' });
+              scrollToPageBottom(true);
             }
             if (wpm > 0) {
               showToast(`⚡ Committed at ${wpm} WPM!`);
@@ -2882,10 +2950,10 @@ function renderActivePage(lastChunkIsNew = false) {
         if (page.locked) {
           DOM.writingSurface.scrollTo({ top: 0, behavior: 'smooth' });
         } else {
-          DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'smooth' });
+          scrollToPageBottom(true);
         }
       } else if (lastChunkIsNew && !page.locked) {
-        DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'smooth' });
+        scrollToPageBottom(true);
       }
       updateDraftInputCursorAlignment();
     });
@@ -3823,13 +3891,23 @@ function setupEventListeners() {
         ghost.textContent = state.buffer;
         // Auto-scroll to ensure ghost text stays visible above the input box as it grows
         requestAnimationFrame(() => {
-          if (DOM.writingSurface) {
-            DOM.writingSurface.scrollTo({ top: DOM.writingSurface.scrollHeight, behavior: 'auto' });
-          }
+          scrollToPageBottom(false);
         });
       }
     };
   }
+
+  // Window resize & orientation handlers to maintain visibility
+  window.addEventListener('resize', () => {
+    updateWritingSurfacePadding();
+    scrollToPageBottom(false);
+  });
+  window.addEventListener('orientationchange', () => {
+    setTimeout(() => {
+      updateWritingSurfacePadding();
+      scrollToPageBottom(false);
+    }, 100);
+  });
 
   if (DOM.btnCommit) DOM.btnCommit.onclick = commitDraft;
 
