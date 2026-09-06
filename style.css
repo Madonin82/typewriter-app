@@ -462,7 +462,7 @@ input:checked + .toggle-slider:before {
   outline: none;
   resize: none;
   font-family: var(--font-family);
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.5;
   white-space: pre-wrap;
   word-wrap: break-word;
@@ -490,7 +490,7 @@ input:checked + .toggle-slider:before {
   bottom: 0;
   pointer-events: none;
   font-family: var(--font-family);
-  font-size: 16px;
+  font-size: 17px;
   line-height: 1.5;
   color: var(--draft-text);
   white-space: pre-wrap;
