@@ -1,18 +1,17 @@
 /**
  * Typewriter Studio - Application Core
  * Forward-Only Micro-Drafting Engine with Firebase Auth & Firestore Sync
- * Firebase Project: gen-lang-client-0081756947
+ * Firebase Project: typewriter-app-6e624
  */
 
 // Firebase Configuration for Project
 const firebaseConfig = {
-  projectId: "gen-lang-client-0081756947",
-  appId: "1:757537539472:web:bcc67a351da194606d5f15",
-  apiKey: "AIzaSyBlYBw9rVhOSCAFNco2tK7iu7TWvGnv3wk",
-  authDomain: "gen-lang-client-0081756947.firebaseapp.com",
-  firestoreDatabaseId: "(default)",
-  storageBucket: "gen-lang-client-0081756947.firebasestorage.app",
-  messagingSenderId: "757537539472"
+  apiKey: "AIzaSyB5UvSiArIv_YnmbWyjSG0so6MJc5S1A9E",
+  authDomain: "typewriter-app-6e624.firebaseapp.com",
+  projectId: "typewriter-app-6e624",
+  storageBucket: "typewriter-app-6e624.firebasestorage.app",
+  messagingSenderId: "1010879061490",
+  appId: "1:1010879061490:web:83c43a410788f62d401f6b"
 };
 
 let auth = null;
