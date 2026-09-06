@@ -390,6 +390,8 @@ function updateCommitHint() {
 
 // ─── FIREBASE AUTH & FIRESTORE SYNC ─────────────────────────
 
+let firestoreUnsubscribe = null;
+
 function initFirebase() {
   if (typeof firebase !== 'undefined' && firebase.initializeApp) {
     try {
@@ -403,8 +405,12 @@ function initFirebase() {
         if (user) {
           currentUser = user;
           renderUserUI();
-          loadFromFirestore(user.uid);
+          subscribeToFirestore(user.uid);
         } else {
+          if (firestoreUnsubscribe) {
+            firestoreUnsubscribe();
+            firestoreUnsubscribe = null;
+          }
           currentUser = null;
           renderUserUI();
         }
@@ -440,6 +446,10 @@ function handleGoogleSignIn() {
 function handleSignOut() {
   googleAccessToken = null;
   sessionStorage.removeItem('google_drive_access_token');
+  if (firestoreUnsubscribe) {
+    firestoreUnsubscribe();
+    firestoreUnsubscribe = null;
+  }
   if (auth) {
     auth.signOut().then(() => {
       showToast("Signed out.");
@@ -494,6 +504,8 @@ function syncToFirestore() {
   db.collection("users").doc(currentUser.uid).set({
     books: state.books,
     settings: state.settings,
+    activeBookId: state.activeBookId,
+    currentPageId: state.currentPageId,
     lastSynced: firebase.firestore.FieldValue.serverTimestamp()
   }, { merge: true }).then(() => {
     if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Firestore Synced";
@@ -503,26 +515,76 @@ function syncToFirestore() {
   });
 }
 
-function loadFromFirestore(uid) {
+function subscribeToFirestore(uid) {
   if (!db) return;
-  db.collection("users").doc(uid).get().then((doc) => {
-    if (doc.exists) {
-      const data = doc.data();
-      if (data.books && data.books.length > 0) {
-        state.books = data.books;
-        if (data.settings) state.settings = { ...state.settings, ...data.settings };
-        state.activeBookId = state.books[0].id;
-        state.currentPageId = state.books[0].pages[state.books[0].pages.length - 1].id;
-        saveStorage(false);
-        renderAll();
-        showToast("Loaded your manuscripts from Firestore!");
-      }
-    } else {
+  if (firestoreUnsubscribe) firestoreUnsubscribe();
+
+  firestoreUnsubscribe = db.collection("users").doc(uid).onSnapshot((doc) => {
+    if (!doc.exists) {
       syncToFirestore();
+      return;
     }
-  }).catch((e) => {
-    console.warn("Firestore load error:", e);
+
+    // Ignore local write echoes to avoid unwanted UI re-renders while typing
+    if (doc.metadata && doc.metadata.hasPendingWrites) {
+      return;
+    }
+
+    const data = doc.data();
+    if (!data) return;
+
+    let changed = false;
+
+    if (data.books && Array.isArray(data.books) && data.books.length > 0) {
+      if (JSON.stringify(state.books) !== JSON.stringify(data.books)) {
+        state.books = data.books;
+        changed = true;
+      }
+    }
+
+    if (data.settings && typeof data.settings === 'object') {
+      if (JSON.stringify(state.settings) !== JSON.stringify({ ...state.settings, ...data.settings })) {
+        state.settings = { ...state.settings, ...data.settings };
+        changed = true;
+      }
+    }
+
+    if (data.activeBookId && state.books.some(b => b.id === data.activeBookId)) {
+      if (state.activeBookId !== data.activeBookId) {
+        state.activeBookId = data.activeBookId;
+        changed = true;
+      }
+    } else if (state.books.length > 0 && (!state.activeBookId || !state.books.some(b => b.id === state.activeBookId))) {
+      state.activeBookId = state.books[0].id;
+      changed = true;
+    }
+
+    const activeBook = getActiveBook();
+    if (data.currentPageId && activeBook && activeBook.pages && activeBook.pages.some(p => p.id === data.currentPageId)) {
+      if (state.currentPageId !== data.currentPageId) {
+        state.currentPageId = data.currentPageId;
+        changed = true;
+      }
+    } else if (activeBook && activeBook.pages && activeBook.pages.length > 0) {
+      const lastPageId = activeBook.pages[activeBook.pages.length - 1].id;
+      if (state.currentPageId !== lastPageId) {
+        state.currentPageId = lastPageId;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      saveStorage(false);
+      renderAll();
+      showToast("Synced active manuscript & settings across devices!");
+    }
+  }, (e) => {
+    console.warn("Firestore snapshot error:", e);
   });
+}
+
+function loadFromFirestore(uid) {
+  subscribeToFirestore(uid);
 }
 
 // ─── LOCAL STORAGE ENGINE ───────────────────────────────────
@@ -548,8 +610,13 @@ function loadStorage() {
   } else {
     state.activeBookId = localStorage.getItem('typewriter_active_book_id') || state.books[0].id;
     const currentBook = getActiveBook();
-    if (currentBook && currentBook.pages.length > 0) {
-      state.currentPageId = currentBook.pages[currentBook.pages.length - 1].id;
+    if (currentBook && currentBook.pages && currentBook.pages.length > 0) {
+      const savedPageId = localStorage.getItem('typewriter_current_page_id');
+      if (savedPageId && currentBook.pages.some(p => p.id === savedPageId)) {
+        state.currentPageId = savedPageId;
+      } else {
+        state.currentPageId = currentBook.pages[currentBook.pages.length - 1].id;
+      }
     } else if (currentBook) {
       createNewPage(false);
     }
@@ -563,6 +630,9 @@ function saveStorage(syncCloud = true) {
     localStorage.setItem('typewriter_books', JSON.stringify(state.books));
     if (state.activeBookId) {
       localStorage.setItem('typewriter_active_book_id', state.activeBookId);
+    }
+    if (state.currentPageId) {
+      localStorage.setItem('typewriter_current_page_id', state.currentPageId);
     }
   } catch (e) {}
 
@@ -2358,6 +2428,7 @@ function renderSidebarPages() {
         return;
       }
       state.currentPageId = page.id;
+      saveStorage();
       renderAll(false);
       closeOverlay();
     };
