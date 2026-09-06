@@ -524,7 +524,15 @@ function handleGoogleSignIn() {
       return googleAccessToken;
     }).catch((error) => {
       console.error("Auth error:", error);
-      showToast(`Sign in error: ${error.message}`);
+      let msg = error.message;
+      if (error.code === 'auth/unauthorized-domain') {
+        msg = `Domain not authorized in typewriter-app-6e624. Add "${window.location.hostname}" to Authorized Domains in Firebase Console > Authentication > Settings.`;
+      } else if (error.code === 'auth/operation-not-allowed') {
+        msg = 'Google Sign-In is disabled in typewriter-app-6e624. Enable Google under Firebase Console > Authentication > Sign-in method.';
+      } else if (error.code === 'auth/popup-blocked') {
+        msg = 'Sign-in popup was blocked by browser. Please allow popups for this site.';
+      }
+      showToast(`Sign in error: ${msg}`);
       throw error;
     });
   } else {
