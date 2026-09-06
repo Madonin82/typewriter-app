@@ -523,6 +523,8 @@ input:checked + .toggle-slider:before {
   padding-top: 10px;
   border-top: 1px solid rgba(0, 0, 0, 0.08);
   gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 body.theme-dark .draft-footer {
@@ -586,6 +588,8 @@ body.theme-dark .draft-footer {
   display: flex;
   align-items: center;
   gap: 12px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .commit-hint {
@@ -1133,13 +1137,9 @@ input[type="range"] {
 
 /* ─── ESC HINT / TRIGGER ───────────────────────────────────── */
 #esc-hint {
-  position: fixed;
-  bottom: 18px;
-  right: 22px;
   font-size: 11px;
   color: var(--ink-faded);
   letter-spacing: 0.08em;
-  z-index: 200;
   opacity: 0.55;
   cursor: pointer;
   padding: 4px 8px;
@@ -1147,6 +1147,7 @@ input[type="range"] {
   border: 1px solid transparent;
   transition: opacity 0.3s ease, border-color 0.2s ease, background 0.2s ease;
   user-select: none;
+  white-space: nowrap;
 }
 
 #esc-hint:hover {
