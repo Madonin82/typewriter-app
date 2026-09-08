@@ -65,6 +65,7 @@ let state = {
     soundEnabled: true,
     showTimestamps: false,
     typewriterAnim: false,
+    replaySpeed: 1, // 1 to 10 (whole number multiplier)
     autoAddSpace: false,
     settingsVersion: 2
   }
@@ -205,6 +206,9 @@ function initDOM() {
     settingVolume: document.getElementById('setting-volume'),
     btnSoundToggle: document.getElementById('btn-sound-toggle'),
     settingTypewriterAnim: document.getElementById('setting-typewriter-anim'),
+    settingReplaySpeed: document.getElementById('setting-replay-speed'),
+    settingReplaySpeedRow: document.getElementById('setting-replay-speed-row'),
+    replaySpeedVal: document.getElementById('replay-speed-val'),
     settingAutoSpace: document.getElementById('setting-auto-space'),
     settingShowTimestamps: document.getElementById('setting-show-timestamps'),
     btnToggleTimestamps: document.getElementById('btn-toggle-timestamps'),
@@ -356,7 +360,7 @@ function openOverlay() {
   applySettingsUI();
   if (DOM.escOverlay) DOM.escOverlay.classList.add('open');
   if (DOM.writingSurface) DOM.writingSurface.classList.add('blurred');
-  if (DOM.escHint) DOM.escHint.classList.remove('fade');
+  if (DOM.escHint) DOM.escHint.classList.add('active');
 }
 
 function closeOverlay() {
@@ -373,11 +377,7 @@ function closeOverlay() {
   setTimeout(() => {
     if (DOM.draftInput) DOM.draftInput.focus();
   }, 100);
-
-  clearTimeout(hintTimer);
-  hintTimer = setTimeout(() => {
-    if (DOM.escHint) DOM.escHint.classList.add('fade');
-  }, 2000);
+  if (DOM.escHint) DOM.escHint.classList.remove('active');
 }
 
 function updateCommitHint() {
@@ -599,6 +599,7 @@ function loadStorage() {
         parsed.settingsVersion = 2;
       }
       state.settings = { ...state.settings, ...parsed };
+      state.settings.replaySpeed = Math.min(10, Math.max(1, parseInt(state.settings.replaySpeed, 10) || 1));
     }
 
     const savedBooks = localStorage.getItem('typewriter_books');
@@ -606,8 +607,17 @@ function loadStorage() {
   } catch (e) {}
 
   if (!state.books || state.books.length === 0) {
-    createNewBook("My First Book", false);
+    createNewBook("first note", false);
   } else {
+    let migrated = false;
+    state.books.forEach(b => {
+      if (b && b.title === "My First Book") {
+        b.title = "first note";
+        migrated = true;
+      }
+    });
+    if (migrated) saveStorage(false);
+
     state.activeBookId = localStorage.getItem('typewriter_active_book_id') || state.books[0].id;
     const currentBook = getActiveBook();
     if (currentBook && currentBook.pages && currentBook.pages.length > 0) {
@@ -2878,6 +2888,7 @@ function renderActivePage(lastChunkIsNew = false) {
         ? lastCommittedReplay.snapshots
         : null;
       const wpm = lastCommittedReplay.wpm || 0;
+      const replaySpeed = Math.min(10, Math.max(1, parseInt(state.settings.replaySpeed, 10) || 1));
 
       if (snapshots && snapshots.length > 0) {
         let stepIdx = 0;
@@ -2894,7 +2905,8 @@ function renderActivePage(lastChunkIsNew = false) {
             }
             updateDraftInputCursorAlignment();
 
-            const nextDelay = (stepIdx < snapshots.length) ? snapshots[stepIdx].delay : 0;
+            const rawDelay = (stepIdx < snapshots.length) ? snapshots[stepIdx].delay : 0;
+            const nextDelay = rawDelay > 0 ? Math.max(1, Math.round(rawDelay / replaySpeed)) : 0;
             activeTypewriterTimer = setTimeout(replayNextSnapshot, nextDelay);
           } else {
             activeTypewriterTimer = null;
@@ -2904,7 +2916,8 @@ function renderActivePage(lastChunkIsNew = false) {
               scrollToPageBottom(true);
             }
             if (wpm > 0) {
-              showToast(`⚡ Committed at ${wpm} WPM!`);
+              const speedTag = replaySpeed > 1 ? ` (${replaySpeed}x replay)` : '';
+              showToast(`⚡ Committed at ${wpm} WPM!${speedTag}`);
             }
           }
         }
@@ -2925,7 +2938,8 @@ function renderActivePage(lastChunkIsNew = false) {
             }
             updateDraftInputCursorAlignment();
 
-            const delay = 35 + Math.floor(Math.random() * 25);
+            const rawDelay = 35 + Math.floor(Math.random() * 25);
+            const delay = Math.max(1, Math.round(rawDelay / replaySpeed));
             activeTypewriterTimer = setTimeout(typeNextChar, delay);
           } else {
             activeTypewriterTimer = null;
@@ -2934,7 +2948,8 @@ function renderActivePage(lastChunkIsNew = false) {
               scrollToPageBottom(true);
             }
             if (wpm > 0) {
-              showToast(`⚡ Committed at ${wpm} WPM!`);
+              const speedTag = replaySpeed > 1 ? ` (${replaySpeed}x replay)` : '';
+              showToast(`⚡ Committed at ${wpm} WPM!${speedTag}`);
             }
           }
         }
@@ -3041,6 +3056,19 @@ function applySettingsUI() {
   if (DOM.settingVolume) DOM.settingVolume.value = (state.settings.volume !== undefined) ? state.settings.volume : 50;
   if (DOM.btnSoundToggle) DOM.btnSoundToggle.textContent = state.settings.soundEnabled ? '🔊' : '🔇';
   if (DOM.settingTypewriterAnim) DOM.settingTypewriterAnim.checked = Boolean(state.settings.typewriterAnim);
+  if (DOM.settingReplaySpeed) {
+    const spd = Math.min(10, Math.max(1, parseInt(state.settings.replaySpeed, 10) || 1));
+    DOM.settingReplaySpeed.value = spd;
+    if (DOM.replaySpeedVal) {
+      DOM.replaySpeedVal.textContent = `${spd}x${spd === 1 ? ' (Default)' : ''}`;
+    }
+    document.querySelectorAll('.replay-speed-tick').forEach(tick => {
+      tick.classList.toggle('active', parseInt(tick.dataset.speed, 10) === spd);
+    });
+  }
+  if (DOM.settingReplaySpeedRow) {
+    DOM.settingReplaySpeedRow.classList.toggle('is-disabled', !Boolean(state.settings.typewriterAnim));
+  }
   if (DOM.settingAutoSpace) DOM.settingAutoSpace.checked = Boolean(state.settings.autoAddSpace);
   if (DOM.settingShowTimestamps) DOM.settingShowTimestamps.checked = Boolean(state.settings.showTimestamps);
   if (DOM.btnToggleTimestamps) DOM.btnToggleTimestamps.classList.toggle('active', Boolean(state.settings.showTimestamps));
@@ -3813,17 +3841,13 @@ function setupEventListeners() {
     }
   });
 
-  // ESC Hint Click / Auto fade
+  // ESC Menu Button Click
   if (DOM.escHint) {
     DOM.escHint.onclick = () => {
       if (overlayOpen) closeOverlay();
       else openOverlay();
     };
   }
-
-  hintTimer = setTimeout(() => {
-    if (DOM.escHint) DOM.escHint.classList.add('fade');
-  }, 3000);
 
   // Overlay Backdrop Click to close
   if (DOM.escOverlay) {
@@ -3856,12 +3880,115 @@ function setupEventListeners() {
     adjustForKeyboard();
   }
 
-  // Mobile Tap-to-Focus
+  // Mobile / Touchscreen Quick Tap-to-Commit & Tap-to-Focus
   if (DOM.writingSurface) {
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let touchStartTime = 0;
+    let touchMoved = false;
+    let lastTouchCommitTime = 0;
+
+    const startTouch = (clientX, clientY) => {
+      touchStartX = clientX;
+      touchStartY = clientY;
+      touchStartTime = Date.now();
+      touchMoved = false;
+    };
+
+    const moveTouch = (clientX, clientY) => {
+      if (touchMoved) return;
+      const dx = clientX - touchStartX;
+      const dy = clientY - touchStartY;
+      // If moved more than 12px, treat as an intentional scroll/swipe gesture
+      if (Math.hypot(dx, dy) > 12) {
+        touchMoved = true;
+      }
+    };
+
+    const endTouch = (target) => {
+      if (Date.now() - lastTouchCommitTime < 400) return;
+      if (touchMoved) return;
+
+      const duration = Date.now() - touchStartTime;
+      // Strict quick tap threshold: must be released in under 350ms
+      if (duration >= 350) return;
+
+      // Do not trigger if overlay, menus, or modals are active
+      if (overlayOpen || (DOM.writingSurface && DOM.writingSurface.classList.contains('blurred'))) {
+        return;
+      }
+
+      // Ignore if user tapped inside the draft box or interactive controls
+      if (!target || target.closest('#draft-overlay') || target.closest('button, select, input, textarea, a, .modal-backdrop, #esc-overlay')) {
+        return;
+      }
+
+      const rawText = DOM.draftInput ? DOM.draftInput.value : '';
+      if (rawText && rawText.trim().length > 0) {
+        lastTouchCommitTime = Date.now();
+        commitDraft();
+      } else {
+        const page = getCurrentPage();
+        if (page && !page.locked && DOM.draftInput) {
+          DOM.draftInput.focus();
+        }
+      }
+    };
+
+    // Standard Touch Events (iOS, Android, PWAs)
+    DOM.writingSurface.addEventListener('touchstart', (e) => {
+      if (e.touches.length !== 1) {
+        touchMoved = true;
+        return;
+      }
+      startTouch(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+
+    DOM.writingSurface.addEventListener('touchmove', (e) => {
+      if (touchMoved || e.touches.length !== 1) return;
+      moveTouch(e.touches[0].clientX, e.touches[0].clientY);
+    }, { passive: true });
+
+    DOM.writingSurface.addEventListener('touchcancel', () => {
+      touchMoved = true;
+    }, { passive: true });
+
+    DOM.writingSurface.addEventListener('touchend', (e) => {
+      endTouch(e.target);
+    });
+
+    // Pointer Events for touch/pen input on hybrid and desktop touchscreen devices
+    DOM.writingSurface.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+        startTouch(e.clientX, e.clientY);
+      }
+    }, { passive: true });
+
+    DOM.writingSurface.addEventListener('pointermove', (e) => {
+      if ((e.pointerType === 'touch' || e.pointerType === 'pen') && !touchMoved) {
+        moveTouch(e.clientX, e.clientY);
+      }
+    }, { passive: true });
+
+    DOM.writingSurface.addEventListener('pointercancel', (e) => {
+      if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+        touchMoved = true;
+      }
+    }, { passive: true });
+
+    DOM.writingSurface.addEventListener('pointerup', (e) => {
+      if (e.pointerType === 'touch' || e.pointerType === 'pen') {
+        endTouch(e.target);
+      }
+    });
+
+    // Fallback click listener (e.g. desktop mouse click to focus input)
     DOM.writingSurface.addEventListener('click', (e) => {
+      // Suppress synthetic clicks that immediately follow a touch tap commit
+      if (Date.now() - lastTouchCommitTime < 500) return;
       if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
       if (e.target.closest('#draft-overlay')) return;
-      
+
       const page = getCurrentPage();
       if (page && !page.locked && DOM.draftInput) {
         DOM.draftInput.focus();
@@ -4047,13 +4174,14 @@ function setupEventListeners() {
           volume: 50,
           showTimestamps: false,
           typewriterAnim: false,
+          replaySpeed: 1,
           autoAddSpace: false,
           settingsVersion: 2
         };
         applyTheme();
         applyFont();
         applySettingsUI();
-        createNewBook("My First Book", false);
+        createNewBook("first note", false);
         closeSafetyArchiveModal();
         closeOverlay();
         showToast("Studio data reset. Safety backup of all books was saved & downloaded.");
@@ -4138,9 +4266,54 @@ function setupEventListeners() {
     DOM.settingTypewriterAnim.onchange = (e) => {
       state.settings.typewriterAnim = e.target.checked;
       saveStorage();
+      if (DOM.settingReplaySpeedRow) {
+        DOM.settingReplaySpeedRow.classList.toggle('is-disabled', !Boolean(state.settings.typewriterAnim));
+      }
       showToast(state.settings.typewriterAnim ? "Replay keystrokes ON" : "Replay keystrokes OFF");
     };
   }
+
+  if (DOM.settingReplaySpeed) {
+    DOM.settingReplaySpeed.oninput = (e) => {
+      const spd = Math.min(10, Math.max(1, parseInt(e.target.value, 10) || 1));
+      if (DOM.replaySpeedVal) {
+        DOM.replaySpeedVal.textContent = `${spd}x${spd === 1 ? ' (Default)' : ''}`;
+      }
+      document.querySelectorAll('.replay-speed-tick').forEach(tick => {
+        tick.classList.toggle('active', parseInt(tick.dataset.speed, 10) === spd);
+      });
+    };
+    DOM.settingReplaySpeed.onchange = (e) => {
+      const spd = Math.min(10, Math.max(1, parseInt(e.target.value, 10) || 1));
+      state.settings.replaySpeed = spd;
+      saveStorage();
+      if (DOM.replaySpeedVal) {
+        DOM.replaySpeedVal.textContent = `${spd}x${spd === 1 ? ' (Default)' : ''}`;
+      }
+      document.querySelectorAll('.replay-speed-tick').forEach(tick => {
+        tick.classList.toggle('active', parseInt(tick.dataset.speed, 10) === spd);
+      });
+      showToast(`Replay speed set to ${spd}x`);
+    };
+  }
+
+  document.querySelectorAll('.replay-speed-tick').forEach(tick => {
+    tick.onclick = () => {
+      const spd = parseInt(tick.dataset.speed, 10);
+      if (spd >= 1 && spd <= 10) {
+        state.settings.replaySpeed = spd;
+        if (DOM.settingReplaySpeed) DOM.settingReplaySpeed.value = spd;
+        if (DOM.replaySpeedVal) {
+          DOM.replaySpeedVal.textContent = `${spd}x${spd === 1 ? ' (Default)' : ''}`;
+        }
+        document.querySelectorAll('.replay-speed-tick').forEach(t => {
+          t.classList.toggle('active', parseInt(t.dataset.speed, 10) === spd);
+        });
+        saveStorage();
+        showToast(`Replay speed set to ${spd}x`);
+      }
+    };
+  });
 
   if (DOM.settingAutoSpace) {
     DOM.settingAutoSpace.onchange = (e) => {

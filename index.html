@@ -49,13 +49,15 @@
           <div id="draft-input-backdrop"></div>
           <textarea 
             id="draft-input" 
-            placeholder="Write..." 
+            placeholder="note to self..." 
             rows="1" 
             autofocus
           ></textarea>
         </div>
         <div class="draft-footer">
           <div class="draft-footer-left">
+            <button id="esc-hint" class="esc-btn btn-esc-menu" title="Click or press ESC to open studio menu">ESC — menu</button>
+            <span class="meta-separator">•</span>
             <span class="page-meta-info" id="page-header-info">Page 1 of 1</span>
             <span class="meta-separator">•</span>
             <span class="page-word-counter" id="page-word-counter" title="Words written on current page / Target page word count">0 / 300 words</span>
@@ -63,7 +65,6 @@
             <span class="char-counter" id="char-counter">0 / 200</span>
             <span class="meta-separator">•</span>
             <button id="btn-toggle-timestamps" class="btn-timestamp-toggle" title="Toggle commit timestamps in left margin">⏱️ Timestamps</button>
-            <div id="esc-hint" class="esc-btn" title="Click or press ESC to open studio menu">ESC — menu</div>
           </div>
           <div class="draft-footer-actions">
             <span class="commit-hint" id="commit-hint">Commit with <kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
@@ -203,6 +204,29 @@
           </label>
         </div>
         <small class="setting-help">Replays your exact keystroke timing and calculates your WPM speed on commit.</small>
+      </div>
+
+      <div id="setting-replay-speed-row" class="setting-sub-group">
+        <div class="setting-label-row">
+          <span class="setting-label">Replay Speed</span>
+          <span id="replay-speed-val" class="setting-val-badge">1x (Default)</span>
+        </div>
+        <div class="replay-speed-slider-wrap">
+          <input id="setting-replay-speed" type="range" min="1" max="10" step="1" value="1" title="Keystroke replay speed (1x to 10x)">
+          <div class="replay-speed-ticks">
+            <button type="button" class="replay-speed-tick active" data-speed="1" title="1x Normal Speed">1x</button>
+            <button type="button" class="replay-speed-tick" data-speed="2" title="2x Speed">2x</button>
+            <button type="button" class="replay-speed-tick" data-speed="3" title="3x Speed">3x</button>
+            <button type="button" class="replay-speed-tick" data-speed="4" title="4x Speed">4x</button>
+            <button type="button" class="replay-speed-tick" data-speed="5" title="5x Speed">5x</button>
+            <button type="button" class="replay-speed-tick" data-speed="6" title="6x Speed">6x</button>
+            <button type="button" class="replay-speed-tick" data-speed="7" title="7x Speed">7x</button>
+            <button type="button" class="replay-speed-tick" data-speed="8" title="8x Speed">8x</button>
+            <button type="button" class="replay-speed-tick" data-speed="9" title="9x Speed">9x</button>
+            <button type="button" class="replay-speed-tick" data-speed="10" title="10x Speed">10x</button>
+          </div>
+        </div>
+        <small class="setting-help">Adjust keystroke animation playback speed from 1x (real-time) to 10x.</small>
       </div>
 
       <div>
