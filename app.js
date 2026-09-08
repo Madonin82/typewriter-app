@@ -3178,7 +3178,7 @@ function exportManuscriptPDF() {
         doc.setFont('courier', 'normal');
         doc.setFontSize(9);
         doc.setTextColor(130, 125, 120);
-        doc.text(`TYPEWRITER STUDIO MANUSCRIPT  •  ${dateStr.toUpperCase()}`, margin, cursorY);
+        doc.text(`NOTE TO SELF MANUSCRIPT  •  ${dateStr.toUpperCase()}`, margin, cursorY);
         cursorY += 28;
 
         doc.setDrawColor(225, 220, 210);

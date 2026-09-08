@@ -881,7 +881,7 @@ body.theme-dark .commit-hint kbd {
   font-size: 18px;
   letter-spacing: 0.25em;
   font-weight: 700;
-  text-transform: uppercase;
+  text-transform: lowercase;
   color: #ffffff;
   font-family: 'Special Elite', cursive, monospace;
 }
