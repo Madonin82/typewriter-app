@@ -313,7 +313,7 @@ async function handleInstallPrompt() {
   const isIOS = /iphone|ipad|ipod/.test(window.navigator.userAgent.toLowerCase());
 
   if (isAppInstalled) {
-    showToast("Typewriter is already running as an installed standalone app!");
+    showToast("Note to Self is already running as an installed standalone app!");
     return;
   }
 
@@ -322,7 +322,7 @@ async function handleInstallPrompt() {
       deferredInstallPrompt.prompt();
       const choice = await deferredInstallPrompt.userChoice;
       if (choice.outcome === 'accepted') {
-        showToast("Typewriter installation started!");
+        showToast("Note to Self installation started!");
         deferredInstallPrompt = null;
         isAppInstalled = true;
         checkPwaInstallState();
@@ -1056,7 +1056,7 @@ function scanBackupPayload(payload) {
 function openBackupInspectModal(payload, sourceLabel = 'Local File') {
   const scan = scanBackupPayload(payload);
   if (!scan) {
-    alert("Invalid backup file: The selected file does not contain a valid Typewriter book library.");
+    alert("Invalid backup file: The selected file does not contain a valid Note to Self book library.");
     return;
   }
 
@@ -1193,11 +1193,11 @@ function importBackupFile(event) {
       if (importedData && importedData.books && importedData.books.length > 0) {
         openBackupInspectModal(importedData, file.name || 'Local File');
       } else {
-        alert("Invalid backup file: The selected file does not contain a recognized Typewriter full session/instance backup.");
+        alert("Invalid backup file: The selected file does not contain a recognized Note to Self full session/instance backup.");
         if (DOM.fileInputRestore) DOM.fileInputRestore.value = '';
       }
     } catch (err) {
-      alert("Could not read backup file. Please ensure it is a valid JSON full session backup from Typewriter Studio.");
+      alert("Could not read backup file. Please ensure it is a valid JSON full session backup from Note to Self.");
       if (DOM.fileInputRestore) DOM.fileInputRestore.value = '';
     }
   };
@@ -1757,10 +1757,10 @@ p.manuscript-para.first {
 <body>
   <div class="title-page">
     <h1 class="book-title">${xmlEscape(bookTitle)}</h1>
-    <p class="book-subtitle">A Typewriter Manuscript</p>
+    <p class="book-subtitle">A Note to Self Manuscript</p>
     <div class="meta-stats">
       <p>${book.pages.length} Pages • ${totalWords.toLocaleString()} Words</p>
-      <p>Drafted with Typewriter Studio</p>
+      <p>Drafted with Note to Self</p>
     </div>
   </div>
 </body>
@@ -1889,7 +1889,7 @@ p.manuscript-para.first {
     <dc:identifier id="book-id">${bookUuid}</dc:identifier>
     <dc:title>${xmlEscape(bookTitle)}</dc:title>
     <dc:language>en</dc:language>
-    <dc:creator>Typewriter Author</dc:creator>
+    <dc:creator>Note to Self Author</dc:creator>
     <dc:date>${nowIso.slice(0, 10)}</dc:date>
     <meta property="dcterms:modified">${nowIso}</meta>
   </metadata>
@@ -3274,7 +3274,7 @@ async function uploadToGoogleDrive({ name, content, mimeType = 'text/plain', isD
   const metadata = {
     name: name,
     mimeType: isDoc ? 'application/vnd.google-apps.document' : mimeType,
-    description: 'Created by Typewriter Studio'
+    description: 'Created by Note to Self'
   };
 
   const boundary = '-------314159265358979323846';
@@ -4003,7 +4003,7 @@ function setupEventListeners() {
     deferredInstallPrompt = null;
     isAppInstalled = true;
     checkPwaInstallState();
-    showToast("Typewriter installed to desktop!");
+    showToast("Note to Self installed to desktop!");
   });
 
   if (DOM.driveModal) {

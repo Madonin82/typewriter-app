@@ -1,7 +1,7 @@
 {
   "id": "./",
-  "name": "Typewriter - Forward-Only Micro-Drafting Studio",
-  "short_name": "Typewriter",
+  "name": "Note to Self",
+  "short_name": "Note to Self",
   "description": "Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, Firestore sync, and Google Drive export.",
   "start_url": "./index.html",
   "scope": "./",
@@ -38,7 +38,7 @@
   ],
   "shortcuts": [
     {
-      "name": "Open Typewriter",
+      "name": "Open Note to Self",
       "short_name": "Draft",
       "description": "Start typing a new draft",
       "url": "./index.html",
