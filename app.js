@@ -82,6 +82,7 @@ let state = {
     volume: 50,
     soundEnabled: true,
     showTimestamps: false,
+    prevPageGhost: true,
     typewriterAnim: false,
     replaySpeed: 1, // 1 to 10 (whole number multiplier)
     autoAddSpace: false,
@@ -94,13 +95,28 @@ let hintTimer = null;
 let deferredInstallPrompt = null;
 let isAppInstalled = false;
 
-// Web Audio API Context for Typewriter Sound Effects
+// Web Audio API Context & Pre-allocated Reusable Buffer for Typewriter Sound Effects
 let audioCtx = null;
+let keyClickNoiseBuffer = null;
 
 function initAudio() {
   if (!audioCtx) {
     try {
-      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) {
+        audioCtx = new AudioContextClass();
+      }
+    } catch (e) {}
+  }
+  // Pre-generate reusable noise buffer once to avoid continuous allocations on every keystroke
+  if (audioCtx && !keyClickNoiseBuffer) {
+    try {
+      const bufferSize = Math.floor(audioCtx.sampleRate * 0.025);
+      keyClickNoiseBuffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
+      const output = keyClickNoiseBuffer.getChannelData(0);
+      for (let i = 0; i < bufferSize; i++) {
+        output[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
+      }
     } catch (e) {}
   }
 }
@@ -111,32 +127,29 @@ function playKeyClickSound() {
     initAudio();
     if (!audioCtx) return;
     if (audioCtx.state === 'suspended') audioCtx.resume();
+    if (!keyClickNoiseBuffer) return;
 
     const volume = (state.settings.volume / 100) * 0.35;
-    const bufferSize = audioCtx.sampleRate * 0.025;
-    const buffer = audioCtx.createBuffer(1, bufferSize, audioCtx.sampleRate);
-    const output = buffer.getChannelData(0);
-    for (let i = 0; i < bufferSize; i++) {
-      output[i] = (Math.random() * 2 - 1) * (1 - i / bufferSize);
-    }
+    const now = audioCtx.currentTime;
 
     const whiteNoise = audioCtx.createBufferSource();
-    whiteNoise.buffer = buffer;
+    whiteNoise.buffer = keyClickNoiseBuffer;
 
     const filter = audioCtx.createBiquadFilter();
     filter.type = 'bandpass';
-    filter.frequency.setValueAtTime(1400 + Math.random() * 300, audioCtx.currentTime);
-    filter.Q.setValueAtTime(3.5, audioCtx.currentTime);
+    filter.frequency.setValueAtTime(1400 + Math.random() * 300, now);
+    filter.Q.setValueAtTime(3.5, now);
 
     const gainNode = audioCtx.createGain();
-    gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.0008, audioCtx.currentTime + 0.025);
+    gainNode.gain.setValueAtTime(volume, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.0008, now + 0.025);
 
     whiteNoise.connect(filter);
     filter.connect(gainNode);
     gainNode.connect(audioCtx.destination);
 
-    whiteNoise.start();
+    whiteNoise.start(now);
+    whiteNoise.stop(now + 0.026);
   } catch (e) {}
 }
 
@@ -148,20 +161,21 @@ function playCarriageReturnBell() {
     if (audioCtx.state === 'suspended') audioCtx.resume();
 
     const volume = (state.settings.volume / 100) * 0.45;
+    const now = audioCtx.currentTime;
     const osc = audioCtx.createOscillator();
     const gainNode = audioCtx.createGain();
 
     osc.type = 'sine';
-    osc.frequency.setValueAtTime(2400, audioCtx.currentTime);
+    osc.frequency.setValueAtTime(2400, now);
 
-    gainNode.gain.setValueAtTime(volume, audioCtx.currentTime);
-    gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + 0.55);
+    gainNode.gain.setValueAtTime(volume, now);
+    gainNode.gain.exponentialRampToValueAtTime(0.0001, now + 0.55);
 
     osc.connect(gainNode);
     gainNode.connect(audioCtx.destination);
 
-    osc.start();
-    osc.stop(audioCtx.currentTime + 0.55);
+    osc.start(now);
+    osc.stop(now + 0.55);
   } catch (e) {}
 }
 
@@ -172,6 +186,7 @@ function initDOM() {
   DOM = {
     writingSurface: document.getElementById('writing-surface'),
     pageSheet: document.getElementById('page-sheet'),
+    prevPageGhost: document.getElementById('prev-page-ghost'),
     pageHeaderInfo: document.getElementById('page-header-info'),
     pageWordCounter: document.getElementById('page-word-counter'),
     inkStream: document.getElementById('ink-stream'),
@@ -230,6 +245,7 @@ function initDOM() {
     settingAutoSpace: document.getElementById('setting-auto-space'),
     settingShowTimestamps: document.getElementById('setting-show-timestamps'),
     btnToggleTimestamps: document.getElementById('btn-toggle-timestamps'),
+    settingPrevPageGhost: document.getElementById('setting-prev-page-ghost'),
 
     statTotalWords: document.getElementById('stat-total-words'),
     statTotalPages: document.getElementById('stat-total-pages'),
@@ -661,22 +677,96 @@ function renderUserUI() {
 
 let localClientWriteId = null;
 let pendingRemoteSnapshot = null;
+let firestoreSyncTimeout = null;
+
+// Estimate UTF-8 byte size of JSON stringified object
+function estimatePayloadByteSize(obj) {
+  try {
+    const str = typeof obj === 'string' ? obj : JSON.stringify(obj);
+    return new Blob([str]).size;
+  } catch (e) {
+    return 0;
+  }
+}
+
+// Sanitizes books payload for cloud sync to ensure maximum compactness
+function sanitizeBooksForCloudSync(books) {
+  if (!Array.isArray(books)) return [];
+  return books.map(book => {
+    return {
+      id: book.id,
+      title: book.title || 'Untitled',
+      createdAt: book.createdAt || Date.now(),
+      updatedAt: book.updatedAt || Date.now(),
+      pages: (book.pages || []).map(page => ({
+        id: page.id,
+        number: page.number,
+        description: page.description || '',
+        tags: Array.isArray(page.tags) ? page.tags : [],
+        locked: Boolean(page.locked),
+        targetWordCount: page.targetWordCount || 300,
+        createdAt: page.createdAt || Date.now(),
+        updatedAt: page.updatedAt || Date.now(),
+        // Compact chunks: store as { t: text, s: timestamp } or clean objects without bloat
+        chunks: (page.chunks || []).map(chunk => {
+          if (typeof chunk === 'string') return { text: chunk };
+          return {
+            id: chunk.id,
+            text: chunk.text || '',
+            timestamp: chunk.timestamp || null
+          };
+        })
+      }))
+    };
+  });
+}
 
 function syncToFirestore() {
+  if (!db || !currentUser) return;
+
+  // Debounce rapid typing sync calls so Firestore writes aren't hammered on every keystroke
+  if (firestoreSyncTimeout) {
+    clearTimeout(firestoreSyncTimeout);
+  }
+
+  firestoreSyncTimeout = setTimeout(() => {
+    firestoreSyncTimeout = null;
+    executeFirestoreSync();
+  }, 1200);
+}
+
+function executeFirestoreSync() {
   if (!db || !currentUser) return;
   if (DOM.syncStatus) DOM.syncStatus.textContent = "🔄 Syncing...";
 
   const writeId = 'w_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
   localClientWriteId = writeId;
 
-  db.collection("users").doc(currentUser.uid).set({
-    books: state.books,
+  const sanitizedBooks = sanitizeBooksForCloudSync(state.books);
+  const payload = {
+    books: sanitizedBooks,
     settings: state.settings,
     activeBookId: state.activeBookId,
     currentPageId: state.currentPageId,
     lastWriteId: writeId,
     lastSynced: firebase.firestore.FieldValue.serverTimestamp()
-  }, { merge: true }).then(() => {
+  };
+
+  const payloadSize = estimatePayloadByteSize(payload);
+  const MAX_FIRESTORE_SIZE = 950 * 1024; // 950 KB threshold (below Firestore 1,048,576 bytes limit)
+
+  if (payloadSize > MAX_FIRESTORE_SIZE) {
+    console.warn(`[FirestoreSync] Manuscript payload size (${Math.round(payloadSize / 1024)} KB) exceeds safe Firestore document limit.`);
+    if (DOM.syncStatus) DOM.syncStatus.textContent = "⚠️ Cloud Limit: Use Drive Sync";
+    showToast("⚠️ Manuscript exceeds Firestore 1MB limit. Syncing to Google Drive / local disk.");
+    // Auto-backup to Google Drive if authorized
+    if (googleAccessToken) {
+      saveBackupToDrive().catch(() => {});
+    }
+    return;
+  }
+
+  db.collection("users").doc(currentUser.uid).set(payload, { merge: true }).then(() => {
     if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Firestore Synced";
     showTopSyncNotification("☁️ Synced with Firestore");
   }).catch((e) => {
@@ -1164,6 +1254,7 @@ function migrateSettingsSchema(savedSettings) {
     soundEnabled: true,
     volume: 50,
     showTimestamps: false,
+    prevPageGhost: true,
     typewriterAnim: false,
     replaySpeed: 1,
     autoAddSpace: false,
@@ -1353,12 +1444,40 @@ async function hydrateAndMigrateFromIndexedDB() {
   }
 }
 
-function saveStorage(syncCloud = true) {
+let idbSaveTimer = null;
+let idbSavePending = false;
+
+function scheduleIndexedDBSave() {
+  idbSavePending = true;
+  if (idbSaveTimer) return;
+
+  idbSaveTimer = setTimeout(async () => {
+    idbSaveTimer = null;
+    if (!idbSavePending) return;
+    idbSavePending = false;
+    try {
+      await idbSet('typewriter_books', state.books);
+    } catch (err) {
+      console.warn("[StorageEngine] Debounced IndexedDB write failed:", err);
+    }
+  }, 350); // 350ms debounce groups rapid commits smoothly without UI freeze
+}
+
+function flushIndexedDBSaveSync() {
+  if (idbSaveTimer) {
+    clearTimeout(idbSaveTimer);
+    idbSaveTimer = null;
+  }
+  idbSavePending = false;
+  return idbSet('typewriter_books', state.books);
+}
+
+function saveStorage(syncCloud = true, immediateDisk = false) {
   try {
     state.settings.settingsVersion = CURRENT_SETTINGS_VERSION;
     state.settings.schemaVersion = CURRENT_SCHEMA_VERSION;
 
-    // Save lightweight UI settings and active pointers to SafeStorage
+    // Save lightweight UI settings and active pointers to SafeStorage immediately
     SafeStorage.setItem('typewriter_settings', state.settings);
     if (state.activeBookId) {
       SafeStorage.setItem('typewriter_active_book_id', state.activeBookId);
@@ -1368,7 +1487,11 @@ function saveStorage(syncCloud = true) {
     }
 
     // Persist full manuscript document tree to IndexedDB
-    idbSet('typewriter_books', state.books);
+    if (immediateDisk) {
+      flushIndexedDBSaveSync();
+    } else {
+      scheduleIndexedDBSave();
+    }
   } catch (e) {
     console.warn("[StorageEngine] Save storage exception:", e);
   }
@@ -1468,7 +1591,7 @@ function createSafetyBackupForBook(book, reason = 'Deleted Book') {
     schemaVersion: CURRENT_SCHEMA_VERSION
   };
   archive.unshift(archiveItem);
-  if (archive.length > 30) archive.pop();
+  if (archive.length > 10) archive.pop();
   saveSafetyArchive(archive);
 
   // 3. Upload to Google Drive if authorized
@@ -1553,7 +1676,7 @@ function createSafetyBackupForReset(books, settings, reason = 'Full Studio Reset
     schemaVersion: CURRENT_SCHEMA_VERSION
   };
   archive.unshift(archiveItem);
-  if (archive.length > 30) archive.pop();
+  if (archive.length > 10) archive.pop();
   saveSafetyArchive(archive);
 
   // 3. Upload to Google Drive if authorized
@@ -2488,7 +2611,9 @@ p.manuscript-para.first {
 </html>`;
     zip.file('OEBPS/titlepage.xhtml', titlePageXhtml);
 
-    // 5. Individual Pages as Chapters
+    // 5. Intelligent Chapter Grouping for Novel Manuscripts
+    // Instead of creating 300+ detached spine files, pages are grouped by explicit chapter descriptions
+    // (e.g. "Chapter 1", "Act I", or custom titles) or in natural ~10-page clusters for comfortable reading.
     const manifestItems = [];
     const spineItems = [];
     const navItems = [];
@@ -2504,70 +2629,96 @@ p.manuscript-para.first {
       <content src="titlepage.xhtml"/>
     </navPoint>`);
 
-    for (let idx = 0; idx < pages.length; idx++) {
-      const page = pages[idx];
-      const pageNum = page.number || (idx + 1);
-      const pageFile = `page_${pageNum}.xhtml`;
-      const pageId = `page-${pageNum}`;
-      const pageTitle = `Page ${pageNum}${page.description ? ': ' + page.description : ''}`;
+    // Group pages into chapter buckets
+    const chapters = [];
+    let currentChapter = null;
 
-      ExportProgress.update(10 + ((idx / Math.max(1, pages.length)) * 45), `Formatting chapter ${idx + 1} of ${pages.length}...`);
+    pages.forEach((page, pIdx) => {
+      const pageNum = page.number || (pIdx + 1);
+      const desc = (page.description || '').trim();
+      const isExplicitChapter = /^(chapter|act|part|prologue|epilogue|scene)\b/i.test(desc) || (desc.length > 0 && desc.length <= 40 && !currentChapter);
+
+      if (!currentChapter || isExplicitChapter) {
+        currentChapter = {
+          index: chapters.length + 1,
+          title: desc || `Chapter ${chapters.length + 1}`,
+          startPage: pageNum,
+          pages: [page]
+        };
+        chapters.push(currentChapter);
+      } else {
+        currentChapter.pages.push(page);
+      }
+    });
+
+    for (let cIdx = 0; cIdx < chapters.length; cIdx++) {
+      const ch = chapters[cIdx];
+      const chNum = ch.index;
+      const chFile = `chapter_${chNum}.xhtml`;
+      const chId = `chapter-${chNum}`;
+      const chTitle = ch.title;
+
+      ExportProgress.update(10 + ((cIdx / Math.max(1, chapters.length)) * 45), `Formatting chapter ${cIdx + 1} of ${chapters.length}...`);
       await yieldToMain();
 
-      let rawParagraphs = [];
-      if (Array.isArray(page.chunks) && page.chunks.length > 0) {
-        page.chunks.forEach(c => {
-          const t = (typeof c === 'string' ? c : (c.text || '')).trim();
-          if (t) {
-            const sub = t.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
-            if (sub.length > 0) rawParagraphs.push(...sub);
-            else rawParagraphs.push(t);
-          }
-        });
-      } else if (page.text && page.text.trim()) {
-        rawParagraphs = page.text.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
-      }
+      let chapterSectionsHtml = '';
 
-      if (rawParagraphs.length === 0) {
-        rawParagraphs = ['(Blank page)'];
-      }
+      ch.pages.forEach((page, pageInChIdx) => {
+        const pageNum = page.number || (pageInChIdx + 1);
+        let rawParagraphs = [];
 
-      const parasHtml = rawParagraphs.map((pText, pIdx) => {
-        const cls = pIdx === 0 ? 'manuscript-para first' : 'manuscript-para';
-        const formatted = xmlEscape(pText).replace(/\n/g, '<br/>');
-        return `<p class="${cls}">${formatted}</p>`;
-      }).join('\n    ');
+        if (Array.isArray(page.chunks) && page.chunks.length > 0) {
+          page.chunks.forEach(c => {
+            const t = (typeof c === 'string' ? c : (c.text || '')).trim();
+            if (t) {
+              const sub = t.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+              if (sub.length > 0) rawParagraphs.push(...sub);
+              else rawParagraphs.push(t);
+            }
+          });
+        } else if (page.text && page.text.trim()) {
+          rawParagraphs = page.text.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+        }
 
-      const descHtml = page.description
-        ? `<p class="chapter-desc">${xmlEscape(page.description)}</p>`
-        : '';
+        if (rawParagraphs.length === 0) {
+          rawParagraphs = ['(Blank page)'];
+        }
 
-      const pageXhtml = `<?xml version="1.0" encoding="utf-8"?>
+        const parasHtml = rawParagraphs.map((pText, pIdx) => {
+          const cls = pIdx === 0 ? 'manuscript-para first' : 'manuscript-para';
+          const formatted = xmlEscape(pText).replace(/\n/g, '<br/>');
+          return `<p class="${cls}">${formatted}</p>`;
+        }).join('\n      ');
+
+        const pageHeading = (ch.pages.length > 1) ? `<div style="font-size:0.75em; color:#888; margin-top:1.5em; margin-bottom:0.5em; letter-spacing:0.05em; text-transform:uppercase;">— Page ${pageNum} —</div>` : '';
+        chapterSectionsHtml += `\n    ${pageHeading}\n    ${parasHtml}`;
+      });
+
+      const chXhtml = `<?xml version="1.0" encoding="utf-8"?>
 <!DOCTYPE html>
 <html xmlns="http://www.w3.org/1999/xhtml" xmlns:epub="http://www.idpf.org/2007/ops" xml:lang="en">
 <head>
   <meta charset="utf-8"/>
-  <title>${xmlEscape(pageTitle)}</title>
+  <title>${xmlEscape(chTitle)}</title>
   <link rel="stylesheet" type="text/css" href="style.css"/>
 </head>
 <body>
   <section epub:type="chapter" class="chapter-container">
-    <h2 class="chapter-title">PAGE ${pageNum}${page.description ? ' — ' + xmlEscape(page.description) : ''}</h2>
-    ${descHtml}
-    ${parasHtml}
+    <h2 class="chapter-title">${xmlEscape(chTitle)}</h2>
+    ${chapterSectionsHtml}
   </section>
 </body>
 </html>`;
 
-      zip.file(`OEBPS/${pageFile}`, pageXhtml);
+      zip.file(`OEBPS/${chFile}`, chXhtml);
 
-      manifestItems.push(`<item id="${pageId}" href="${pageFile}" media-type="application/xhtml+xml"/>`);
-      spineItems.push(`<itemref idref="${pageId}"/>`);
-      navItems.push(`<li><a href="${pageFile}">${xmlEscape(pageTitle)}</a></li>`);
+      manifestItems.push(`<item id="${chId}" href="${chFile}" media-type="application/xhtml+xml"/>`);
+      spineItems.push(`<itemref idref="${chId}"/>`);
+      navItems.push(`<li><a href="${chFile}">${xmlEscape(chTitle)}</a></li>`);
       ncxNavPoints.push(`
-    <navPoint id="nav-p${pageNum}" playOrder="${idx + 2}">
-      <navLabel><text>${xmlEscape(pageTitle)}</text></navLabel>
-      <content src="${pageFile}"/>
+    <navPoint id="nav-c${chNum}" playOrder="${cIdx + 2}">
+      <navLabel><text>${xmlEscape(chTitle)}</text></navLabel>
+      <content src="${chFile}"/>
     </navPoint>`);
     }
 
@@ -3520,8 +3671,15 @@ function commitDraft() {
       showToast(`Target of ${state.settings.wordsPerPage} words reached! Page turned.`);
       createNewPage(true);
     } else {
-      saveStorage();
-      renderAll(true);
+      saveStorage(true, false);
+      if (Boolean(state.settings.typewriterAnim)) {
+        renderAll(true);
+      } else {
+        // High-performance differential DOM update: append chunk element directly without tearing down 300+ sidebar nodes
+        appendChunkToInkStream(newChunk);
+        updateSidebarActivePageBadge(activePage.id, pageWords);
+        updateStats();
+      }
     }
   }
 
@@ -3693,6 +3851,7 @@ function renderSidebarPages() {
 
   book.pages.forEach(page => {
     const li = document.createElement('li');
+    li.dataset.pageId = page.id;
     li.className = page.id === state.currentPageId ? 'active' : '';
     const words = getPageWordCount(page);
     const descText = (page.description && page.description.trim()) ? page.description.trim() : '';
@@ -3735,6 +3894,17 @@ function renderSidebarPages() {
 
     DOM.pagesList.appendChild(li);
   });
+}
+
+function updateSidebarActivePageBadge(pageId, newWordCount) {
+  if (!DOM.pagesList || !pageId) return;
+  const item = DOM.pagesList.querySelector(`li[data-page-id="${pageId}"]`);
+  if (item) {
+    const badge = item.querySelector('.page-badge');
+    if (badge) {
+      badge.textContent = `${newWordCount}w`;
+    }
+  }
 }
 
 function escapeHtml(str) {
@@ -4089,6 +4259,45 @@ function cancelTypewriterAnimation() {
   }
 }
 
+function appendChunkToInkStream(chunkItem) {
+  if (!DOM.inkStream) return;
+  const text = getChunkText(chunkItem);
+  const ts = getChunkTimestamp(chunkItem);
+  const timeStr = formatChunkTime(ts);
+  const showTS = Boolean(state.settings.showTimestamps);
+
+  const anchor = document.getElementById('ink-cursor-anchor');
+
+  if (showTS) {
+    const row = document.createElement('div');
+    row.className = 'ink-chunk-row new-strike';
+
+    const timeSpan = document.createElement('span');
+    timeSpan.className = timeStr ? 'commit-timestamp' : 'commit-timestamp muted';
+    timeSpan.textContent = timeStr || '—';
+    if (ts) timeSpan.title = `Committed at ${new Date(ts).toLocaleString()}`;
+    row.appendChild(timeSpan);
+
+    const textSpan = document.createElement('span');
+    textSpan.className = 'ink-chunk';
+    textSpan.textContent = text;
+    row.appendChild(textSpan);
+
+    if (anchor) DOM.inkStream.insertBefore(row, anchor);
+    else DOM.inkStream.appendChild(row);
+  } else {
+    const span = document.createElement('span');
+    span.className = 'ink-chunk new-strike';
+    span.textContent = text;
+
+    if (anchor) DOM.inkStream.insertBefore(span, anchor);
+    else DOM.inkStream.appendChild(span);
+  }
+
+  const ghost = document.getElementById('ink-ghost');
+  if (ghost) ghost.textContent = '';
+}
+
 function renderActivePage(lastChunkIsNew = false) {
   cancelTypewriterAnimation();
   const book = getActiveBook();
@@ -4109,6 +4318,31 @@ function renderActivePage(lastChunkIsNew = false) {
   if (DOM.pageSheet) {
     DOM.pageSheet.classList.toggle('is-locked', Boolean(page.locked));
     DOM.pageSheet.classList.toggle('has-timestamps', showTS);
+  }
+
+  // Render Previous Page Ghost Context (for continuity in long manuscripts/novels)
+  if (DOM.prevPageGhost) {
+    const showGhost = Boolean(state.settings.prevPageGhost) && !page.locked && page.number > 1;
+    if (showGhost) {
+      const prevPage = book.pages.find(p => p.number === page.number - 1);
+      if (prevPage && prevPage.chunks && prevPage.chunks.length > 0) {
+        const fullPrevText = prevPage.chunks.map(c => getChunkText(c)).join('').trim();
+        if (fullPrevText) {
+          // Extract the last 1-2 sentences (up to ~180 chars)
+          const sentences = fullPrevText.match(/[^.!?]+[.!?]+(?:\s+|$)/g) || [fullPrevText];
+          const tail = sentences.slice(-2).join('').trim() || fullPrevText.slice(-180);
+          DOM.prevPageGhost.textContent = `... ${tail}`;
+          DOM.prevPageGhost.title = `Context from Page ${prevPage.number}`;
+          DOM.prevPageGhost.classList.remove('hidden');
+        } else {
+          DOM.prevPageGhost.classList.add('hidden');
+        }
+      } else {
+        DOM.prevPageGhost.classList.add('hidden');
+      }
+    } else {
+      DOM.prevPageGhost.classList.add('hidden');
+    }
   }
 
   if (DOM.inkStream) {
@@ -4400,6 +4634,7 @@ function applySettingsUI() {
   if (DOM.settingAutoSpace) DOM.settingAutoSpace.checked = Boolean(state.settings.autoAddSpace);
   if (DOM.settingShowTimestamps) DOM.settingShowTimestamps.checked = Boolean(state.settings.showTimestamps);
   if (DOM.btnToggleTimestamps) DOM.btnToggleTimestamps.classList.toggle('active', Boolean(state.settings.showTimestamps));
+  if (DOM.settingPrevPageGhost) DOM.settingPrevPageGhost.checked = Boolean(state.settings.prevPageGhost);
   updateCommitHint();
 }
 
@@ -5804,6 +6039,16 @@ function setupEventListeners() {
       saveStorage();
       applySettingsUI();
       renderAll();
+    };
+  }
+
+  if (DOM.settingPrevPageGhost) {
+    DOM.settingPrevPageGhost.onchange = (e) => {
+      state.settings.prevPageGhost = e.target.checked;
+      saveStorage();
+      applySettingsUI();
+      renderActivePage(false);
+      showToast(state.settings.prevPageGhost ? "Previous page context ON" : "Previous page context OFF");
     };
   }
 

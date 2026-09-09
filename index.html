@@ -34,6 +34,7 @@
   <!-- ── MAIN WRITING SURFACE ── -->
   <div id="writing-surface" class="writing-surface">
     <div class="page" id="page-sheet">
+      <div id="prev-page-ghost" class="prev-page-ghost hidden" aria-hidden="true"></div>
       <div class="ink-stream" id="ink-stream">
         <!-- Chunks are rendered here -->
         <span class="ink-cursor" id="ink-cursor"></span>
@@ -394,6 +395,17 @@
           </label>
         </div>
         <small class="setting-help">Displays the time each commit was made in the left margin of the page.</small>
+      </div>
+
+      <div>
+        <div class="setting-label-row">
+          <span class="setting-label">Previous Page Context</span>
+          <label class="toggle-switch" title="Show the last few lines of the preceding page for novel continuity">
+            <input type="checkbox" id="setting-prev-page-ghost">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <small class="setting-help">Shows a faded ghost preview of the prior page's closing sentence above the ink stream.</small>
       </div>
 
       <div class="stats-footer-container">

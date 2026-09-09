@@ -214,6 +214,33 @@ html, body {
   padding-bottom: 60px;
 }
 
+.prev-page-ghost {
+  display: block;
+  margin-bottom: 24px;
+  padding: 10px 14px;
+  border-left: 2px solid var(--accent, #e5a93b);
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 0 4px 4px 0;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--ink-locked);
+  opacity: 0.55;
+  font-style: italic;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: none;
+  pointer-events: none;
+}
+
+body.theme-dark .prev-page-ghost,
+body.theme-matrix .prev-page-ghost {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.prev-page-ghost.hidden {
+  display: none !important;
+}
+
 .ink-stream {
   font-size: 17px;
   line-height: 1.85;
