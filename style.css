@@ -436,9 +436,15 @@ input:checked + .toggle-slider:before {
   bottom: 24px;
   left: 0;
   right: 0;
+  width: 100%;
+  max-width: 100vw;
   display: flex;
   justify-content: center;
+  align-items: center;
   padding: 0 30px;
+  padding-bottom: max(24px, env(safe-area-inset-bottom, 24px));
+  padding-left: max(30px, env(safe-area-inset-left, 30px));
+  padding-right: max(30px, env(safe-area-inset-right, 30px));
   pointer-events: none;
   z-index: 50;
   box-sizing: border-box;
@@ -446,20 +452,28 @@ input:checked + .toggle-slider:before {
 
 @media (max-width: 600px) {
   #draft-overlay {
-    padding: 0 16px;
+    padding: 0 10px;
+    padding-bottom: max(12px, env(safe-area-inset-bottom, 12px));
+    padding-left: max(10px, env(safe-area-inset-left, 10px));
+    padding-right: max(10px, env(safe-area-inset-right, 10px));
   }
 }
 
 #draft-container {
   width: 100%;
   max-width: 700px;
+  margin: 0 auto;
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 #draft-box {
   pointer-events: all;
   width: 100%;
-  margin: 0;
+  max-width: 100%;
+  margin: 0 auto;
   background: var(--draft-bg);
   border: 1px solid var(--draft-border);
   border-radius: 6px;
@@ -2084,10 +2098,14 @@ body.theme-paper .sync-toast {
     padding-bottom: 64px;
   }
   #draft-overlay {
-    padding-bottom: 20px;
+    padding: 0 16px;
+    padding-bottom: max(16px, env(safe-area-inset-bottom, 16px));
+    padding-left: max(16px, env(safe-area-inset-left, 16px));
+    padding-right: max(16px, env(safe-area-inset-right, 16px));
   }
   #draft-box {
-    margin: 0 12px;
+    margin: 0 auto;
+    width: 100%;
     padding: 12px 14px;
   }
 }
@@ -2282,10 +2300,15 @@ body.theme-paper .sync-toast {
   }
   #draft-overlay {
     padding: 0 10px;
-    bottom: 12px;
+    padding-bottom: max(10px, env(safe-area-inset-bottom, 10px));
+    padding-left: max(10px, env(safe-area-inset-left, 10px));
+    padding-right: max(10px, env(safe-area-inset-right, 10px));
+    bottom: 10px;
   }
   #draft-box {
-    padding: 12px 14px 10px;
+    margin: 0 auto;
+    width: 100%;
+    padding: 12px 12px 10px;
   }
   .backup-inspect-stats-grid {
     grid-template-columns: repeat(2, 1fr);

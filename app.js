@@ -4299,8 +4299,22 @@ function renderActivePage(lastChunkIsNew = false) {
 }
 
 function updateDraftInputCursorAlignment() {
+  if (!DOM.draftInput) return;
+
+  // On small mobile screens (such as portrait iPhone / phones <= 600px),
+  // keep text aligned cleanly without horizontal indent offset to prevent text truncation
+  if (window.innerWidth <= 600) {
+    DOM.draftInput.style.textIndent = '0px';
+    DOM.draftInput.style.paddingLeft = '0px';
+    if (DOM.draftInputBackdrop) {
+      DOM.draftInputBackdrop.style.textIndent = '0px';
+      DOM.draftInputBackdrop.style.paddingLeft = '0px';
+    }
+    return;
+  }
+
   const inkCursor = document.getElementById('ink-cursor-anchor') || document.getElementById('ink-cursor');
-  if (!inkCursor || !DOM.pageSheet || !DOM.draftInput || !DOM.draftBox) return;
+  if (!inkCursor || !DOM.pageSheet || !DOM.draftBox) return;
 
   const pageRect = DOM.pageSheet.getBoundingClientRect();
   const cursorRect = inkCursor.getBoundingClientRect();
@@ -5242,7 +5256,9 @@ function setupEventListeners() {
         const visualHeight = window.visualViewport.height;
         const offsetTop = window.visualViewport.offsetTop;
         const diff = layoutHeight - visualHeight - offsetTop;
-        draftOverlay.style.bottom = Math.max(24, diff + 24) + 'px';
+        const isMobile = window.innerWidth <= 600;
+        const baseBottom = isMobile ? 10 : 24;
+        draftOverlay.style.bottom = Math.max(baseBottom, diff + baseBottom) + 'px';
       }
     };
     window.visualViewport.addEventListener('resize', adjustForKeyboard);
