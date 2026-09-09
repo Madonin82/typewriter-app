@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Note to Self</title>
-  <meta name="description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, EPUB eBook import/export, offline PWA desktop installation, and Google Drive export.">
+  <meta name="description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, local device save/load, EPUB eBook import/export, offline PWA desktop installation, and Google Drive cloud sync.">
   <meta property="og:title" content="Note to Self">
-  <meta property="og:description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, EPUB eBook import/export, offline PWA desktop installation, and Google Drive export.">
+  <meta property="og:description" content="Forward-only micro-drafting studio designed to prevent editing paralysis with typewriter physics, page mechanics, local device save/load, EPUB eBook import/export, offline PWA desktop installation, and Google Drive cloud sync.">
   
   <!-- PWA & Mobile Web Standards -->
   <link rel="manifest" href="manifest.json">
@@ -411,6 +411,10 @@
             <span class="stat-lbl">Books</span>
           </div>
         </div>
+        <button id="btn-open-analysis" class="menu-btn" style="margin-top: 14px; width: 100%; font-size: 11px; padding: 7px; text-align: center; border-color: #333; display: flex; align-items: center; justify-content: center; gap: 6px;" title="View in-depth manuscript readability scores, syllables, reading time, and statistics computed via Web Worker">
+          <span>📊</span>
+          <span>Analyze Readability & Metrics</span>
+        </button>
       </div>
     </div>
   </div>
@@ -475,6 +479,13 @@
         <span>All Books & Session State:</span>
       </div>
       <div class="export-options-grid">
+        <button id="btn-device-save-zip" class="export-card-btn" title="Save complete multi-book library archive bundled as ZIP">
+          <span class="export-icon">🗃️</span>
+          <div class="export-info">
+            <strong>Complete Library Archive (.zip)</strong>
+            <span>All books with Markdown, Text, and JSON drafts bundled asynchronously</span>
+          </div>
+        </button>
         <button id="btn-device-save-session" class="export-card-btn drive-highlight" title="Save complete studio backup snapshot to your device">
           <span class="export-icon">📦</span>
           <div class="export-info">
@@ -535,6 +546,13 @@
           <div class="export-info">
             <strong>Manuscript Data (.json)</strong>
             <span>Download single book data file ready to re-import</span>
+          </div>
+        </button>
+        <button id="btn-export-zip" class="export-card-btn">
+          <span class="export-icon">🗃️</span>
+          <div class="export-info">
+            <strong>All Books Archive (.zip)</strong>
+            <span>Download complete library with Markdown & Text drafts bundled</span>
           </div>
         </button>
       </div>
@@ -791,6 +809,89 @@
     </div>
   </div>
 
+  <!-- ── MANUSCRIPT READABILITY & ANALYSIS MODAL ── -->
+  <div id="analysis-modal" class="modal-backdrop hidden">
+    <div class="modal-card modal-card-wide" style="max-width: 680px;">
+      <div class="modal-header">
+        <div class="modal-title-with-icon">
+          <span>📊</span>
+          <h3 id="analysis-modal-title">Manuscript Readability & Analysis</h3>
+        </div>
+        <button id="btn-close-analysis-modal" class="btn-close">×</button>
+      </div>
+      <p class="modal-desc" id="analysis-modal-desc">
+        Real-time linguistic metrics and reading metrics computed off-thread via Web Worker:
+      </p>
+
+      <!-- High-level Readability Hero Banner -->
+      <div id="analysis-hero-card" class="analysis-hero-card" style="background:#1a1917; border:1px solid #333; border-radius:8px; padding:14px 18px; margin-bottom:16px; display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:12px;">
+        <div>
+          <span style="font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:#888;">Flesch Reading Ease</span>
+          <div style="display:flex; align-items:baseline; gap:8px; margin-top:4px;">
+            <span id="analysis-flesch-score" style="font-size:28px; font-weight:700; color:#7ee896; font-family:var(--font-family);">—</span>
+            <span id="analysis-flesch-label" style="font-size:13px; color:#ccc;">Analyzing...</span>
+          </div>
+        </div>
+        <div style="text-align:right;">
+          <span style="font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:#888;">Grade Level</span>
+          <div id="analysis-grade-level" style="font-size:22px; font-weight:700; color:#ffffff; font-family:var(--font-family); margin-top:4px;">—</div>
+        </div>
+      </div>
+
+      <!-- Analysis Metrics Grid -->
+      <div class="backup-inspect-stats-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap:10px; margin-bottom:16px;">
+        <div class="backup-stat-box">
+          <span class="backup-stat-lbl">Total Words</span>
+          <strong id="analysis-stat-words" class="backup-stat-val">0</strong>
+        </div>
+        <div class="backup-stat-box">
+          <span class="backup-stat-lbl">Characters</span>
+          <strong id="analysis-stat-chars" class="backup-stat-val">0</strong>
+        </div>
+        <div class="backup-stat-box">
+          <span class="backup-stat-lbl">Sentences</span>
+          <strong id="analysis-stat-sentences" class="backup-stat-val">0</strong>
+        </div>
+        <div class="backup-stat-box">
+          <span class="backup-stat-lbl">Paragraphs</span>
+          <strong id="analysis-stat-paragraphs" class="backup-stat-val">0</strong>
+        </div>
+        <div class="backup-stat-box">
+          <span class="backup-stat-lbl">Est. Reading Time</span>
+          <strong id="analysis-stat-read-time" class="backup-stat-val">0 min</strong>
+        </div>
+        <div class="backup-stat-box">
+          <span class="backup-stat-lbl">Speaking Time</span>
+          <strong id="analysis-stat-speak-time" class="backup-stat-val">0 min</strong>
+        </div>
+        <div class="backup-stat-box">
+          <span class="backup-stat-lbl">Unique Words</span>
+          <strong id="analysis-stat-unique-words" class="backup-stat-val">0</strong>
+        </div>
+        <div class="backup-stat-box">
+          <span class="backup-stat-lbl">Avg Words / Sentence</span>
+          <strong id="analysis-stat-words-sentence" class="backup-stat-val">0</strong>
+        </div>
+      </div>
+
+      <!-- Page Breakdown Table -->
+      <div class="backup-inspect-section-hdr">
+        <span>Page & Chapter Progress Breakdown</span>
+        <span id="analysis-pages-count-badge" class="backup-inspect-source-badge">0 Pages</span>
+      </div>
+      <div class="backup-inspect-books-container" style="max-height: 200px; margin-bottom: 16px;">
+        <ul id="analysis-pages-breakdown-list" class="backup-inspect-books-list">
+          <!-- Populated dynamically -->
+        </ul>
+      </div>
+
+      <div class="backup-inspect-footer" style="margin-top: 12px;">
+        <span style="font-size:11px; color:#777; font-family:'Inter', sans-serif;">Offloaded to Web Worker • Zero UI latency</span>
+        <button id="btn-dismiss-analysis-modal" class="btn-drive-action primary" style="padding: 7px 18px; font-size: 12px;">Close Analysis</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── IOS PWA INSTALL GUIDE MODAL ── -->
   <div id="ios-install-modal" class="modal-backdrop hidden">
     <div class="modal-card">
@@ -807,6 +908,39 @@
       <div style="margin-top:16px; text-align:right;">
         <button id="btn-close-ios-modal-btn" class="menu-btn" style="min-width:100px; padding:6px 16px;">Got It</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ── ASYNC EXPORT & COMPILATION PROGRESS MODAL ── -->
+  <div id="export-progress-modal" class="modal-backdrop hidden" style="z-index: 10000;">
+    <div class="modal-card" style="max-width: 440px; text-align: center; padding: 26px 22px;">
+      <div style="font-size: 36px; margin-bottom: 10px;" id="export-progress-icon">⏳</div>
+      <h3 id="export-progress-title" style="font-size: 16px; margin-bottom: 6px; color: #ffffff;">Compiling Document...</h3>
+      <p id="export-progress-status" style="font-size: 13px; color: #aaaaaa; margin-bottom: 18px;">Processing chapter 1 of 10...</p>
+      
+      <div style="background: #222222; border-radius: 999px; height: 10px; width: 100%; overflow: hidden; margin-bottom: 12px; border: 1px solid #333333;">
+        <div id="export-progress-bar-fill" style="background: #e5a93b; height: 100%; width: 0%; transition: width 0.15s ease-out; border-radius: 999px;"></div>
+      </div>
+      
+      <div style="display: flex; justify-content: space-between; font-size: 11px; color: #777777; font-family: 'Inter', sans-serif;">
+        <span id="export-progress-percent" style="font-weight: 700; color: #e5a93b;">0%</span>
+        <span>Asynchronous background compilation</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SERVICE WORKER UPDATE NOTIFICATION BANNER ── -->
+  <div id="sw-update-banner" class="sw-update-banner hidden" role="alert" aria-live="polite">
+    <div class="sw-update-content">
+      <div class="sw-update-icon">✨</div>
+      <div class="sw-update-text">
+        <span class="sw-update-title">New Version Available</span>
+        <span class="sw-update-desc">A new version of Note to Self is ready. Reload to apply updates.</span>
+      </div>
+    </div>
+    <div class="sw-update-actions">
+      <button id="btn-sw-reload" class="sw-update-reload-btn" title="Reload application to apply update">Reload</button>
+      <button id="btn-sw-dismiss" class="sw-update-dismiss-btn" title="Dismiss update notification">✕</button>
     </div>
   </div>
 

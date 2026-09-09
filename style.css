@@ -1856,6 +1856,136 @@ body.theme-dark .replay-speed-tick.active {
   100% { transform: scale(0.95); opacity: 0.6; }
 }
 
+/* ─── SERVICE WORKER UPDATE BANNER ────────────────────────── */
+.sw-update-banner {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%) translateY(0);
+  background: rgba(26, 24, 22, 0.96);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #f0ede6;
+  border: 1px solid rgba(212, 163, 115, 0.35);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(0, 0, 0, 0.2);
+  border-radius: 10px;
+  padding: 10px 14px;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: 90vw;
+  width: 460px;
+  animation: swSlideDown 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes swSlideDown {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+body.theme-light .sw-update-banner,
+body.theme-cream .sw-update-banner,
+body.theme-paper .sw-update-banner {
+  background: rgba(255, 255, 255, 0.97);
+  color: #231f1c;
+  border: 1px solid rgba(180, 140, 95, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15), 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.sw-update-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sw-update-icon {
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.sw-update-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sw-update-title {
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 13px;
+  letter-spacing: -0.01em;
+  color: inherit;
+  line-height: 1.2;
+}
+
+.sw-update-desc {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  opacity: 0.8;
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sw-update-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.sw-update-reload-btn {
+  background: #d4a373;
+  color: #1a1612;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  font-size: 12px;
+  padding: 6px 13px;
+  border-radius: 6px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.14s ease;
+  white-space: nowrap;
+}
+
+.sw-update-reload-btn:hover {
+  background: #e6b888;
+  transform: translateY(-1px);
+}
+
+.sw-update-reload-btn:active {
+  transform: translateY(0);
+}
+
+.sw-update-dismiss-btn {
+  background: transparent;
+  color: inherit;
+  opacity: 0.6;
+  border: none;
+  font-size: 13px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: opacity 0.15s ease, background 0.15s ease;
+}
+
+.sw-update-dismiss-btn:hover {
+  opacity: 1;
+  background: rgba(128, 128, 128, 0.15);
+}
+
 /* ─── TOP SYNC NOTIFICATION ────────────────────────────────── */
 .sync-toast {
   position: fixed;

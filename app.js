@@ -17,7 +17,25 @@ const firebaseConfig = {
 let auth = null;
 let db = null;
 let currentUser = null;
-let googleAccessToken = sessionStorage.getItem('google_drive_access_token') || null;
+
+function getSafeSessionItem(key) {
+  try {
+    return (typeof window !== 'undefined' && window.sessionStorage) ? window.sessionStorage.getItem(key) : null;
+  } catch (e) {
+    return null;
+  }
+}
+
+function setSafeSessionItem(key, val) {
+  try {
+    if (typeof window !== 'undefined' && window.sessionStorage) {
+      if (val === null || val === undefined) window.sessionStorage.removeItem(key);
+      else window.sessionStorage.setItem(key, val);
+    }
+  } catch (e) {}
+}
+
+let googleAccessToken = getSafeSessionItem('google_drive_access_token') || null;
 let lastRenderedPageId = null;
 
 // Chunk Data Helpers for Timestamping
@@ -225,9 +243,18 @@ function initDOM() {
     btnExportPdf: document.getElementById('btn-export-pdf'),
     btnExportEpub: document.getElementById('btn-export-epub'),
     btnExportJson: document.getElementById('btn-export-json'),
+    btnExportZip: document.getElementById('btn-export-zip'),
     btnCopyAll: document.getElementById('btn-copy-all'),
     btnExportDriveDoc: document.getElementById('btn-export-drive-doc'),
     btnExportDriveTxt: document.getElementById('btn-export-drive-txt'),
+
+    // Async Export Progress Dialog
+    exportProgressModal: document.getElementById('export-progress-modal'),
+    exportProgressIcon: document.getElementById('export-progress-icon'),
+    exportProgressTitle: document.getElementById('export-progress-title'),
+    exportProgressStatus: document.getElementById('export-progress-status'),
+    exportProgressBarFill: document.getElementById('export-progress-bar-fill'),
+    exportProgressPercent: document.getElementById('export-progress-percent'),
 
     btnDriveBackup: document.getElementById('btn-drive-backup'),
     btnDriveImport: document.getElementById('btn-drive-import'),
@@ -248,6 +275,7 @@ function initDOM() {
     btnDeviceSavePdf: document.getElementById('btn-device-save-pdf'),
     btnDeviceSaveEpub: document.getElementById('btn-device-save-epub'),
     btnDeviceSaveJson: document.getElementById('btn-device-save-json'),
+    btnDeviceSaveZip: document.getElementById('btn-device-save-zip'),
     btnDeviceSaveSession: document.getElementById('btn-device-save-session'),
 
     btnInstallPwa: document.getElementById('btn-install-pwa'),
@@ -313,10 +341,125 @@ function initDOM() {
     btnCloseSearchModal: document.getElementById('btn-close-search-modal'),
     btnDismissSearchModal: document.getElementById('btn-dismiss-search-modal'),
 
+    // Manuscript Readability & Analysis Modal
+    btnOpenAnalysis: document.getElementById('btn-open-analysis'),
+    analysisModal: document.getElementById('analysis-modal'),
+    analysisModalTitle: document.getElementById('analysis-modal-title'),
+    analysisModalDesc: document.getElementById('analysis-modal-desc'),
+    btnCloseAnalysisModal: document.getElementById('btn-close-analysis-modal'),
+    btnDismissAnalysisModal: document.getElementById('btn-dismiss-analysis-modal'),
+    analysisFleschScore: document.getElementById('analysis-flesch-score'),
+    analysisFleschLabel: document.getElementById('analysis-flesch-label'),
+    analysisGradeLevel: document.getElementById('analysis-grade-level'),
+    analysisStatWords: document.getElementById('analysis-stat-words'),
+    analysisStatChars: document.getElementById('analysis-stat-chars'),
+    analysisStatSentences: document.getElementById('analysis-stat-sentences'),
+    analysisStatParagraphs: document.getElementById('analysis-stat-paragraphs'),
+    analysisStatReadTime: document.getElementById('analysis-stat-read-time'),
+    analysisStatSpeakTime: document.getElementById('analysis-stat-speak-time'),
+    analysisStatUniqueWords: document.getElementById('analysis-stat-unique-words'),
+    analysisStatWordsSentence: document.getElementById('analysis-stat-words-sentence'),
+    analysisPagesCountBadge: document.getElementById('analysis-pages-count-badge'),
+    analysisPagesBreakdownList: document.getElementById('analysis-pages-breakdown-list'),
+
     toast: document.getElementById('toast'),
     syncToast: document.getElementById('sync-toast'),
-    syncToastMsg: document.getElementById('sync-toast-msg')
+    syncToastMsg: document.getElementById('sync-toast-msg'),
+
+    // Service Worker Update Prompt Banner
+    swUpdateBanner: document.getElementById('sw-update-banner'),
+    btnSwReload: document.getElementById('btn-sw-reload'),
+    btnSwDismiss: document.getElementById('btn-sw-dismiss')
   };
+}
+
+// ─── PWA & SERVICE WORKER LIFECYCLE ─────────────────────────
+
+let waitingServiceWorker = null;
+let swUpdateRefreshing = false;
+
+function showSWUpdateBanner(worker) {
+  waitingServiceWorker = worker;
+  if (DOM.swUpdateBanner) {
+    DOM.swUpdateBanner.classList.remove('hidden');
+  }
+}
+
+function hideSWUpdateBanner() {
+  if (DOM.swUpdateBanner) {
+    DOM.swUpdateBanner.classList.add('hidden');
+  }
+}
+
+function handleSWReload() {
+  if (waitingServiceWorker) {
+    waitingServiceWorker.postMessage({ type: 'SKIP_WAITING' });
+  }
+  // Fallback if controllerchange does not fire immediately
+  setTimeout(() => {
+    if (!swUpdateRefreshing) {
+      swUpdateRefreshing = true;
+      window.location.reload();
+    }
+  }, 350);
+}
+
+function initServiceWorkerLifecycle() {
+  if (!('serviceWorker' in navigator)) return;
+
+  // Listen for controller changes to reload app seamlessly with fresh code
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (swUpdateRefreshing) return;
+    swUpdateRefreshing = true;
+    window.location.reload();
+  });
+
+  navigator.serviceWorker.register('./sw.js')
+    .then((reg) => {
+      console.log('PWA ServiceWorker registered with scope:', reg.scope);
+
+      // 1. If an updated worker is already waiting to activate
+      if (reg.waiting) {
+        showSWUpdateBanner(reg.waiting);
+      }
+
+      // 2. If an updated worker is currently installing
+      reg.addEventListener('updatefound', () => {
+        const newWorker = reg.installing;
+        if (!newWorker) return;
+
+        newWorker.addEventListener('statechange', () => {
+          if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+            // New version installed while previous version is active
+            showSWUpdateBanner(newWorker);
+          }
+        });
+      });
+
+      // 3. Periodically check for updates and check on window focus
+      window.addEventListener('focus', () => {
+        reg.update().catch(() => {});
+      });
+
+      window.addEventListener('online', () => {
+        reg.update().catch(() => {});
+      });
+
+      setInterval(() => {
+        reg.update().catch(() => {});
+      }, 60 * 60 * 1000); // Check hourly
+    })
+    .catch((err) => {
+      console.warn('PWA ServiceWorker registration failed:', err);
+    });
+
+  // Setup click handlers for update banner
+  if (DOM.btnSwReload) {
+    DOM.btnSwReload.onclick = handleSWReload;
+  }
+  if (DOM.btnSwDismiss) {
+    DOM.btnSwDismiss.onclick = hideSWUpdateBanner;
+  }
 }
 
 // ─── PWA & OFFLINE CONTROLS ──────────────────────────────────
@@ -449,7 +592,7 @@ function handleGoogleSignIn() {
     auth.signInWithPopup(provider).then((result) => {
       if (result.credential && result.credential.accessToken) {
         googleAccessToken = result.credential.accessToken;
-        sessionStorage.setItem('google_drive_access_token', googleAccessToken);
+        setSafeSessionItem('google_drive_access_token', googleAccessToken);
       }
       showToast(`Welcome, ${result.user.displayName || 'Author'}! Synced with Firestore & Google Drive.`);
       renderUserUI();
@@ -464,7 +607,7 @@ function handleGoogleSignIn() {
 
 function handleSignOut() {
   googleAccessToken = null;
-  sessionStorage.removeItem('google_drive_access_token');
+  setSafeSessionItem('google_drive_access_token', null);
   if (firestoreUnsubscribe) {
     firestoreUnsubscribe();
     firestoreUnsubscribe = null;
@@ -489,7 +632,7 @@ async function getGoogleDriveToken() {
     const result = await auth.signInWithPopup(provider);
     if (result.credential && result.credential.accessToken) {
       googleAccessToken = result.credential.accessToken;
-      sessionStorage.setItem('google_drive_access_token', googleAccessToken);
+      setSafeSessionItem('google_drive_access_token', googleAccessToken);
       renderUserUI();
       return googleAccessToken;
     }
@@ -544,25 +687,26 @@ function syncToFirestore() {
 
 function applyRemoteSnapshot(data) {
   if (!data) return;
+  const migrated = migratePayloadToLatest(data) || data;
   let changed = false;
 
-  if (data.books && Array.isArray(data.books) && data.books.length > 0) {
-    if (JSON.stringify(state.books) !== JSON.stringify(data.books)) {
-      state.books = data.books;
+  if (migrated.books && Array.isArray(migrated.books) && migrated.books.length > 0) {
+    if (JSON.stringify(state.books) !== JSON.stringify(migrated.books)) {
+      state.books = migrated.books;
       changed = true;
     }
   }
 
-  if (data.settings && typeof data.settings === 'object') {
-    if (JSON.stringify(state.settings) !== JSON.stringify({ ...state.settings, ...data.settings })) {
-      state.settings = { ...state.settings, ...data.settings };
+  if (migrated.settings && typeof migrated.settings === 'object') {
+    if (JSON.stringify(state.settings) !== JSON.stringify({ ...state.settings, ...migrated.settings })) {
+      state.settings = { ...state.settings, ...migrated.settings };
       changed = true;
     }
   }
 
-  if (data.activeBookId && state.books.some(b => b.id === data.activeBookId)) {
-    if (state.activeBookId !== data.activeBookId) {
-      state.activeBookId = data.activeBookId;
+  if (migrated.activeBookId && state.books.some(b => b.id === migrated.activeBookId)) {
+    if (state.activeBookId !== migrated.activeBookId) {
+      state.activeBookId = migrated.activeBookId;
       changed = true;
     }
   } else if (state.books.length > 0 && (!state.activeBookId || !state.books.some(b => b.id === state.activeBookId))) {
@@ -571,9 +715,9 @@ function applyRemoteSnapshot(data) {
   }
 
   const activeBook = getActiveBook();
-  if (data.currentPageId && activeBook && activeBook.pages && activeBook.pages.some(p => p.id === data.currentPageId)) {
-    if (state.currentPageId !== data.currentPageId) {
-      state.currentPageId = data.currentPageId;
+  if (migrated.currentPageId && activeBook && activeBook.pages && activeBook.pages.some(p => p.id === migrated.currentPageId)) {
+    if (state.currentPageId !== migrated.currentPageId) {
+      state.currentPageId = migrated.currentPageId;
       changed = true;
     }
   } else if (activeBook && activeBook.pages && activeBook.pages.length > 0) {
@@ -631,64 +775,603 @@ function loadFromFirestore(uid) {
   subscribeToFirestore(uid);
 }
 
-// ─── LOCAL STORAGE ENGINE ───────────────────────────────────
+// ─── STORAGE ARCHITECTURE & ENGINE ──────────────────────────
+
+const CURRENT_SCHEMA_VERSION = "1.2";
+const CURRENT_SETTINGS_VERSION = "1.2";
+const IDB_DATABASE_NAME = 'NoteToSelf_DB';
+const IDB_DATABASE_VERSION = 1;
+const IDB_STORE_DOCUMENTS = 'documents_store';
+
+// Safe localStorage abstraction with QuotaExceededError handling
+const SafeStorage = {
+  isQuotaError(e) {
+    return (
+      e instanceof DOMException &&
+      (e.code === 22 ||
+        e.code === 1014 ||
+        e.name === 'QuotaExceededError' ||
+        e.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+        (typeof e.message === 'string' && e.message.toLowerCase().includes('quota')))
+    );
+  },
+  getItem(key, fallback = null) {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return fallback;
+      const val = window.localStorage.getItem(key);
+      return val !== null ? val : fallback;
+    } catch (err) {
+      console.warn(`[SafeStorage] Failed to read "${key}" from localStorage:`, err);
+      return fallback;
+    }
+  },
+  getJSON(key, fallback = null) {
+    try {
+      const raw = this.getItem(key, null);
+      if (!raw) return fallback;
+      return JSON.parse(raw);
+    } catch (err) {
+      console.warn(`[SafeStorage] Failed to parse JSON for "${key}":`, err);
+      return fallback;
+    }
+  },
+  setItem(key, value) {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return false;
+      const str = typeof value === 'string' ? value : JSON.stringify(value);
+      window.localStorage.setItem(key, str);
+      return true;
+    } catch (err) {
+      if (this.isQuotaError(err)) {
+        console.warn(`[SafeStorage] QuotaExceededError caught when writing "${key}". Large document payloads are safely stored in IndexedDB.`);
+        return false;
+      }
+      console.warn(`[SafeStorage] Failed to write "${key}" to localStorage:`, err);
+      return false;
+    }
+  },
+  removeItem(key) {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return;
+      window.localStorage.removeItem(key);
+    } catch (err) {
+      console.warn(`[SafeStorage] Failed to remove "${key}" from localStorage:`, err);
+    }
+  },
+  clear() {
+    try {
+      if (typeof window === 'undefined' || !window.localStorage) return;
+      window.localStorage.clear();
+    } catch (err) {
+      console.warn('[SafeStorage] Failed to clear localStorage:', err);
+    }
+  }
+};
+
+// IndexedDB Engine for high-capacity manuscript & history storage
+let idbInstancePromise = null;
+
+function getIndexedDBInstance() {
+  if (idbInstancePromise) return idbInstancePromise;
+  idbInstancePromise = new Promise((resolve) => {
+    if (typeof window === 'undefined' || !window.indexedDB) {
+      console.warn('[IndexedDB] IndexedDB is not supported in this runtime environment.');
+      return resolve(null);
+    }
+    try {
+      const req = window.indexedDB.open(IDB_DATABASE_NAME, IDB_DATABASE_VERSION);
+      req.onupgradeneeded = (e) => {
+        const db = e.target.result;
+        if (!db.objectStoreNames.contains(IDB_STORE_DOCUMENTS)) {
+          db.createObjectStore(IDB_STORE_DOCUMENTS, { keyPath: 'key' });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = (e) => {
+        console.warn('[IndexedDB] Database open error:', req.error || e);
+        resolve(null);
+      };
+      req.onblocked = () => {
+        console.warn('[IndexedDB] Database connection blocked.');
+        resolve(null);
+      };
+    } catch (err) {
+      console.warn('[IndexedDB] Open exception:', err);
+      resolve(null);
+    }
+  });
+  return idbInstancePromise;
+}
+
+async function idbGet(key, fallback = null) {
+  try {
+    const db = await getIndexedDBInstance();
+    if (!db) return fallback;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(IDB_STORE_DOCUMENTS, 'readonly');
+        const store = tx.objectStore(IDB_STORE_DOCUMENTS);
+        const req = store.get(key);
+        req.onsuccess = () => {
+          if (req.result && req.result.value !== undefined) {
+            resolve(req.result.value);
+          } else {
+            resolve(fallback);
+          }
+        };
+        req.onerror = () => {
+          console.warn(`[IndexedDB] Get error for key "${key}":`, req.error);
+          resolve(fallback);
+        };
+      } catch (txErr) {
+        console.warn(`[IndexedDB] Transaction error on get("${key}"):`, txErr);
+        resolve(fallback);
+      }
+    });
+  } catch (err) {
+    console.warn(`[IndexedDB] idbGet failed for "${key}":`, err);
+    return fallback;
+  }
+}
+
+async function idbSet(key, value, extra = {}) {
+  try {
+    const db = await getIndexedDBInstance();
+    if (!db) return false;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(IDB_STORE_DOCUMENTS, 'readwrite');
+        const store = tx.objectStore(IDB_STORE_DOCUMENTS);
+        const record = {
+          key: key,
+          value: value,
+          updatedAt: Date.now(),
+          schemaVersion: CURRENT_SCHEMA_VERSION,
+          ...extra
+        };
+        const req = store.put(record);
+        req.onsuccess = () => resolve(true);
+        req.onerror = () => {
+          console.warn(`[IndexedDB] Put error for key "${key}":`, req.error);
+          resolve(false);
+        };
+      } catch (txErr) {
+        console.warn(`[IndexedDB] Transaction error on set("${key}"):`, txErr);
+        resolve(false);
+      }
+    });
+  } catch (err) {
+    console.warn(`[IndexedDB] idbSet failed for "${key}":`, err);
+    return false;
+  }
+}
+
+async function idbRemove(key) {
+  try {
+    const db = await getIndexedDBInstance();
+    if (!db) return false;
+    return new Promise((resolve) => {
+      try {
+        const tx = db.transaction(IDB_STORE_DOCUMENTS, 'readwrite');
+        const store = tx.objectStore(IDB_STORE_DOCUMENTS);
+        const req = store.delete(key);
+        req.onsuccess = () => resolve(true);
+        req.onerror = () => resolve(false);
+      } catch (txErr) {
+        resolve(false);
+      }
+    });
+  } catch (err) {
+    return false;
+  }
+}
+
+// ─── CANONICAL SCHEMA DEFINITIONS & STEP-BY-STEP MIGRATION PIPELINES ───
+
+/**
+ * Step 1: Migration from v0 / unversioned to v1.0 (Basic Book & Page Normalization)
+ * - Guarantees book ID, normalized title, timestamps, and non-empty pages array
+ */
+function migrateBookToV10(book, idx = 0) {
+  if (!book || typeof book !== 'object') {
+    return {
+      id: 'book_' + Date.now() + '_' + idx,
+      title: 'Untitled Note',
+      pages: [{
+        id: 'page_' + Date.now() + '_' + idx,
+        number: 1,
+        description: '',
+        chunks: [],
+        locked: false,
+        createdAt: Date.now(),
+        updatedAt: Date.now()
+      }],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      version: '1.0',
+      schemaVersion: '1.0'
+    };
+  }
+
+  const b = { ...book };
+  if (!b.id) b.id = 'book_' + Date.now() + '_' + idx;
+  if (b.title === 'My First Book') b.title = 'first note';
+  if (!b.title || !b.title.trim()) b.title = `Book ${idx + 1}`;
+  if (!b.createdAt) b.createdAt = Date.now();
+  if (!b.updatedAt) b.updatedAt = Date.now();
+  if (!Array.isArray(b.pages) || b.pages.length === 0) {
+    b.pages = [{
+      id: 'page_' + Date.now() + '_' + idx,
+      number: 1,
+      description: '',
+      chunks: [],
+      locked: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }];
+  }
+  b.version = b.version || '1.0';
+  b.schemaVersion = b.schemaVersion || '1.0';
+  return b;
+}
+
+/**
+ * Step 2: Migration from v1.0 to v1.1 (Structured Chunks, Locks, and Word Targets)
+ * - Converts raw string chunks into structured chunk objects { id, text, timestamp }
+ * - Guarantees page locks, descriptions, target word counts, and page timestamps
+ */
+function migrateBookToV11(book) {
+  const b = { ...book };
+  b.pages = (b.pages || []).map((page, pIdx) => {
+    if (!page || typeof page !== 'object') {
+      return {
+        id: 'page_' + Date.now() + '_' + pIdx,
+        number: pIdx + 1,
+        description: '',
+        chunks: [],
+        locked: false,
+        targetWordCount: 300,
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+        version: '1.1',
+        schemaVersion: '1.1'
+      };
+    }
+    const p = { ...page };
+    if (!p.id) p.id = 'page_' + Date.now() + '_' + pIdx;
+    if (typeof p.number !== 'number') p.number = pIdx + 1;
+    if (typeof p.description !== 'string') p.description = '';
+    if (typeof p.locked !== 'boolean') p.locked = false;
+    if (typeof p.targetWordCount !== 'number') p.targetWordCount = 300;
+    if (!p.createdAt) p.createdAt = Date.now();
+    if (!p.updatedAt) p.updatedAt = Date.now();
+
+    // Migrate chunks: supports legacy raw strings, objects, or partial objects
+    if (!Array.isArray(p.chunks)) {
+      p.chunks = [];
+    } else {
+      p.chunks = p.chunks.map((chunk, cIdx) => {
+        if (chunk === null || chunk === undefined) return null;
+        if (typeof chunk === 'string') {
+          return {
+            id: 'chk_' + Date.now() + '_' + pIdx + '_' + cIdx,
+            text: chunk,
+            timestamp: Date.now()
+          };
+        }
+        if (typeof chunk === 'object') {
+          return {
+            id: chunk.id || ('chk_' + Date.now() + '_' + pIdx + '_' + cIdx),
+            text: typeof chunk.text === 'string' ? chunk.text : '',
+            timestamp: typeof chunk.timestamp === 'number' ? chunk.timestamp : Date.now()
+          };
+        }
+        return null;
+      }).filter(Boolean);
+    }
+    p.version = '1.1';
+    p.schemaVersion = '1.1';
+    return p;
+  });
+
+  b.version = '1.1';
+  b.schemaVersion = '1.1';
+  return b;
+}
+
+/**
+ * Step 3: Migration from v1.1 to v1.2 (Document Tags, Folder Classification, & Metadata)
+ * - Adds tags: string[]
+ * - Adds folderId / category hierarchy metadata
+ * - Adds starred, archived status flags
+ * - Adds synopsis / summary field and lastAccessedAt timestamp
+ * - Stamps canonical version: "1.2" and schemaVersion: "1.2"
+ */
+function migrateBookToV12(book) {
+  const b = { ...book };
+  if (!Array.isArray(b.tags)) b.tags = [];
+  if (typeof b.folderId !== 'string' && b.folderId !== null) b.folderId = null;
+  if (typeof b.category !== 'string') b.category = '';
+  if (typeof b.starred !== 'boolean') b.starred = false;
+  if (typeof b.archived !== 'boolean') b.archived = false;
+  if (typeof b.synopsis !== 'string') b.synopsis = '';
+  if (!b.lastAccessedAt) b.lastAccessedAt = Date.now();
+
+  // Migrate page level fields to v1.2
+  if (Array.isArray(b.pages)) {
+    b.pages = b.pages.map(p => ({
+      ...p,
+      tags: Array.isArray(p.tags) ? p.tags : [],
+      version: CURRENT_SCHEMA_VERSION,
+      schemaVersion: CURRENT_SCHEMA_VERSION
+    }));
+  }
+
+  b.version = CURRENT_SCHEMA_VERSION;
+  b.schemaVersion = CURRENT_SCHEMA_VERSION;
+  return b;
+}
+
+/**
+ * Runs the full sequential migration pipeline on a single book
+ */
+function migrateSingleBook(rawBook, idx = 0) {
+  let book = migrateBookToV10(rawBook, idx);
+  book = migrateBookToV11(book);
+  book = migrateBookToV12(book);
+  return book;
+}
+
+/**
+ * Validates and runs sequential migrations on an array of books
+ */
+function migrateBooksSchema(books) {
+  if (!Array.isArray(books)) return { books: [], modified: false };
+  let modified = false;
+
+  const migrated = books.map((rawBook, idx) => {
+    const rawVersion = rawBook ? (rawBook.schemaVersion || rawBook.version) : null;
+    const isUpToDate = rawVersion === CURRENT_SCHEMA_VERSION &&
+      Array.isArray(rawBook.tags) &&
+      rawBook.folderId !== undefined &&
+      Array.isArray(rawBook.pages) &&
+      rawBook.pages.every(p => p.version === CURRENT_SCHEMA_VERSION && Array.isArray(p.chunks));
+
+    if (!isUpToDate) {
+      modified = true;
+    }
+    return migrateSingleBook(rawBook, idx);
+  });
+
+  return { books: migrated, modified };
+}
+
+/**
+ * Step-by-step Settings Schema Migration (v1.0 -> v1.1 -> v1.2)
+ * Handles custom typography (fontSize, lineHeight, letterSpacing),
+ * commit keys, sound settings, typewriter physics, and schema version flags.
+ */
+function migrateSettingsSchema(savedSettings) {
+  const currentDefaults = {
+    maxChars: 200,
+    wordsPerPage: 300,
+    theme: 'cream',
+    font: 'courier',
+    fontSize: 18,
+    lineHeight: 1.8,
+    letterSpacing: '0.02em',
+    commitKey: 'ctrl-enter',
+    soundEnabled: true,
+    volume: 50,
+    showTimestamps: false,
+    typewriterAnim: false,
+    replaySpeed: 1,
+    autoAddSpace: false,
+    activeTagFilter: null,
+    activeFolderFilter: null,
+    settingsVersion: 2,
+    version: CURRENT_SETTINGS_VERSION,
+    schemaVersion: CURRENT_SCHEMA_VERSION
+  };
+
+  if (!savedSettings || typeof savedSettings !== 'object') {
+    return { ...currentDefaults };
+  }
+
+  const merged = { ...currentDefaults, ...savedSettings };
+
+  // v1.0 -> v1.1: Ensure typewriterAnim default is false
+  if (!merged.settingsVersion || merged.settingsVersion < 2) {
+    merged.typewriterAnim = false;
+    merged.settingsVersion = 2;
+  }
+
+  // v1.1 -> v1.2: Validate typography bounds & constraints
+  merged.fontSize = Math.min(36, Math.max(12, parseInt(merged.fontSize, 10) || 18));
+  merged.lineHeight = Math.min(3.0, Math.max(1.0, parseFloat(merged.lineHeight) || 1.8));
+  merged.replaySpeed = Math.min(10, Math.max(1, parseInt(merged.replaySpeed, 10) || 1));
+  merged.maxChars = Math.min(2000, Math.max(20, parseInt(merged.maxChars, 10) || 200));
+  merged.wordsPerPage = Math.min(2000, Math.max(50, parseInt(merged.wordsPerPage, 10) || 300));
+  merged.version = CURRENT_SETTINGS_VERSION;
+  merged.schemaVersion = CURRENT_SCHEMA_VERSION;
+  return merged;
+}
+
+/**
+ * Migrates Safety Archive payloads
+ */
+function migrateSafetyArchiveSchema(rawArchive) {
+  if (!Array.isArray(rawArchive)) return [];
+  return rawArchive.map(item => {
+    if (!item || typeof item !== 'object') return null;
+    let migratedData = item.data;
+    if (item.data && item.data.books) {
+      const { books } = migrateBooksSchema(item.data.books);
+      migratedData = {
+        ...item.data,
+        books,
+        version: CURRENT_SCHEMA_VERSION,
+        schemaVersion: CURRENT_SCHEMA_VERSION
+      };
+    }
+    return {
+      id: item.id || ('safety_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5)),
+      type: item.type || 'single_book',
+      reason: item.reason || 'Safety Backup',
+      date: item.date || new Date().toLocaleString(),
+      isoDate: item.isoDate || new Date().toISOString(),
+      title: item.title || 'Untitled Archive',
+      stats: item.stats || { words: 0, pages: 0 },
+      filename: item.filename || 'Safety_Backup.json',
+      data: migratedData || {},
+      version: CURRENT_SCHEMA_VERSION,
+      schemaVersion: CURRENT_SCHEMA_VERSION
+    };
+  }).filter(Boolean);
+}
+
+/**
+ * Universal Payload Migration Runner
+ * Safely migrates any imported or synced payload before it is scanned, previewed, or bound to the DOM.
+ */
+function migratePayloadToLatest(payload) {
+  if (!payload || typeof payload !== 'object') return null;
+
+  const result = { ...payload };
+  if (Array.isArray(result.books)) {
+    const { books } = migrateBooksSchema(result.books);
+    result.books = books;
+  }
+  if (result.book && typeof result.book === 'object') {
+    result.book = migrateSingleBook(result.book);
+  }
+  if (result.settings && typeof result.settings === 'object') {
+    result.settings = migrateSettingsSchema(result.settings);
+  }
+  result.version = CURRENT_SCHEMA_VERSION;
+  result.schemaVersion = CURRENT_SCHEMA_VERSION;
+  return result;
+}
+
+// In-memory safety archive cache
+let memorySafetyArchive = [];
+
+// ─── STORAGE LIFECYCLE (LOAD & SAVE) ─────────────────────────
 
 function loadStorage() {
-  try {
-    const savedSettings = localStorage.getItem('typewriter_settings');
-    if (savedSettings) {
-      const parsed = JSON.parse(savedSettings);
-      if (!parsed.settingsVersion || parsed.settingsVersion < 2) {
-        parsed.typewriterAnim = false;
-        parsed.settingsVersion = 2;
-      }
-      state.settings = { ...state.settings, ...parsed };
-      state.settings.replaySpeed = Math.min(10, Math.max(1, parseInt(state.settings.replaySpeed, 10) || 1));
-    }
+  // 1. Synchronously load settings from SafeStorage for instant UI configuration
+  const savedSettings = SafeStorage.getJSON('typewriter_settings');
+  state.settings = migrateSettingsSchema(savedSettings);
 
-    const savedBooks = localStorage.getItem('typewriter_books');
-    if (savedBooks) state.books = JSON.parse(savedBooks);
-  } catch (e) {}
+  // 2. Synchronous fallback: check if books exist in memory/legacy storage for immediate rendering
+  const legacyBooks = SafeStorage.getJSON('typewriter_books');
+  if (legacyBooks && Array.isArray(legacyBooks) && legacyBooks.length > 0) {
+    const { books } = migrateBooksSchema(legacyBooks);
+    state.books = books;
+  }
+
+  // 3. Fallback active IDs from SafeStorage
+  state.activeBookId = SafeStorage.getItem('typewriter_active_book_id', state.books[0]?.id || null);
+  const currentBook = getActiveBook();
+  if (currentBook && currentBook.pages && currentBook.pages.length > 0) {
+    const savedPageId = SafeStorage.getItem('typewriter_current_page_id');
+    if (savedPageId && currentBook.pages.some(p => p.id === savedPageId)) {
+      state.currentPageId = savedPageId;
+    } else {
+      state.currentPageId = currentBook.pages[currentBook.pages.length - 1].id;
+    }
+  }
+
+  // 4. Synchronous safety archive fallback
+  const legacyArchive = SafeStorage.getJSON('typewriter_safety_archive');
+  if (legacyArchive && Array.isArray(legacyArchive)) {
+    memorySafetyArchive = migrateSafetyArchiveSchema(legacyArchive);
+  }
 
   if (!state.books || state.books.length === 0) {
     createNewBook("first note", false);
-  } else {
-    let migrated = false;
-    state.books.forEach(b => {
-      if (b && b.title === "My First Book") {
-        b.title = "first note";
-        migrated = true;
-      }
-    });
-    if (migrated) saveStorage(false);
+  }
 
-    state.activeBookId = localStorage.getItem('typewriter_active_book_id') || state.books[0].id;
-    const currentBook = getActiveBook();
-    if (currentBook && currentBook.pages && currentBook.pages.length > 0) {
-      const savedPageId = localStorage.getItem('typewriter_current_page_id');
-      if (savedPageId && currentBook.pages.some(p => p.id === savedPageId)) {
-        state.currentPageId = savedPageId;
-      } else {
-        state.currentPageId = currentBook.pages[currentBook.pages.length - 1].id;
+  // 5. Asynchronously hydrate from IndexedDB & migrate legacy localStorage to IndexedDB
+  hydrateAndMigrateFromIndexedDB();
+}
+
+async function hydrateAndMigrateFromIndexedDB() {
+  try {
+    const [idbBooks, idbArchive] = await Promise.all([
+      idbGet('typewriter_books', null),
+      idbGet('typewriter_safety_archive', null)
+    ]);
+
+    let shouldRerender = false;
+
+    // A. Handle document books from IndexedDB
+    if (idbBooks && Array.isArray(idbBooks) && idbBooks.length > 0) {
+      const { books, modified } = migrateBooksSchema(idbBooks);
+      state.books = books;
+      if (modified) {
+        idbSet('typewriter_books', state.books);
       }
-    } else if (currentBook) {
-      createNewPage(false);
+      shouldRerender = true;
+    } else if (state.books && state.books.length > 0) {
+      // First-time migration: store active books in IndexedDB and free localStorage quota
+      await idbSet('typewriter_books', state.books);
+      SafeStorage.removeItem('typewriter_books');
     }
+
+    // Ensure valid activeBookId and currentPageId after IndexedDB load
+    if (state.books && state.books.length > 0) {
+      if (!state.activeBookId || !state.books.some(b => b.id === state.activeBookId)) {
+        state.activeBookId = state.books[0].id;
+        shouldRerender = true;
+      }
+      const activeBook = getActiveBook();
+      if (activeBook && activeBook.pages && activeBook.pages.length > 0) {
+        if (!state.currentPageId || !activeBook.pages.some(p => p.id === state.currentPageId)) {
+          state.currentPageId = activeBook.pages[activeBook.pages.length - 1].id;
+          shouldRerender = true;
+        }
+      }
+    }
+
+    // B. Handle Safety Archive from IndexedDB
+    if (idbArchive && Array.isArray(idbArchive) && idbArchive.length > 0) {
+      memorySafetyArchive = migrateSafetyArchiveSchema(idbArchive);
+      updateSafetyArchiveBadge();
+    } else if (memorySafetyArchive && memorySafetyArchive.length > 0) {
+      // Migrate legacy safety archive to IndexedDB and remove from localStorage
+      await idbSet('typewriter_safety_archive', memorySafetyArchive);
+      SafeStorage.removeItem('typewriter_safety_archive');
+      updateSafetyArchiveBadge();
+    }
+
+    if (shouldRerender) {
+      renderAll();
+    }
+  } catch (err) {
+    console.warn("[StorageEngine] Error hydrating from IndexedDB:", err);
   }
 }
 
 function saveStorage(syncCloud = true) {
   try {
-    state.settings.settingsVersion = 2;
-    localStorage.setItem('typewriter_settings', JSON.stringify(state.settings));
-    localStorage.setItem('typewriter_books', JSON.stringify(state.books));
+    state.settings.settingsVersion = CURRENT_SETTINGS_VERSION;
+    state.settings.schemaVersion = CURRENT_SCHEMA_VERSION;
+
+    // Save lightweight UI settings and active pointers to SafeStorage
+    SafeStorage.setItem('typewriter_settings', state.settings);
     if (state.activeBookId) {
-      localStorage.setItem('typewriter_active_book_id', state.activeBookId);
+      SafeStorage.setItem('typewriter_active_book_id', state.activeBookId);
     }
     if (state.currentPageId) {
-      localStorage.setItem('typewriter_current_page_id', state.currentPageId);
+      SafeStorage.setItem('typewriter_current_page_id', state.currentPageId);
     }
-  } catch (e) {}
+
+    // Persist full manuscript document tree to IndexedDB
+    idbSet('typewriter_books', state.books);
+  } catch (e) {
+    console.warn("[StorageEngine] Save storage exception:", e);
+  }
 
   if (syncCloud && currentUser) {
     syncToFirestore();
@@ -724,21 +1407,13 @@ function calculateBookStats(book) {
 }
 
 function getSafetyArchive() {
-  try {
-    const raw = localStorage.getItem('typewriter_safety_archive');
-    return raw ? JSON.parse(raw) : [];
-  } catch (e) {
-    return [];
-  }
+  return memorySafetyArchive;
 }
 
 function saveSafetyArchive(archive) {
-  try {
-    localStorage.setItem('typewriter_safety_archive', JSON.stringify(archive));
-    updateSafetyArchiveBadge();
-  } catch (e) {
-    console.warn("Save safety archive failed:", e);
-  }
+  memorySafetyArchive = Array.isArray(archive) ? migrateSafetyArchiveSchema(archive) : [];
+  updateSafetyArchiveBadge();
+  idbSet('typewriter_safety_archive', memorySafetyArchive);
 }
 
 function updateSafetyArchiveBadge() {
@@ -759,14 +1434,16 @@ function createSafetyBackupForBook(book, reason = 'Deleted Book') {
   const fileDate = dateIso.slice(0, 10);
   const filename = `Typewriter_Backup_DELETED_${cleanTitle}_${fileDate}.json`;
 
+  const migratedBook = migrateSingleBook(book);
   const backupPayload = {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     type: 'safety_backup_single_book',
     reason: reason,
     backupDate: dateIso,
     bookTitle: book.title,
     stats: stats,
-    books: [JSON.parse(JSON.stringify(book))],
+    books: [JSON.parse(JSON.stringify(migratedBook))],
     settings: { ...state.settings }
   };
 
@@ -786,7 +1463,9 @@ function createSafetyBackupForBook(book, reason = 'Deleted Book') {
     title: book.title,
     stats: stats,
     filename: filename,
-    data: backupPayload
+    data: backupPayload,
+    version: CURRENT_SCHEMA_VERSION,
+    schemaVersion: CURRENT_SCHEMA_VERSION
   };
   archive.unshift(archiveItem);
   if (archive.length > 30) archive.pop();
@@ -813,7 +1492,9 @@ function createSafetyBackupForBook(book, reason = 'Deleted Book') {
       reason: reason,
       title: book.title,
       stats: stats,
-      book: book,
+      book: migratedBook,
+      version: CURRENT_SCHEMA_VERSION,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     }).catch(e => console.warn("Firestore safety backup error:", e));
   }
@@ -836,15 +1517,19 @@ function createSafetyBackupForReset(books, settings, reason = 'Full Studio Reset
   const fileDate = dateIso.slice(0, 10);
   const filename = `Typewriter_Backup_FULL_RESET_${books.length}_BOOKS_${fileDate}.json`;
 
+  const { books: migratedBooks } = migrateBooksSchema(books);
+  const migratedSettings = migrateSettingsSchema(settings);
+
   const backupPayload = {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     type: 'safety_backup_full_reset',
     reason: reason,
     backupDate: dateIso,
-    totalBooks: books.length,
-    stats: { words: totalWords, pages: totalPages, books: books.length },
-    books: JSON.parse(JSON.stringify(books)),
-    settings: { ...settings }
+    totalBooks: migratedBooks.length,
+    stats: { words: totalWords, pages: totalPages, books: migratedBooks.length },
+    books: JSON.parse(JSON.stringify(migratedBooks)),
+    settings: { ...migratedSettings }
   };
 
   const jsonStr = JSON.stringify(backupPayload, null, 2);
@@ -860,10 +1545,12 @@ function createSafetyBackupForReset(books, settings, reason = 'Full Studio Reset
     reason: reason,
     date: dateFormatted,
     isoDate: dateIso,
-    title: `All Manuscripts (${books.length} Books)`,
-    stats: { words: totalWords, pages: totalPages, books: books.length },
+    title: `All Manuscripts (${migratedBooks.length} Books)`,
+    stats: { words: totalWords, pages: totalPages, books: migratedBooks.length },
     filename: filename,
-    data: backupPayload
+    data: backupPayload,
+    version: CURRENT_SCHEMA_VERSION,
+    schemaVersion: CURRENT_SCHEMA_VERSION
   };
   archive.unshift(archiveItem);
   if (archive.length > 30) archive.pop();
@@ -884,9 +1571,11 @@ function createSafetyBackupForReset(books, settings, reason = 'Full Studio Reset
     db.collection("users").doc(currentUser.uid).collection("safety_backups").add({
       type: 'full_reset',
       reason: reason,
-      totalBooks: books.length,
+      totalBooks: migratedBooks.length,
       stats: { words: totalWords, pages: totalPages },
-      books: books,
+      books: migratedBooks,
+      version: CURRENT_SCHEMA_VERSION,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     }).catch(e => console.warn("Firestore reset safety backup error:", e));
   }
@@ -973,8 +1662,10 @@ function restoreSafetyArchiveItem(id) {
     return;
   }
 
-  if (item.type === 'single_book' && item.data.books && item.data.books.length > 0) {
-    const bookToRestore = JSON.parse(JSON.stringify(item.data.books[0]));
+  const migratedData = migratePayloadToLatest(item.data) || item.data;
+
+  if (item.type === 'single_book' && migratedData.books && migratedData.books.length > 0) {
+    const bookToRestore = JSON.parse(JSON.stringify(migratedData.books[0]));
     // Check if book with this ID already exists, generate fresh ID if so
     const existingIndex = state.books.findIndex(b => b.id === bookToRestore.id);
     if (existingIndex !== -1) {
@@ -995,9 +1686,9 @@ function restoreSafetyArchiveItem(id) {
     closeOverlay();
     showToast(`Restored "${bookToRestore.title}" to active books!`);
     playCarriageReturnBell();
-  } else if (item.type === 'full_reset' && item.data.books && item.data.books.length > 0) {
-    if (confirm(`Restore all ${item.data.books.length} books from this snapshot? (This will add them to your studio)`)) {
-      item.data.books.forEach(b => {
+  } else if (item.type === 'full_reset' && migratedData.books && migratedData.books.length > 0) {
+    if (confirm(`Restore all ${migratedData.books.length} books from this snapshot? (This will add them to your studio)`)) {
+      migratedData.books.forEach(b => {
         const copy = JSON.parse(JSON.stringify(b));
         copy.id = 'book_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
         state.books.push(copy);
@@ -1011,7 +1702,7 @@ function restoreSafetyArchiveItem(id) {
       renderAll();
       closeSafetyArchiveModal();
       closeOverlay();
-      showToast(`Restored ${item.data.books.length} manuscripts from snapshot!`);
+      showToast(`Restored ${migratedData.books.length} manuscripts from snapshot!`);
       playCarriageReturnBell();
     }
   }
@@ -1055,12 +1746,16 @@ function clearSafetyArchive() {
 }
 
 function exportBackupFile() {
+  const { books: migratedBooks } = migrateBooksSchema(state.books);
+  const migratedSettings = migrateSettingsSchema(state.settings);
+
   const backupData = JSON.stringify({
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     exportDate: new Date().toISOString(),
     sessionType: 'full_session_instance',
-    books: state.books,
-    settings: state.settings
+    books: migratedBooks,
+    settings: migratedSettings
   }, null, 2);
 
   const filename = `typewriter_full_session_${new Date().toISOString().slice(0, 10)}.json`;
@@ -1107,7 +1802,9 @@ function scanBackupPayload(payload) {
   };
 }
 
-function openBackupInspectModal(payload, sourceLabel = 'Local File') {
+function openBackupInspectModal(rawPayload, sourceLabel = 'Local File') {
+  // Always migrate incoming backup payload to current schema before inspecting or restoring
+  const payload = migratePayloadToLatest(rawPayload);
   const scan = scanBackupPayload(payload);
   if (!scan) {
     alert("Invalid backup file: The selected file does not contain a valid Note to Self book library.");
@@ -1273,44 +1970,46 @@ function parseManuscriptFile(rawText, filename) {
 
       // Case A: Single manuscript export format { type: 'single_manuscript', book: { ... } }
       if (data && data.type === 'single_manuscript' && data.book) {
-        return { type: 'single', book: data.book };
+        return { type: 'single', book: migrateSingleBook(data.book) };
       }
       // Case B: Safety backup single book { type: 'safety_backup_single_book', books: [ ... ] }
       if (data && data.type === 'safety_backup_single_book' && Array.isArray(data.books) && data.books.length > 0) {
-        return { type: 'single', book: data.books[0] };
+        return { type: 'single', book: migrateSingleBook(data.books[0]) };
       }
       // Case C: Object having book property
       if (data && data.book && (data.book.title || data.book.pages)) {
-        return { type: 'single', book: data.book };
+        return { type: 'single', book: migrateSingleBook(data.book) };
       }
       // Case D: Direct Book object { id, title, pages }
       if (data && (Array.isArray(data.pages) || (data.title && (data.chunks || Array.isArray(data.pages))))) {
-        return { type: 'single', book: data };
+        return { type: 'single', book: migrateSingleBook(data) };
       }
       // Case E: Session backup with array of books
       if (data && Array.isArray(data.books) && data.books.length > 0) {
-        if (data.books.length === 1) {
-          return { type: 'single', book: data.books[0] };
+        const { books } = migrateBooksSchema(data.books);
+        if (books.length === 1) {
+          return { type: 'single', book: books[0] };
         } else {
-          return { type: 'multiple', books: data.books, filename: filename };
+          return { type: 'multiple', books: books, filename: filename };
         }
       }
       // Case F: Array of book objects directly
       if (Array.isArray(data) && data.length > 0 && data[0] && (data[0].title || data[0].pages)) {
-        if (data.length === 1) {
-          return { type: 'single', book: data[0] };
+        const { books } = migrateBooksSchema(data);
+        if (books.length === 1) {
+          return { type: 'single', book: books[0] };
         } else {
-          return { type: 'multiple', books: data, filename: filename };
+          return { type: 'multiple', books: books, filename: filename };
         }
       }
       // Case G: Simple note/document object { title, content / text }
       if (data && (data.title || data.content || data.text)) {
         return {
           type: 'single',
-          book: {
+          book: migrateSingleBook({
             title: data.title || filename.replace(/\.json$/i, ''),
             pages: [{ number: 1, text: data.content || data.text || '', chunks: [] }]
-          }
+          })
         };
       }
     } catch (jsonErr) {
@@ -1418,69 +2117,30 @@ function parseManuscriptFile(rawText, filename) {
 function addSingleManuscriptToSession(rawBook, sourceName = '') {
   if (!rawBook) return;
 
+  const migrated = migrateSingleBook(rawBook);
+
   // 1. Sanitize title
-  let title = (rawBook.title || sourceName || `Manuscript ${state.books.length + 1}`).trim();
+  let title = (migrated.title || sourceName || `Manuscript ${state.books.length + 1}`).trim();
   if (state.books.some(b => b.title.toLowerCase() === title.toLowerCase())) {
     title = `${title} (Imported)`;
   }
+  migrated.title = title;
+  migrated.id = 'book_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
 
-  // 2. Sanitize pages
-  const rawPages = Array.isArray(rawBook.pages) && rawBook.pages.length > 0
-    ? rawBook.pages
-    : [{ number: 1, chunks: [], description: '' }];
-
-  const sanitizedPages = rawPages.map((p, pIdx) => {
-    let rawChunks = [];
-    if (Array.isArray(p.chunks)) {
-      rawChunks = p.chunks;
-    } else if (typeof p.text === 'string' && p.text.trim()) {
-      rawChunks = [{ text: p.text }];
-    } else if (typeof p.content === 'string' && p.content.trim()) {
-      rawChunks = [{ text: p.content }];
-    }
-
-    const sanitizedChunks = rawChunks.map((c, cIdx) => {
-      const text = typeof c === 'string' ? c : (c.text || '');
-      return {
-        id: 'chunk_' + Date.now() + '_' + pIdx + '_' + cIdx + '_' + Math.random().toString(36).substr(2, 4),
-        text: text,
-        createdAt: (c && c.createdAt) || Date.now(),
-        wpm: (c && c.wpm) || 0,
-        timeStr: (c && c.timeStr) || ''
-      };
-    }).filter(c => c.text.length > 0);
-
-    return {
-      id: 'page_' + Date.now() + '_' + pIdx + '_' + Math.random().toString(36).substr(2, 4),
-      number: pIdx + 1,
-      description: (p.description || '').trim(),
-      chunks: sanitizedChunks,
-      locked: Boolean(p.locked),
-      createdAt: p.createdAt || Date.now()
-    };
-  });
-
-  const newBook = {
-    id: 'book_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
-    title: title,
-    pages: sanitizedPages,
-    createdAt: Date.now()
-  };
-
-  // 3. Append to session without altering existing books
-  state.books.push(newBook);
-  state.activeBookId = newBook.id;
-  state.currentPageId = newBook.pages[0].id;
+  // 2. Append to session without altering existing books
+  state.books.push(migrated);
+  state.activeBookId = migrated.id;
+  state.currentPageId = migrated.pages && migrated.pages.length > 0 ? migrated.pages[0].id : null;
 
   saveStorage();
   renderAll();
 
   let totalWords = 0;
-  newBook.pages.forEach(pg => {
+  migrated.pages.forEach(pg => {
     totalWords += getPageWordCount(pg);
   });
 
-  showToast(`Added manuscript "${newBook.title}" (${newBook.pages.length} pg${newBook.pages.length === 1 ? '' : 's'}, ${totalWords.toLocaleString()} wds) to session!`);
+  showToast(`Added manuscript "${migrated.title}" (${migrated.pages.length} pg${migrated.pages.length === 1 ? '' : 's'}, ${totalWords.toLocaleString()} wds) to session!`);
   playCarriageReturnBell();
 }
 
@@ -1714,11 +2374,17 @@ async function exportManuscriptEPUB() {
     return;
   }
 
+  if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+  if (DOM.saveDeviceModal) DOM.saveDeviceModal.classList.add('hidden');
+
+  ExportProgress.show(`Exporting EPUB: "${book.title || 'Manuscript'}"`, "📚");
+
   try {
     const zip = new JSZip();
 
     // 1. mimetype MUST be uncompressed first entry in archive
     zip.file('mimetype', 'application/epub+zip', { compression: 'STORE' });
+    await yieldToMain();
 
     // 2. META-INF/container.xml
     const containerXml = `<?xml version="1.0" encoding="UTF-8"?>
@@ -1791,7 +2457,8 @@ p.manuscript-para.first {
     zip.file('OEBPS/style.css', styleCss);
 
     let totalWords = 0;
-    book.pages.forEach(p => {
+    const pages = Array.isArray(book.pages) ? book.pages : [];
+    pages.forEach(p => {
       totalWords += getPageWordCount(p);
     });
 
@@ -1813,7 +2480,7 @@ p.manuscript-para.first {
     <h1 class="book-title">${xmlEscape(bookTitle)}</h1>
     <p class="book-subtitle">A Note to Self Manuscript</p>
     <div class="meta-stats">
-      <p>${book.pages.length} Pages • ${totalWords.toLocaleString()} Words</p>
+      <p>${pages.length} Pages • ${totalWords.toLocaleString()} Words</p>
       <p>Drafted with Note to Self</p>
     </div>
   </div>
@@ -1837,11 +2504,15 @@ p.manuscript-para.first {
       <content src="titlepage.xhtml"/>
     </navPoint>`);
 
-    book.pages.forEach((page, idx) => {
+    for (let idx = 0; idx < pages.length; idx++) {
+      const page = pages[idx];
       const pageNum = page.number || (idx + 1);
       const pageFile = `page_${pageNum}.xhtml`;
       const pageId = `page-${pageNum}`;
       const pageTitle = `Page ${pageNum}${page.description ? ': ' + page.description : ''}`;
+
+      ExportProgress.update(10 + ((idx / Math.max(1, pages.length)) * 45), `Formatting chapter ${idx + 1} of ${pages.length}...`);
+      await yieldToMain();
 
       let rawParagraphs = [];
       if (Array.isArray(page.chunks) && page.chunks.length > 0) {
@@ -1898,7 +2569,7 @@ p.manuscript-para.first {
       <navLabel><text>${xmlEscape(pageTitle)}</text></navLabel>
       <content src="${pageFile}"/>
     </navPoint>`);
-    });
+    }
 
     // 6. EPUB 3 Navigation Document (OEBPS/nav.xhtml)
     const navXhtml = `<?xml version="1.0" encoding="utf-8"?>
@@ -1926,8 +2597,8 @@ p.manuscript-para.first {
   <head>
     <meta name="dtb:uid" content="${bookUuid}"/>
     <meta name="dtb:depth" content="1"/>
-    <meta name="dtb:totalPageCount" content="${book.pages.length}"/>
-    <meta name="dtb:maxPageNumber" content="${book.pages.length}"/>
+    <meta name="dtb:totalPageCount" content="${pages.length}"/>
+    <meta name="dtb:maxPageNumber" content="${pages.length}"/>
   </head>
   <docTitle><text>${xmlEscape(bookTitle)}</text></docTitle>
   <navMap>
@@ -1959,24 +2630,126 @@ p.manuscript-para.first {
 </package>`;
     zip.file('OEBPS/content.opf', contentOpf);
 
-    // 9. Generate and download EPUB blob
+    ExportProgress.update(60, "Compressing EPUB archive stream...");
+    await yieldToMain();
+
+    // 9. Generate and download EPUB blob asynchronously with streamFiles
     const epubBlob = await zip.generateAsync({
       type: 'blob',
       mimeType: 'application/epub+zip',
       compression: 'DEFLATE',
-      compressionOptions: { level: 9 }
+      compressionOptions: { level: 6 },
+      streamFiles: true
+    }, (metadata) => {
+      ExportProgress.update(60 + (metadata.percent * 0.38), `Compressing archive (${Math.round(metadata.percent)}%)...`);
     });
 
     const cleanTitle = bookTitle.replace(/[^a-z0-9]/gi, '_').toLowerCase();
     const filename = `${cleanTitle}_${nowIso.slice(0, 10)}.epub`;
 
+    ExportProgress.update(100, "Download starting!");
     triggerFileDownload(filename, epubBlob, 'application/epub+zip');
-    if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
     showToast(`Exported EPUB eBook "${filename}"!`);
     playCarriageReturnBell();
+    ExportProgress.hide(600);
   } catch (err) {
     console.error("EPUB export error:", err);
+    ExportProgress.hide(0);
     showToast(`EPUB export failed: ${err.message || 'Unknown error'}`);
+  }
+}
+
+async function exportAllBooksZip() {
+  if (typeof JSZip === 'undefined') {
+    showToast("ZIP engine is initializing, please try again in a moment.");
+    return;
+  }
+
+  const books = Array.isArray(state.books) ? state.books : [];
+  if (books.length === 0) {
+    showToast("No books in library to archive.");
+    return;
+  }
+
+  if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+  if (DOM.saveDeviceModal) DOM.saveDeviceModal.classList.add('hidden');
+
+  ExportProgress.show(`Creating Library Archive (${books.length} Books)`, "🗃️");
+
+  try {
+    const zip = new JSZip();
+    const nowIso = new Date().toISOString();
+
+    for (let bIdx = 0; bIdx < books.length; bIdx++) {
+      const b = books[bIdx];
+      const folderName = `${String(bIdx + 1).padStart(2, '0')}_${(b.title || 'untitled').replace(/[^a-z0-9]/gi, '_').toLowerCase()}`;
+      const folder = zip.folder(folderName);
+
+      ExportProgress.update((bIdx / books.length) * 55, `Compiling book "${b.title || 'Untitled'}" (${bIdx + 1}/${books.length})...`);
+      await yieldToMain();
+
+      // Compile Markdown
+      let mdText = `# ${b.title || 'Untitled Manuscript'}\n\n`;
+      (b.pages || []).forEach(page => {
+        const descSuffix = (page.description && page.description.trim()) ? ` (${page.description.trim()})` : '';
+        mdText += `## Page ${page.number}${descSuffix}\n\n`;
+        const chunks = Array.isArray(page.chunks) ? page.chunks : [];
+        const pageText = chunks.map(c => getChunkText(c)).join('');
+        mdText += pageText + '\n\n';
+      });
+      folder.file('manuscript.md', mdText);
+
+      // Compile Plain Text
+      let txtText = `${b.title || 'Untitled Manuscript'}\n\n`;
+      (b.pages || []).forEach(page => {
+        const descSuffix = (page.description && page.description.trim()) ? ` (${page.description.trim()})` : '';
+        txtText += `--- PAGE ${page.number}${descSuffix.toUpperCase()} ---\n\n`;
+        const chunks = Array.isArray(page.chunks) ? page.chunks : [];
+        const pageText = chunks.map(c => getChunkText(c)).join('');
+        txtText += pageText + '\n\n';
+      });
+      folder.file('manuscript.txt', txtText);
+
+      // Compile JSON
+      folder.file('book_data.json', JSON.stringify({
+        version: CURRENT_SCHEMA_VERSION,
+        book: b
+      }, null, 2));
+    }
+
+    // Add full session backup
+    const { books: migratedBooks } = migrateBooksSchema(state.books);
+    const migratedSettings = migrateSettingsSchema(state.settings);
+    zip.file('full_session_backup.json', JSON.stringify({
+      version: CURRENT_SCHEMA_VERSION,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      exportDate: nowIso,
+      books: migratedBooks,
+      settings: migratedSettings
+    }, null, 2));
+
+    ExportProgress.update(60, "Compressing bulk document archive...");
+    await yieldToMain();
+
+    const zipBlob = await zip.generateAsync({
+      type: 'blob',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 6 },
+      streamFiles: true
+    }, (metadata) => {
+      ExportProgress.update(60 + (metadata.percent * 0.38), `Compressing archive (${Math.round(metadata.percent)}%)...`);
+    });
+
+    const filename = `typewriter_all_books_archive_${nowIso.slice(0, 10)}.zip`;
+    ExportProgress.update(100, "Download starting!");
+    triggerFileDownload(filename, zipBlob, 'application/zip');
+    showToast(`Exported complete library archive "${filename}"!`);
+    playCarriageReturnBell();
+    ExportProgress.hide(600);
+  } catch (err) {
+    console.error("Bulk archive ZIP error:", err);
+    ExportProgress.hide(0);
+    showToast(`Archive creation failed: ${err.message || 'Unknown error'}`);
   }
 }
 
@@ -2101,14 +2874,16 @@ function importAllPendingBooksToSession() {
 }
 
 function exportSingleManuscriptJSON() {
-  const book = getActiveBook();
-  if (!book) return;
+  const rawBook = getActiveBook();
+  if (!rawBook) return;
+  const book = migrateSingleBook(rawBook);
   const cleanTitle = (book.title || 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase();
   const filename = `${cleanTitle}_manuscript_${new Date().toISOString().slice(0, 10)}.json`;
 
   const payload = JSON.stringify({
     type: 'single_manuscript',
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
+    schemaVersion: CURRENT_SCHEMA_VERSION,
     exportedAt: new Date().toISOString(),
     book: book
   }, null, 2);
@@ -2140,6 +2915,10 @@ function saveActiveBookToDevice(format) {
   closeSaveDeviceModal();
   if (format === 'session') {
     exportBackupFile();
+    return;
+  }
+  if (format === 'zip') {
+    exportAllBooksZip();
     return;
   }
   exportManuscript(format);
@@ -2262,17 +3041,32 @@ function createNewBook(titlePrompt = null, showNotification = true) {
   const newBook = {
     id: 'book_' + Date.now(),
     title: title.trim(),
+    synopsis: '',
+    tags: [],
+    folderId: null,
+    category: '',
+    starred: false,
+    archived: false,
     pages: [],
-    createdAt: Date.now()
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    lastAccessedAt: Date.now(),
+    version: CURRENT_SCHEMA_VERSION,
+    schemaVersion: CURRENT_SCHEMA_VERSION
   };
 
   const firstPage = {
     id: 'page_' + Date.now(),
     number: 1,
     description: '',
+    tags: [],
     chunks: [],
     locked: false,
-    createdAt: Date.now()
+    targetWordCount: (state.settings && state.settings.wordsPerPage) || 300,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    version: CURRENT_SCHEMA_VERSION,
+    schemaVersion: CURRENT_SCHEMA_VERSION
   };
   newBook.pages.push(firstPage);
 
@@ -2338,9 +3132,14 @@ function createNewPage(showNotification = true) {
     id: 'page_' + Date.now(),
     number: newNum,
     description: '',
+    tags: [],
     chunks: [],
     locked: false,
-    createdAt: Date.now()
+    targetWordCount: (state.settings && state.settings.wordsPerPage) || 300,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    version: CURRENT_SCHEMA_VERSION,
+    schemaVersion: CURRENT_SCHEMA_VERSION
   };
 
   const current = getCurrentPage();
@@ -2357,6 +3156,243 @@ function createNewPage(showNotification = true) {
   }
 }
 
+// ─── ASYNC EVENT LOOP YIELDING & EXPORT PROGRESS ────────────
+function yieldToMain() {
+  if (typeof globalThis.scheduler !== 'undefined' && typeof globalThis.scheduler.yield === 'function') {
+    return globalThis.scheduler.yield();
+  }
+  return new Promise(resolve => setTimeout(resolve, 0));
+}
+
+const ExportProgress = {
+  active: false,
+  show(title = "Compiling Document...", icon = "⏳") {
+    this.active = true;
+    if (DOM.exportProgressModal) {
+      DOM.exportProgressModal.classList.remove('hidden');
+      if (DOM.exportProgressTitle) DOM.exportProgressTitle.textContent = title;
+      if (DOM.exportProgressIcon) DOM.exportProgressIcon.textContent = icon;
+      if (DOM.exportProgressStatus) DOM.exportProgressStatus.textContent = "Initializing async compilation...";
+      if (DOM.exportProgressBarFill) DOM.exportProgressBarFill.style.width = '0%';
+      if (DOM.exportProgressPercent) DOM.exportProgressPercent.textContent = '0%';
+    }
+  },
+  update(percent, statusText) {
+    if (!this.active) return;
+    const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+    if (DOM.exportProgressBarFill) DOM.exportProgressBarFill.style.width = `${clamped}%`;
+    if (DOM.exportProgressPercent) DOM.exportProgressPercent.textContent = `${clamped}%`;
+    if (DOM.exportProgressStatus && statusText) DOM.exportProgressStatus.textContent = statusText;
+  },
+  hide(delay = 500) {
+    this.active = false;
+    setTimeout(() => {
+      if (DOM.exportProgressModal) {
+        DOM.exportProgressModal.classList.add('hidden');
+      }
+    }, delay);
+  }
+};
+
+// ─── DEBOUNCE UTILITY ───────────────────────────────────────
+function debounce(fn, delay) {
+  let timer = null;
+  return function (...args) {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      fn.apply(this, args);
+    }, delay);
+  };
+}
+
+// ─── HIGH-PERFORMANCE WORD COUNT CACHE ───────────────────────
+// Provides O(1) word count lookups on large manuscripts (>30k-50k words)
+const PageWordCountCache = {
+  cache: new Map(), // pageId -> { chunkCount: N, totalChars: M, wordCount: W }
+
+  get(page) {
+    if (!page || !Array.isArray(page.chunks)) return 0;
+    const pageId = page.id || `temp_page_${page.number || 0}`;
+    const chunkCount = page.chunks.length;
+    let totalChars = 0;
+    for (let i = 0; i < chunkCount; i++) {
+      const c = page.chunks[i];
+      totalChars += (typeof c === 'string' ? c.length : (c && c.text ? c.text.length : 0));
+    }
+
+    const cached = this.cache.get(pageId);
+    if (cached && cached.chunkCount === chunkCount && cached.totalChars === totalChars) {
+      return cached.wordCount;
+    }
+
+    const fullText = page.chunks.map(chunk => getChunkText(chunk)).join('');
+    const count = countWords(fullText);
+    this.cache.set(pageId, { chunkCount, totalChars, wordCount: count });
+    return count;
+  },
+
+  invalidate(pageId) {
+    if (pageId) this.cache.delete(pageId);
+    else this.cache.clear();
+  }
+};
+
+// ─── TEXT ANALYSIS & COMPUTATION WEB WORKER BRIDGE ──────────
+const TextWorkerBridge = {
+  worker: null,
+  reqId: 0,
+  pending: new Map(),
+  isSupported: typeof window !== 'undefined' && typeof window.Worker !== 'undefined',
+
+  init() {
+    if (!this.isSupported) return;
+    try {
+      this.worker = new Worker('text-worker.js');
+      this.worker.onmessage = (e) => {
+        const { id, success, result, error } = e.data || {};
+        if (!id) return;
+        const handler = this.pending.get(id);
+        if (!handler) return;
+        this.pending.delete(id);
+        if (success) handler.resolve(result);
+        else handler.reject(new Error(error || 'Worker error'));
+      };
+      this.worker.onerror = (err) => {
+        console.warn('[TextWorker] Worker runtime error, fallback active:', err);
+      };
+    } catch (e) {
+      console.warn('[TextWorker] Unable to initialize worker thread, fallback active:', e);
+      this.worker = null;
+    }
+  },
+
+  postTask(type, payload) {
+    const id = ++this.reqId;
+    if (this.worker) {
+      return new Promise((resolve, reject) => {
+        this.pending.set(id, { resolve, reject });
+        this.worker.postMessage({ id, type, payload });
+      });
+    }
+    // Fallback if worker not available
+    return Promise.resolve(this.fallback(type, payload));
+  },
+
+  async analyzeManuscript(book, targetWordsPerPage = 300) {
+    return this.postTask('ANALYZE_MANUSCRIPT', { book, wordsPerPage: targetWordsPerPage });
+  },
+
+  async analyzeText(text, title) {
+    return this.postTask('ANALYZE_TEXT', { text, title });
+  },
+
+  async searchManuscript(book, query, options = {}) {
+    return this.postTask('SEARCH_MANUSCRIPT', { book, query, options });
+  },
+
+  async compileExport(book, format) {
+    return this.postTask('COMPILE_EXPORT', { book, format });
+  },
+
+  async formatBackdrop(text, maxChars) {
+    return this.postTask('FORMAT_BACKDROP', { text, maxChars });
+  },
+
+  fallback(type, payload) {
+    if (type === 'ANALYZE_MANUSCRIPT') {
+      const book = payload.book || {};
+      const pages = Array.isArray(book.pages) ? book.pages : [];
+      let combined = '';
+      const pagesAnalysis = pages.map((p, idx) => {
+        const chunks = Array.isArray(p.chunks) ? p.chunks : [];
+        const txt = chunks.map(c => getChunkText(c)).join('');
+        const words = countWords(txt);
+        combined += txt + '\n\n';
+        const target = p.targetWordCount || payload.wordsPerPage || 300;
+        return {
+          pageId: p.id || `page_${idx}`,
+          pageNumber: p.number || (idx + 1),
+          description: p.description || '',
+          words,
+          characters: txt.length,
+          targetWords: target,
+          progressPercent: Math.min(100, Math.round((words / Math.max(1, target)) * 100)),
+          locked: Boolean(p.locked)
+        };
+      });
+
+      const words = countWords(combined);
+      const sentences = Math.max(1, (combined.match(/[.!?]+(?:\s+|\n+|$)/g) || []).length);
+      const chars = combined.length;
+      const readingTime = Math.ceil(words / 225) || 1;
+      const speakingTime = Math.ceil(words / 130) || 1;
+      const uniqueWords = new Set((combined.toLowerCase().match(/\S+/g) || [])).size;
+
+      return {
+        title: book.title || 'Manuscript',
+        totalWords: words,
+        totalCharsWithSpaces: chars,
+        totalCharsNoSpaces: combined.replace(/\s/g, '').length,
+        totalSentences: sentences,
+        totalParagraphs: Math.max(1, (combined.split(/\n+/).filter(p => p.trim())).length),
+        fleschReadingEase: Math.max(0, Math.min(100, Math.round(206.835 - (1.015 * (words / sentences)) - (84.6 * 1.4)))),
+        readingEaseLabel: 'Standard',
+        readingEaseColor: '#7ee896',
+        fleschGradeLevel: Math.max(0, Math.round((0.39 * (words / sentences)) + 1.0)),
+        readingTimeMinutes: readingTime,
+        readingTimeSeconds: Math.round((words / 225) * 60),
+        speakingTimeMinutes: speakingTime,
+        speakingTimeSeconds: Math.round((words / 130) * 60),
+        uniqueWordsCount: uniqueWords,
+        lexicalDensity: words > 0 ? Math.round((uniqueWords / words) * 100) : 0,
+        averageWordsPerSentence: sentences > 0 ? Math.round((words / sentences) * 10) / 10 : 0,
+        totalPages: pages.length,
+        pages: pagesAnalysis,
+        averageWordsPerPage: pages.length > 0 ? Math.round(words / pages.length) : 0
+      };
+    }
+
+    if (type === 'SEARCH_MANUSCRIPT') {
+      const book = payload.book || {};
+      const q = (payload.query || '').trim().toLowerCase();
+      if (!q || !Array.isArray(book.pages)) {
+        return { query: payload.query || '', matches: [], totalMatches: 0, matchedPagesCount: 0 };
+      }
+      const matches = [];
+      const matchedPages = new Set();
+      book.pages.forEach(p => {
+        const fullText = (p.chunks || []).map(c => getChunkText(c)).join('');
+        const desc = (p.description || '').trim();
+        const lowerText = fullText.toLowerCase();
+        let idx = 0;
+        while ((idx = lowerText.indexOf(q, idx)) !== -1) {
+          matchedPages.add(p.id);
+          const start = Math.max(0, idx - 40);
+          const end = Math.min(fullText.length, idx + q.length + 40);
+          let snippet = fullText.substring(start, end).replace(/[\r\n]+/g, ' ');
+          if (start > 0) snippet = '...' + snippet;
+          if (end < fullText.length) snippet = snippet + '...';
+          matches.push({
+            pageId: p.id,
+            pageNumber: p.number,
+            pageDescription: desc,
+            matchText: q,
+            fullSnippet: snippet
+          });
+          idx += Math.max(1, q.length);
+        }
+      });
+      return { query: payload.query, matches, totalMatches: matches.length, matchedPagesCount: matchedPages.size };
+    }
+
+    if (type === 'COMPILE_EXPORT') {
+      return compileManuscriptText(payload.format || 'txt');
+    }
+
+    return null;
+  }
+};
+
 function getCurrentPage() {
   const book = getActiveBook();
   if (!book || !book.pages || book.pages.length === 0) return null;
@@ -2369,9 +3405,7 @@ function countWords(text) {
 }
 
 function getPageWordCount(page) {
-  if (!page || !page.chunks) return 0;
-  const fullText = page.chunks.map(chunk => getChunkText(chunk)).join('');
-  return countWords(fullText);
+  return PageWordCountCache.get(page);
 }
 
 function getBookTotalWordCount(book) {
@@ -2472,6 +3506,7 @@ function commitDraft() {
       timestamp: timestamp
     };
     activePage.chunks.push(newChunk);
+    PageWordCountCache.invalidate(activePage.id);
     DOM.draftInput.value = '';
     state.buffer = '';
     if (DOM.draftInputBackdrop) DOM.draftInputBackdrop.innerHTML = '';
@@ -2807,7 +3842,7 @@ function clearPageDescModal() {
 
 // ─── MANUSCRIPT SEARCH LOGIC ───────────────────────────────────
 
-function performBookSearch(query) {
+async function performBookSearch(query) {
   const q = (query || '').trim();
   if (!q) {
     if (DOM.btnClearBookSearch) DOM.btnClearBookSearch.classList.add('hidden');
@@ -2819,57 +3854,57 @@ function performBookSearch(query) {
   const book = getActiveBook();
   if (!book) return;
 
-  // Search across all pages in current book
-  const results = [];
-  const lowerQ = q.toLowerCase();
+  try {
+    const searchData = await TextWorkerBridge.searchManuscript(book, q);
 
-  book.pages.forEach(page => {
-    const pageNum = page.number;
-    const pageDesc = page.description ? page.description.trim() : '';
-    const fullPageText = (page.chunks || []).map(c => getChunkText(c)).join('');
+    // Group matches by page
+    const pageMap = new Map();
+    (searchData.matches || []).forEach(m => {
+      if (!pageMap.has(m.pageId)) {
+        pageMap.set(m.pageId, {
+          pageId: m.pageId,
+          pageNumber: m.pageNumber,
+          pageDescription: m.pageDescription || '',
+          snippets: [],
+          descMatch: false
+        });
+      }
+      const pageEntry = pageMap.get(m.pageId);
+      if (pageEntry.snippets.length < 3) {
+        pageEntry.snippets.push({
+          text: m.fullSnippet || `${m.beforeSnippet || ''}${m.matchText || q}${m.afterSnippet || ''}`,
+          matchTerm: m.matchText || q
+        });
+      }
+    });
 
-    const descMatches = pageDesc && pageDesc.toLowerCase().includes(lowerQ);
-    const textMatches = fullPageText.toLowerCase().includes(lowerQ);
-
-    if (descMatches || textMatches) {
-      // Find snippets
-      const snippets = [];
-      if (textMatches) {
-        let searchIndex = 0;
-        const textLower = fullPageText.toLowerCase();
-        while (searchIndex < textLower.length && snippets.length < 3) {
-          const foundAt = textLower.indexOf(lowerQ, searchIndex);
-          if (foundAt === -1) break;
-
-          // Extract excerpt around match
-          const snippetStart = Math.max(0, foundAt - 40);
-          const snippetEnd = Math.min(fullPageText.length, foundAt + q.length + 55);
-          let snippet = fullPageText.substring(snippetStart, snippetEnd).replace(/[\r\n]+/g, ' ');
-
-          // Add ellipsis
-          if (snippetStart > 0) snippet = '…' + snippet;
-          if (snippetEnd < fullPageText.length) snippet = snippet + '…';
-
-          snippets.push({
-            text: snippet,
-            matchTerm: fullPageText.substring(foundAt, foundAt + q.length)
+    // Also match page descriptions
+    const lowerQ = q.toLowerCase();
+    book.pages.forEach(p => {
+      if (p.description && p.description.toLowerCase().includes(lowerQ)) {
+        if (!pageMap.has(p.id)) {
+          pageMap.set(p.id, {
+            pageId: p.id,
+            pageNumber: p.number,
+            pageDescription: p.description,
+            snippets: [],
+            descMatch: true
           });
-
-          searchIndex = foundAt + Math.max(1, q.length);
+        } else {
+          pageMap.get(p.id).descMatch = true;
         }
       }
+    });
 
-      results.push({
-        pageId: page.id,
-        pageNumber: pageNum,
-        pageDescription: pageDesc,
-        snippets: snippets,
-        descMatch: descMatches
-      });
-    }
-  });
-
-  openSearchResultsModal(q, results);
+    const results = Array.from(pageMap.values());
+    openSearchResultsModal(q, results);
+  } catch (err) {
+    console.warn('[Search] Error in off-thread search, fallback active:', err);
+    // In-thread fallback
+    const fallbackData = TextWorkerBridge.fallback('SEARCH_MANUSCRIPT', { book, query: q });
+    const results = (fallbackData && fallbackData.matches) ? fallbackData.matches : [];
+    openSearchResultsModal(q, results);
+  }
 }
 
 function openSearchResultsModal(query, results) {
@@ -2949,6 +3984,96 @@ function closeSearchResultsModal() {
   if (DOM.searchResultsModal) {
     DOM.searchResultsModal.classList.add('hidden');
   }
+}
+
+// ─── MANUSCRIPT READABILITY & ANALYSIS (OFF-THREAD WORKER) ───
+
+async function openAnalysisModal() {
+  if (!DOM.analysisModal) return;
+  const book = getActiveBook();
+  if (!book) return;
+
+  DOM.analysisModal.classList.remove('hidden');
+  if (DOM.analysisModalTitle) {
+    DOM.analysisModalTitle.textContent = `Analysis: "${book.title}"`;
+  }
+  if (DOM.analysisFleschScore) DOM.analysisFleschScore.textContent = '...';
+  if (DOM.analysisFleschLabel) DOM.analysisFleschLabel.textContent = 'Analyzing off-thread in Web Worker...';
+
+  try {
+    const analysis = await TextWorkerBridge.analyzeManuscript(book, state.settings.wordsPerPage || 300);
+    renderAnalysisData(analysis);
+  } catch (err) {
+    console.warn('[Analysis] Error computing analysis via worker, fallback active:', err);
+    const fallback = TextWorkerBridge.fallback('ANALYZE_MANUSCRIPT', { book, wordsPerPage: state.settings.wordsPerPage || 300 });
+    renderAnalysisData(fallback);
+  }
+}
+
+function renderAnalysisData(analysis) {
+  if (!analysis) return;
+  if (DOM.analysisFleschScore) {
+    DOM.analysisFleschScore.textContent = analysis.fleschReadingEase;
+    DOM.analysisFleschScore.style.color = analysis.readingEaseColor || '#7ee896';
+  }
+  if (DOM.analysisFleschLabel) {
+    DOM.analysisFleschLabel.textContent = analysis.readingEaseLabel || 'Standard';
+  }
+  if (DOM.analysisGradeLevel) {
+    DOM.analysisGradeLevel.textContent = `Grade ${analysis.fleschGradeLevel || 0}`;
+  }
+
+  if (DOM.analysisStatWords) DOM.analysisStatWords.textContent = (analysis.totalWords || 0).toLocaleString();
+  if (DOM.analysisStatChars) DOM.analysisStatChars.textContent = (analysis.totalCharsWithSpaces || 0).toLocaleString();
+  if (DOM.analysisStatSentences) DOM.analysisStatSentences.textContent = (analysis.totalSentences || 0).toLocaleString();
+  if (DOM.analysisStatParagraphs) DOM.analysisStatParagraphs.textContent = (analysis.totalParagraphs || 0).toLocaleString();
+  if (DOM.analysisStatReadTime) DOM.analysisStatReadTime.textContent = `${analysis.readingTimeMinutes} min (${analysis.readingTimeSeconds}s)`;
+  if (DOM.analysisStatSpeakTime) DOM.analysisStatSpeakTime.textContent = `${analysis.speakingTimeMinutes} min (${analysis.speakingTimeSeconds}s)`;
+  if (DOM.analysisStatUniqueWords) DOM.analysisStatUniqueWords.textContent = `${(analysis.uniqueWordsCount || 0).toLocaleString()} (${analysis.lexicalDensity}% density)`;
+  if (DOM.analysisStatWordsSentence) DOM.analysisStatWordsSentence.textContent = analysis.averageWordsPerSentence;
+
+  if (DOM.analysisPagesCountBadge) {
+    DOM.analysisPagesCountBadge.textContent = `${analysis.totalPages || 0} Pages (${analysis.averageWordsPerPage || 0} w/page avg)`;
+  }
+
+  if (DOM.analysisPagesBreakdownList) {
+    DOM.analysisPagesBreakdownList.innerHTML = '';
+    (analysis.pages || []).forEach(p => {
+      const li = document.createElement('li');
+      li.className = 'backup-inspect-book-row';
+      li.style.cursor = 'pointer';
+      li.title = 'Click to jump to this page';
+      li.onclick = () => {
+        state.currentPageId = p.pageId;
+        saveStorage();
+        renderAll();
+        closeAnalysisModal();
+      };
+
+      const desc = p.description ? ` "${p.description}"` : '';
+      li.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+          <div>
+            <strong style="color:#ffffff;">Page ${p.pageNumber}${desc}</strong>
+            <div style="font-size:11px; color:#888; margin-top:2px;">
+              ${p.words} words • ${p.characters} chars ${p.locked ? '• 🔒 Locked' : ''}
+            </div>
+          </div>
+          <div style="text-align:right;">
+            <span style="font-size:12px; font-weight:700; color:${p.progressPercent >= 100 ? '#7ee896' : '#e5a93b'};">
+              ${p.progressPercent}% of target
+            </span>
+            <div style="font-size:10px; color:#666;">Target: ${p.targetWords}w</div>
+          </div>
+        </div>
+      `;
+      DOM.analysisPagesBreakdownList.appendChild(li);
+    });
+  }
+}
+
+function closeAnalysisModal() {
+  if (DOM.analysisModal) DOM.analysisModal.classList.add('hidden');
 }
 
 function escapeRegExp(string) {
@@ -3303,40 +4428,49 @@ function compileManuscriptText(format = 'txt') {
   return fullText.trim();
 }
 
-function exportManuscript(format) {
+async function exportManuscript(format) {
   if (format === 'pdf') {
-    exportManuscriptPDF();
+    await exportManuscriptPDF();
     return;
   }
   if (format === 'epub') {
-    exportManuscriptEPUB();
+    await exportManuscriptEPUB();
+    return;
+  }
+  if (format === 'zip') {
+    await exportAllBooksZip();
     return;
   }
   if (format === 'json') {
     exportSingleManuscriptJSON();
     return;
   }
+
   const book = getActiveBook();
-  const content = compileManuscriptText(format);
+  let content = '';
+
+  if (TextWorkerBridge && TextWorkerBridge.worker) {
+    try {
+      content = await TextWorkerBridge.compileExport(book, format);
+    } catch (e) {
+      content = compileManuscriptText(format);
+    }
+  } else {
+    content = compileManuscriptText(format);
+  }
+
   const ext = format === 'md' ? 'md' : 'txt';
   const cleanTitle = (book ? book.title : 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase();
   const filename = `${cleanTitle}_${new Date().toISOString().slice(0, 10)}.${ext}`;
 
-  const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
+  triggerFileDownload(filename, content, 'text/plain;charset=utf-8');
 
   if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
   showToast(`Exported ${filename}`);
+  playCarriageReturnBell();
 }
 
-function exportManuscriptPDF() {
+async function exportManuscriptPDF() {
   const jsPDFClass = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
   if (!jsPDFClass) {
     showToast("PDF engine is initializing, please try again in a moment.");
@@ -3346,6 +4480,11 @@ function exportManuscriptPDF() {
   const book = getActiveBook();
   const cleanTitle = (book ? book.title : 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase();
   const filename = `${cleanTitle}_${new Date().toISOString().slice(0, 10)}.pdf`;
+
+  if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+  if (DOM.saveDeviceModal) DOM.saveDeviceModal.classList.add('hidden');
+
+  ExportProgress.show(`Exporting PDF: "${book ? book.title : 'Manuscript'}"`, "📄");
 
   try {
     const doc = new jsPDFClass({
@@ -3367,31 +4506,38 @@ function exportManuscriptPDF() {
     const pages = (book && book.pages && book.pages.length > 0) ? book.pages : [{ number: 1, chunks: [] }];
 
     let pdfPageCount = 0;
+    const totalPages = pages.length;
 
-    pages.forEach((page, pageIdx) => {
+    function drawRunningHeader(page, isContinuation = false) {
+      doc.setFont('courier', 'normal');
+      doc.setFontSize(9);
+      doc.setTextColor(110, 110, 110);
+      const headerTitle = bookTitle.toUpperCase() + (isContinuation ? ' (CONT.)' : '');
+      doc.text(headerTitle, margin, 46);
+
+      const headerDesc = (page && page.description && page.description.trim()) ? ` [${page.description.trim().toUpperCase()}]` : '';
+      const headerRight = `PAGE ${page ? (page.number || 1) : 1}${headerDesc}`;
+      const rightW = doc.getTextWidth(headerRight);
+      doc.text(headerRight, pageWidth - margin - rightW, 46);
+
+      doc.setDrawColor(210, 205, 195);
+      doc.setLineWidth(0.75);
+      doc.line(margin, 54, pageWidth - margin, 54);
+    }
+
+    // Process pages in asynchronous batches to prevent main-thread threadlocks
+    for (let pageIdx = 0; pageIdx < totalPages; pageIdx++) {
+      const page = pages[pageIdx];
+      const progressPercent = (pageIdx / totalPages) * 75;
+      ExportProgress.update(progressPercent, `Formatting page ${pageIdx + 1} of ${totalPages}...`);
+      await yieldToMain();
+
       if (pdfPageCount > 0) {
         doc.addPage();
       }
       pdfPageCount++;
 
-      function drawRunningHeader(isContinuation = false) {
-        doc.setFont('courier', 'normal');
-        doc.setFontSize(9);
-        doc.setTextColor(110, 110, 110);
-        const headerTitle = bookTitle.toUpperCase() + (isContinuation ? ' (CONT.)' : '');
-        doc.text(headerTitle, margin, 46);
-
-        const headerDesc = (page.description && page.description.trim()) ? ` [${page.description.trim().toUpperCase()}]` : '';
-        const headerRight = `PAGE ${page.number}${headerDesc}`;
-        const rightW = doc.getTextWidth(headerRight);
-        doc.text(headerRight, pageWidth - margin - rightW, 46);
-
-        doc.setDrawColor(210, 205, 195);
-        doc.setLineWidth(0.75);
-        doc.line(margin, 54, pageWidth - margin, 54);
-      }
-
-      drawRunningHeader(false);
+      drawRunningHeader(page, false);
 
       let cursorY = margin + 14;
 
@@ -3427,7 +4573,9 @@ function exportManuscriptPDF() {
         doc.setTextColor(160, 160, 160);
         doc.text('[Empty Page]', margin, cursorY);
       } else {
-        chunks.forEach((chunkItem) => {
+        let lineCounter = 0;
+        for (let cIdx = 0; cIdx < chunks.length; cIdx++) {
+          const chunkItem = chunks[cIdx];
           const text = getChunkText(chunkItem);
           const ts = getChunkTimestamp(chunkItem);
           const timeStr = formatChunkTime(ts);
@@ -3439,7 +4587,7 @@ function exportManuscriptPDF() {
             if (cursorY + 14 > bottomLimit) {
               doc.addPage();
               pdfPageCount++;
-              drawRunningHeader(true);
+              drawRunningHeader(page, true);
               cursorY = margin + 14;
             }
             doc.text(`[${timeStr}]`, margin, cursorY);
@@ -3450,17 +4598,24 @@ function exportManuscriptPDF() {
           }
 
           const paragraphs = text.split('\n');
-          paragraphs.forEach((para, pIdx) => {
+          for (let pIdx = 0; pIdx < paragraphs.length; pIdx++) {
+            const para = paragraphs[pIdx];
             if (para === '') {
               cursorY += lineHeight * 0.7;
-              return;
+              continue;
             }
             const lines = doc.splitTextToSize(para, contentWidth);
-            lines.forEach(line => {
+            for (let lIdx = 0; lIdx < lines.length; lIdx++) {
+              const line = lines[lIdx];
+              lineCounter++;
+              if (lineCounter % 35 === 0) {
+                await yieldToMain();
+              }
+
               if (cursorY + lineHeight > bottomLimit) {
                 doc.addPage();
                 pdfPageCount++;
-                drawRunningHeader(true);
+                drawRunningHeader(page, true);
                 cursorY = margin + 14;
                 doc.setFont('courier', 'normal');
                 doc.setFontSize(11);
@@ -3468,20 +4623,28 @@ function exportManuscriptPDF() {
               }
               doc.text(line, margin, cursorY);
               cursorY += lineHeight;
-            });
+            }
             if (pIdx < paragraphs.length - 1) {
               cursorY += 4;
             }
-          });
-        });
+          }
+        }
       }
-    });
+    }
 
-    doc.save(filename);
-    if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+    ExportProgress.update(85, "Generating PDF document blob...");
+    await yieldToMain();
+
+    const pdfBlob = doc.output('blob');
+    ExportProgress.update(100, "Download starting!");
+
+    triggerFileDownload(filename, pdfBlob, 'application/pdf');
     showToast(`Exported ${filename}`);
+    playCarriageReturnBell();
+    ExportProgress.hide(600);
   } catch (err) {
     console.error('PDF export failed:', err);
+    ExportProgress.hide(0);
     showToast('Failed to export PDF: ' + (err.message || 'Unknown error'));
   }
 }
@@ -3533,7 +4696,7 @@ async function uploadToGoogleDrive({ name, content, mimeType = 'text/plain', isD
   if (!response.ok) {
     if (response.status === 401) {
       googleAccessToken = null;
-      sessionStorage.removeItem('google_drive_access_token');
+      setSafeSessionItem('google_drive_access_token', null);
       renderUserUI();
     }
     const errData = await response.json().catch(() => ({}));
@@ -3576,12 +4739,16 @@ async function saveCurrentBookToDrive(asDoc = false) {
 
 async function saveBackupToDrive() {
   try {
+    const { books: migratedBooks } = migrateBooksSchema(state.books);
+    const migratedSettings = migrateSettingsSchema(state.settings);
+
     const backupData = JSON.stringify({
-      version: 1,
+      version: CURRENT_SCHEMA_VERSION,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
       exportDate: new Date().toISOString(),
       sessionType: 'full_session_instance',
-      books: state.books,
-      settings: state.settings
+      books: migratedBooks,
+      settings: migratedSettings
     }, null, 2);
 
     const fileName = `typewriter_full_session_${new Date().toISOString().slice(0, 10)}.json`;
@@ -3611,7 +4778,7 @@ async function fetchDriveFiles() {
   if (!response.ok) {
     if (response.status === 401) {
       googleAccessToken = null;
-      sessionStorage.removeItem('google_drive_access_token');
+      setSafeSessionItem('google_drive_access_token', null);
       renderUserUI();
     }
     const errData = await response.json().catch(() => ({}));
@@ -4295,6 +5462,7 @@ function setupEventListeners() {
   if (DOM.btnDeviceSavePdf) DOM.btnDeviceSavePdf.onclick = () => saveActiveBookToDevice('pdf');
   if (DOM.btnDeviceSaveEpub) DOM.btnDeviceSaveEpub.onclick = () => saveActiveBookToDevice('epub');
   if (DOM.btnDeviceSaveJson) DOM.btnDeviceSaveJson.onclick = () => saveActiveBookToDevice('json');
+  if (DOM.btnDeviceSaveZip) DOM.btnDeviceSaveZip.onclick = () => saveActiveBookToDevice('zip');
   if (DOM.btnDeviceSaveSession) DOM.btnDeviceSaveSession.onclick = () => saveActiveBookToDevice('session');
 
   // Import Single Manuscript / Book
@@ -4432,17 +5600,14 @@ function setupEventListeners() {
 
   // Clear all
   if (DOM.btnClearAll) {
-    DOM.btnClearAll.onclick = () => {
+    DOM.btnClearAll.onclick = async () => {
       if (confirm("Reset all books, pages, and preferences?\n\n(An automatic safety backup of ALL your manuscripts will be created and downloaded first in case this was an accident.)")) {
         // Automatically back up all manuscripts before resetting
         createSafetyBackupForReset(state.books, state.settings, 'Full Studio Reset');
 
         // Retain safety archive and reset other items
-        const savedArchive = localStorage.getItem('typewriter_safety_archive');
-        localStorage.clear();
-        if (savedArchive) {
-          localStorage.setItem('typewriter_safety_archive', savedArchive);
-        }
+        const preservedArchive = [...memorySafetyArchive];
+        SafeStorage.clear();
 
         state.books = [];
         state.settings = {
@@ -4457,12 +5622,15 @@ function setupEventListeners() {
           typewriterAnim: false,
           replaySpeed: 1,
           autoAddSpace: false,
-          settingsVersion: 2
+          settingsVersion: CURRENT_SETTINGS_VERSION,
+          schemaVersion: CURRENT_SCHEMA_VERSION
         };
         applyTheme();
         applyFont();
         applySettingsUI();
         createNewBook("first note", false);
+        saveSafetyArchive(preservedArchive);
+        saveStorage(false);
         closeSafetyArchiveModal();
         closeOverlay();
         showToast("Studio data reset. Safety backup of all books was saved & downloaded.");
@@ -4651,6 +5819,7 @@ function setupEventListeners() {
   if (DOM.btnExportPdf) DOM.btnExportPdf.onclick = () => exportManuscript('pdf');
   if (DOM.btnExportEpub) DOM.btnExportEpub.onclick = () => exportManuscript('epub');
   if (DOM.btnExportJson) DOM.btnExportJson.onclick = () => exportManuscript('json');
+  if (DOM.btnExportZip) DOM.btnExportZip.onclick = () => exportManuscript('zip');
   if (DOM.btnCopyAll) DOM.btnCopyAll.onclick = copyManuscriptToClipboard;
 
   // Import Manuscript Picker Modal
@@ -4735,12 +5904,23 @@ function setupEventListeners() {
       if (e.target === DOM.searchResultsModal) closeSearchResultsModal();
     };
   }
+
+  // Manuscript Readability & Analysis Modal Listeners
+  if (DOM.btnOpenAnalysis) DOM.btnOpenAnalysis.onclick = openAnalysisModal;
+  if (DOM.btnCloseAnalysisModal) DOM.btnCloseAnalysisModal.onclick = closeAnalysisModal;
+  if (DOM.btnDismissAnalysisModal) DOM.btnDismissAnalysisModal.onclick = closeAnalysisModal;
+  if (DOM.analysisModal) {
+    DOM.analysisModal.onclick = (e) => {
+      if (e.target === DOM.analysisModal) closeAnalysisModal();
+    };
+  }
 }
 
 // ─── INITIALIZATION ─────────────────────────────────────────
 
 function init() {
   initDOM();
+  TextWorkerBridge.init();
   loadStorage();
   setupEventListeners();
   applySettingsUI();
@@ -4750,16 +5930,8 @@ function init() {
   checkPwaInstallState();
   updateNetworkStatus(navigator.onLine);
 
-  // Register PWA Service Worker for offline & standalone support
-  if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js')
-      .then((reg) => {
-        console.log('PWA ServiceWorker registered successfully with scope:', reg.scope);
-      })
-      .catch((err) => {
-        console.warn('PWA ServiceWorker registration failed:', err);
-      });
-  }
+  // Register PWA Service Worker with in-app update notification listeners
+  initServiceWorkerLifecycle();
 
   // Ensure all options and manuscripts are preserved when exiting
   window.addEventListener('beforeunload', () => {
