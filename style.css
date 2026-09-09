@@ -1325,15 +1325,6 @@ body.theme-dark .commit-hint kbd {
   min-width: 240px;
 }
 
-.user-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: #3a3a3a;
-  object-fit: cover;
-  border: 1px solid #444;
-}
-
 .user-text {
   display: flex;
   flex-direction: column;

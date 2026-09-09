@@ -229,7 +229,6 @@ function initDOM() {
     btnEmailSignIn: document.getElementById('btn-email-signin'),
     btnEmailSignUp: document.getElementById('btn-email-signup'),
     userProfile: document.getElementById('user-profile'),
-    userAvatar: document.getElementById('user-avatar'),
     userName: document.getElementById('user-name'),
     syncStatus: document.getElementById('sync-status'),
     btnLogout: document.getElementById('btn-logout'),
@@ -705,7 +704,6 @@ function renderUserUI() {
     if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.classList.add('hidden');
     if (DOM.userProfile) DOM.userProfile.classList.remove('hidden');
     if (DOM.userName) DOM.userName.textContent = currentUser.displayName || currentUser.email.split('@')[0];
-    if (DOM.userAvatar && currentUser.photoURL) DOM.userAvatar.src = currentUser.photoURL;
     if (DOM.syncStatus) {
       DOM.syncStatus.textContent = googleAccessToken ? "☁️ Firestore + Drive Active" : "☁️ Firestore Synced";
     }
