@@ -1273,6 +1273,47 @@ body.theme-dark .commit-hint kbd {
   flex-shrink: 0;
 }
 
+.email-auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 240px;
+  margin-top: 12px;
+}
+
+.auth-input {
+  width: 100%;
+  box-sizing: border-box;
+  background: #161616;
+  border: 1px solid #3a3a3a;
+  border-radius: 4px;
+  color: #ffffff;
+  font: 13px 'Inter', sans-serif;
+  padding: 9px 11px;
+}
+
+.auth-input::placeholder {
+  color: #777777;
+}
+
+.auth-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.email-auth-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.email-auth-btn {
+  min-width: 0;
+  width: 50%;
+  padding: 9px 8px;
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+}
+
 .user-row {
   display: flex;
   align-items: center;

@@ -224,6 +224,10 @@ function initDOM() {
     archiveFilesList: document.getElementById('archive-files-list'),
 
     btnGoogleSignIn: document.getElementById('btn-google-signin'),
+    authEmail: document.getElementById('auth-email'),
+    authPassword: document.getElementById('auth-password'),
+    btnEmailSignIn: document.getElementById('btn-email-signin'),
+    btnEmailSignUp: document.getElementById('btn-email-signup'),
     userProfile: document.getElementById('user-profile'),
     userAvatar: document.getElementById('user-avatar'),
     userName: document.getElementById('user-name'),
@@ -619,6 +623,42 @@ function handleGoogleSignIn() {
   } else {
     showToast("Firebase Auth initializing...");
   }
+}
+
+function handleEmailAuth(mode) {
+  if (!auth) initFirebase();
+  if (!auth) {
+    showToast("Firebase Auth initializing...");
+    return;
+  }
+
+  const email = DOM.authEmail ? DOM.authEmail.value.trim() : '';
+  const password = DOM.authPassword ? DOM.authPassword.value : '';
+  if (!email || !password) {
+    showToast("Enter an email address and password.");
+    return;
+  }
+
+  const authRequest = mode === 'signup'
+    ? auth.createUserWithEmailAndPassword(email, password)
+    : auth.signInWithEmailAndPassword(email, password);
+
+  authRequest.then((result) => {
+    const name = result.user.email ? result.user.email.split('@')[0] : 'Author';
+    showToast(mode === 'signup' ? `Welcome, ${name}! Your account is ready.` : `Welcome back, ${name}!`);
+    renderUserUI();
+  }).catch((error) => {
+    console.error("Email auth error:", error);
+    const messages = {
+      'auth/email-already-in-use': 'An account already exists for this email.',
+      'auth/invalid-email': 'Enter a valid email address.',
+      'auth/invalid-credential': 'Email or password is incorrect.',
+      'auth/user-not-found': 'No account was found for this email.',
+      'auth/wrong-password': 'Email or password is incorrect.',
+      'auth/weak-password': 'Password must be at least 6 characters.'
+    };
+    showToast(messages[error.code] || `Sign in error: ${error.message}`);
+  });
 }
 
 function handleSignOut() {
@@ -5687,6 +5727,8 @@ function setupEventListeners() {
 
   // Auth & Cloud
   if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.onclick = handleGoogleSignIn;
+  if (DOM.btnEmailSignIn) DOM.btnEmailSignIn.onclick = () => handleEmailAuth('signin');
+  if (DOM.btnEmailSignUp) DOM.btnEmailSignUp.onclick = () => handleEmailAuth('signup');
   if (DOM.btnLogout) DOM.btnLogout.onclick = handleSignOut;
 
   if (DOM.btnBackupCloud) DOM.btnBackupCloud.onclick = exportBackupFile;
