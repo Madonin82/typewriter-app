@@ -232,6 +232,23 @@ function initDOM() {
     btnDriveBackup: document.getElementById('btn-drive-backup'),
     btnDriveImport: document.getElementById('btn-drive-import'),
     btnDriveManager: document.getElementById('btn-drive-manager'),
+    btnDriveRestoreQuick: document.getElementById('btn-drive-restore-quick'),
+    btnQuickExportDoc: document.getElementById('btn-quick-export-doc'),
+    btnQuickCopyClip: document.getElementById('btn-quick-copy-clip'),
+    btnToggleAllGroups: document.getElementById('btn-toggle-all-groups'),
+
+    btnLoadFromDevice: document.getElementById('btn-load-from-device'),
+    btnSaveToDevice: document.getElementById('btn-save-to-device'),
+    fileInputLoadDevice: document.getElementById('file-input-load-device'),
+    saveDeviceModal: document.getElementById('save-device-modal'),
+    btnCloseSaveDeviceModal: document.getElementById('btn-close-save-device-modal'),
+    saveDeviceBookTitle: document.getElementById('save-device-book-title'),
+    btnDeviceSaveTxt: document.getElementById('btn-device-save-txt'),
+    btnDeviceSaveMd: document.getElementById('btn-device-save-md'),
+    btnDeviceSavePdf: document.getElementById('btn-device-save-pdf'),
+    btnDeviceSaveEpub: document.getElementById('btn-device-save-epub'),
+    btnDeviceSaveJson: document.getElementById('btn-device-save-json'),
+    btnDeviceSaveSession: document.getElementById('btn-device-save-session'),
 
     btnInstallPwa: document.getElementById('btn-install-pwa'),
     btnPwaInstallLeft: document.getElementById('btn-pwa-install-left'),
@@ -2099,6 +2116,141 @@ function exportSingleManuscriptJSON() {
   triggerFileDownload(filename, payload, 'application/json');
   if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
   showToast(`Exported single manuscript "${book.title}" (.json)!`);
+}
+
+// ─── SAVE TO / LOAD FROM DEVICE FUNCTIONALITY ────────────────
+
+function openSaveDeviceModal() {
+  const book = getActiveBook();
+  if (DOM.saveDeviceBookTitle) {
+    DOM.saveDeviceBookTitle.textContent = book ? `"${book.title}"` : '"Current Book"';
+  }
+  if (DOM.saveDeviceModal) {
+    DOM.saveDeviceModal.classList.remove('hidden');
+  }
+}
+
+function closeSaveDeviceModal() {
+  if (DOM.saveDeviceModal) {
+    DOM.saveDeviceModal.classList.add('hidden');
+  }
+}
+
+function saveActiveBookToDevice(format) {
+  closeSaveDeviceModal();
+  if (format === 'session') {
+    exportBackupFile();
+    return;
+  }
+  exportManuscript(format);
+}
+
+async function triggerLoadFromDevice() {
+  // If the browser supports the File System Access API, offer native file picker
+  if (window.showOpenFilePicker) {
+    try {
+      const handles = await window.showOpenFilePicker({
+        multiple: false,
+        types: [
+          {
+            description: 'Supported manuscript & backup files (.txt, .md, .epub, .json)',
+            accept: {
+              'text/plain': ['.txt'],
+              'text/markdown': ['.md'],
+              'application/epub+zip': ['.epub'],
+              'application/json': ['.json']
+            }
+          }
+        ]
+      });
+      if (handles && handles.length > 0) {
+        const file = await handles[0].getFile();
+        if (file) {
+          handleFileLoadedFromDevice(file);
+          return;
+        }
+      }
+    } catch (pickerErr) {
+      if (pickerErr.name === 'AbortError') {
+        return; // User cancelled the picker
+      }
+      // Fall through to file input click
+    }
+  }
+
+  if (DOM.fileInputLoadDevice) {
+    DOM.fileInputLoadDevice.value = '';
+    DOM.fileInputLoadDevice.click();
+  }
+}
+
+function handleFileLoadedFromDevice(file) {
+  if (!file) return;
+  const filename = file.name;
+  const isEpub = /\.epub$/i.test(filename) || (file.type && file.type.includes('epub'));
+  const isJson = /\.json$/i.test(filename) || (file.type && file.type.includes('json'));
+
+  if (isEpub) {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const parsedBook = await parseEpubFile(e.target.result, filename);
+        addSingleManuscriptToSession(parsedBook, filename);
+        showToast(`Loaded eBook "${parsedBook.title}" from device!`);
+      } catch (err) {
+        console.error("EPUB load error:", err);
+        alert(`Could not load EPUB from device: ${err.message || 'Invalid or corrupted EPUB file.'}`);
+      }
+      if (DOM.fileInputLoadDevice) DOM.fileInputLoadDevice.value = '';
+    };
+    reader.onerror = () => {
+      alert("Error reading file from device.");
+      if (DOM.fileInputLoadDevice) DOM.fileInputLoadDevice.value = '';
+    };
+    reader.readAsArrayBuffer(file);
+    return;
+  }
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const rawText = e.target.result;
+      const trimmed = (rawText || '').trim();
+
+      // Check if file is a JSON full session backup
+      if (isJson || trimmed.startsWith('{') || trimmed.startsWith('[')) {
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (parsed && (parsed.sessionType === 'full_session_instance' || (parsed.books && Array.isArray(parsed.books) && parsed.settings))) {
+            openBackupInspectModal(parsed, `Device: ${filename}`);
+            showToast(`Loaded backup file "${filename}" from device`);
+            if (DOM.fileInputLoadDevice) DOM.fileInputLoadDevice.value = '';
+            return;
+          }
+        } catch (jErr) {
+          // not valid full backup json, proceed to parseManuscriptFile
+        }
+      }
+
+      const result = parseManuscriptFile(rawText, filename);
+      if (result.type === 'single') {
+        addSingleManuscriptToSession(result.book, filename);
+        showToast(`Loaded manuscript "${result.book.title || filename}" from device!`);
+      } else if (result.type === 'multiple') {
+        showImportManuscriptPicker(result.books, filename);
+        showToast(`Loaded ${result.books.length} manuscripts from device file "${filename}"`);
+      }
+    } catch (err) {
+      console.error("Load from device error:", err);
+      alert(`Could not load file from device: ${err.message || 'Invalid or unrecognized file format.'}`);
+    }
+    if (DOM.fileInputLoadDevice) DOM.fileInputLoadDevice.value = '';
+  };
+  reader.onerror = () => {
+    alert("Error reading file from device.");
+    if (DOM.fileInputLoadDevice) DOM.fileInputLoadDevice.value = '';
+  };
+  reader.readAsText(file);
 }
 
 // ─── BOOK & PAGE MANAGEMENT ─────────────────────────────────
@@ -4123,6 +4275,28 @@ function setupEventListeners() {
   if (DOM.btnRestoreCloud) DOM.btnRestoreCloud.onclick = () => DOM.fileInputRestore && DOM.fileInputRestore.click();
   if (DOM.fileInputRestore) DOM.fileInputRestore.onchange = importBackupFile;
 
+  // Save to / Load from Device Event Listeners
+  if (DOM.btnSaveToDevice) DOM.btnSaveToDevice.onclick = openSaveDeviceModal;
+  if (DOM.btnLoadFromDevice) DOM.btnLoadFromDevice.onclick = triggerLoadFromDevice;
+  if (DOM.fileInputLoadDevice) {
+    DOM.fileInputLoadDevice.onchange = (e) => {
+      const file = e.target.files && e.target.files[0];
+      if (file) handleFileLoadedFromDevice(file);
+    };
+  }
+  if (DOM.btnCloseSaveDeviceModal) DOM.btnCloseSaveDeviceModal.onclick = closeSaveDeviceModal;
+  if (DOM.saveDeviceModal) {
+    DOM.saveDeviceModal.onclick = (e) => {
+      if (e.target === DOM.saveDeviceModal) closeSaveDeviceModal();
+    };
+  }
+  if (DOM.btnDeviceSaveTxt) DOM.btnDeviceSaveTxt.onclick = () => saveActiveBookToDevice('txt');
+  if (DOM.btnDeviceSaveMd) DOM.btnDeviceSaveMd.onclick = () => saveActiveBookToDevice('md');
+  if (DOM.btnDeviceSavePdf) DOM.btnDeviceSavePdf.onclick = () => saveActiveBookToDevice('pdf');
+  if (DOM.btnDeviceSaveEpub) DOM.btnDeviceSaveEpub.onclick = () => saveActiveBookToDevice('epub');
+  if (DOM.btnDeviceSaveJson) DOM.btnDeviceSaveJson.onclick = () => saveActiveBookToDevice('json');
+  if (DOM.btnDeviceSaveSession) DOM.btnDeviceSaveSession.onclick = () => saveActiveBookToDevice('session');
+
   // Import Single Manuscript / Book
   if (DOM.btnImportManuscript) {
     DOM.btnImportManuscript.onclick = () => DOM.fileInputImportManuscript && DOM.fileInputImportManuscript.click();
@@ -4147,6 +4321,62 @@ function setupEventListeners() {
   if (DOM.btnQuickRestoreDrive) DOM.btnQuickRestoreDrive.onclick = handleQuickRestoreFromDrive;
   if (DOM.btnRefreshDrive) DOM.btnRefreshDrive.onclick = refreshDriveFiles;
   if (DOM.btnCloseDriveModal) DOM.btnCloseDriveModal.onclick = closeDriveModal;
+
+  // Nested Menu Accordion Handlers for Data & Storage
+  const nestedGroupHeaders = document.querySelectorAll('.nested-group-header');
+  nestedGroupHeaders.forEach(hdr => {
+    hdr.onclick = () => {
+      const parent = hdr.closest('.nested-group');
+      if (parent) {
+        const isOpen = parent.classList.toggle('open');
+        hdr.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        updateToggleAllButtonText();
+      }
+    };
+  });
+
+  function updateToggleAllButtonText() {
+    if (!DOM.btnToggleAllGroups) return;
+    const groups = document.querySelectorAll('.nested-group');
+    const allOpen = Array.from(groups).every(g => g.classList.contains('open'));
+    DOM.btnToggleAllGroups.textContent = allOpen ? 'Collapse all' : 'Expand all';
+  }
+
+  if (DOM.btnToggleAllGroups) {
+    DOM.btnToggleAllGroups.onclick = () => {
+      const groups = document.querySelectorAll('.nested-group');
+      const anyOpen = Array.from(groups).some(g => g.classList.contains('open'));
+      groups.forEach(g => {
+        g.classList.toggle('open', !anyOpen);
+        const btn = g.querySelector('.nested-group-header');
+        if (btn) btn.setAttribute('aria-expanded', !anyOpen ? 'true' : 'false');
+      });
+      DOM.btnToggleAllGroups.textContent = anyOpen ? 'Expand all' : 'Collapse all';
+    };
+  }
+
+  // Keyboard accessibility for nested items
+  document.querySelectorAll('.nested-item[role="button"]').forEach(item => {
+    item.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        item.click();
+      }
+    });
+  });
+
+  if (DOM.btnDriveRestoreQuick) {
+    DOM.btnDriveRestoreQuick.onclick = () => {
+      openDriveModal();
+      handleQuickRestoreFromDrive();
+    };
+  }
+  if (DOM.btnQuickExportDoc) {
+    DOM.btnQuickExportDoc.onclick = () => saveCurrentBookToDrive(true);
+  }
+  if (DOM.btnQuickCopyClip) {
+    DOM.btnQuickCopyClip.onclick = copyManuscriptToClipboard;
+  }
 
   // PWA Install buttons & modals
   if (DOM.btnInstallPwa) DOM.btnInstallPwa.onclick = handleInstallPrompt;

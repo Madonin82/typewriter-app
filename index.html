@@ -100,18 +100,163 @@
         <!-- Populated dynamically -->
       </ul>
 
+      <div class="panel-add-page-wrapper">
+        <button id="btn-new-page" class="panel-add-page-btn" title="Add a new blank page to this book">
+          <span>+</span> Add New Page
+        </button>
+      </div>
+
       <div class="panel-divider"></div>
-      <div class="panel-action" id="btn-new-page"><span>📄</span> + New Page</div>
-      <div class="panel-action" id="btn-export-modal-toggle"><span>📥</span> Export Current Manuscript</div>
-      <div class="panel-action" id="btn-import-manuscript"><span>📤</span> Import Manuscript / Book</div>
+
+      <div class="panel-section-header-row">
+        <span class="panel-section-label" style="padding:0;">Data & Storage</span>
+        <button type="button" id="btn-toggle-all-groups" class="nested-menu-toggle-all" title="Expand or collapse all sections">Collapse all</button>
+      </div>
+
+      <div class="nested-menu" id="data-storage-nested-menu">
+        <!-- ── Nested Group 1: Import & Load ── -->
+        <div class="nested-group open" id="group-import-load">
+          <button class="nested-group-header" type="button" aria-expanded="true" data-group="import-load">
+            <div class="nested-group-title">
+              <span class="nested-group-icon">📤</span>
+              <span class="nested-group-name">Import & Load</span>
+            </div>
+            <span class="nested-chevron">▾</span>
+          </button>
+          <div class="nested-group-body">
+            <div class="nested-item highlight-item" id="btn-load-from-device" role="button" tabindex="0" title="Load manuscript, eBook, or session backup directly from your computer or phone">
+              <span class="nested-item-icon">💻</span>
+              <div class="nested-item-text">
+                <span class="nested-item-title">Load from Device</span>
+                <span class="nested-item-sub">.txt, .md, .epub, .json</span>
+              </div>
+            </div>
+            <div class="nested-item" id="btn-import-manuscript" role="button" tabindex="0" title="Import a manuscript or book file into current session">
+              <span class="nested-item-icon">📄</span>
+              <div class="nested-item-text">
+                <span class="nested-item-title">Import Manuscript</span>
+                <span class="nested-item-sub">Pick books to add</span>
+              </div>
+            </div>
+            <div class="nested-item" id="btn-drive-import" role="button" tabindex="0" title="Import files or Google Docs from your Google Drive into session">
+              <span class="nested-item-icon">
+                <svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#34A853" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/><path fill="#EA4335" d="M22 18.5l-3.5-6h-7.5l3.5 6z"/></svg>
+              </span>
+              <div class="nested-item-text">
+                <span class="nested-item-title">Import from Drive</span>
+                <span class="nested-item-sub">Docs, Books & Files</span>
+              </div>
+            </div>
+            <div class="nested-item" id="btn-restore-cloud" role="button" tabindex="0" title="Inspect and restore full session backup JSON file">
+              <span class="nested-item-icon">📂</span>
+              <div class="nested-item-text">
+                <span class="nested-item-title">Load Session Backup</span>
+                <span class="nested-item-sub">Inspect & restore .json</span>
+              </div>
+            </div>
+            <div class="nested-item" id="btn-drive-restore-quick" role="button" tabindex="0" title="Restore full session backup directly from Google Drive">
+              <span class="nested-item-icon">☁️</span>
+              <div class="nested-item-text">
+                <span class="nested-item-title">Restore from Drive</span>
+                <span class="nested-item-sub">Cloud session backup</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Nested Group 2: Export & Share ── -->
+        <div class="nested-group open" id="group-export-share">
+          <button class="nested-group-header" type="button" aria-expanded="true" data-group="export-share">
+            <div class="nested-group-title">
+              <span class="nested-group-icon">📥</span>
+              <span class="nested-group-name">Export & Share</span>
+            </div>
+            <span class="nested-chevron">▾</span>
+          </button>
+          <div class="nested-group-body">
+            <div class="nested-item highlight-item" id="btn-save-to-device" role="button" tabindex="0" title="Save manuscript or full session directly to your local computer or phone">
+              <span class="nested-item-icon">💾</span>
+              <div class="nested-item-text">
+                <span class="nested-item-title">Save to Device</span>
+                <span class="nested-item-sub">Direct local save (TXT, PDF, EPUB...)</span>
+              </div>
+            </div>
+            <div class="nested-item" id="btn-export-modal-toggle" role="button" tabindex="0" title="Open complete export formats dialog (PDF, EPUB, TXT, MD, Google Doc, Copy)">
+              <span class="nested-item-icon">📚</span>
+              <div class="nested-item-text">
+                <span class="nested-item-title">Export Manuscript...</span>
+                <span class="nested-item-sub">All export formats</span>
+              </div>
+            </div>
+            <div class="nested-item" id="btn-quick-export-doc" role="button" tabindex="0" title="Save current manuscript directly as an editable Google Doc">
+              <span class="nested-item-icon">
+                <svg class="drive-doc-icon" style="width:13px; height:13px;" viewBox="0 0 24 24"><path fill="#4285F4" d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+              </span>
+              <div class="nested-item-text">
+                <span class="nested-item-title">Save as Google Doc</span>
+                <span class="nested-item-sub">Direct Drive export</span>
+              </div>
+            </div>
+            <div class="nested-item" id="btn-quick-copy-clip" role="button" tabindex="0" title="Quickly copy full text of current manuscript to clipboard">
+              <span class="nested-item-icon">📋</span>
+              <div class="nested-item-text">
+                <span class="nested-item-title">Copy Manuscript</span>
+                <span class="nested-item-sub">Fast clipboard copy</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ── Nested Group 3: Backups & Safety Archive ── -->
+        <div class="nested-group open" id="group-backup-archive">
+          <button class="nested-group-header" type="button" aria-expanded="true" data-group="backup-archive">
+            <div class="nested-group-title">
+              <span class="nested-group-icon">🛡️</span>
+              <span class="nested-group-name">Backups & Safety</span>
+            </div>
+            <span class="nested-chevron">▾</span>
+          </button>
+          <div class="nested-group-body">
+            <div class="nested-item" id="btn-backup-cloud" role="button" tabindex="0" title="Download a complete snapshot of all books and settings as a .json file to your device">
+              <span class="nested-item-icon">💾</span>
+              <div class="nested-item-text">
+                <span class="nested-item-title">Backup Session to Device</span>
+                <span class="nested-item-sub">Download .json snapshot</span>
+              </div>
+            </div>
+            <div class="nested-item" id="btn-drive-backup" role="button" tabindex="0" title="Save a complete snapshot backup of all books to your Google Drive">
+              <span class="nested-item-icon">
+                <svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#34A853" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/><path fill="#EA4335" d="M22 18.5l-3.5-6h-7.5l3.5 6z"/></svg>
+              </span>
+              <div class="nested-item-text">
+                <span class="nested-item-title">Backup to Drive</span>
+                <span class="nested-item-sub">Save session to Drive cloud</span>
+              </div>
+            </div>
+            <div class="nested-item" id="btn-drive-manager" role="button" tabindex="0" title="View, download, or manage files saved on your Google Drive">
+              <span class="nested-item-icon">📁</span>
+              <div class="nested-item-text">
+                <span class="nested-item-title">Google Drive Files</span>
+                <span class="nested-item-sub">Manage cloud files</span>
+              </div>
+            </div>
+            <div class="nested-item" id="btn-safety-archive" role="button" tabindex="0" title="View safety archive of deleted books and auto-preserved snapshots">
+              <span class="nested-item-icon">🛡️</span>
+              <div class="nested-item-text">
+                <span class="nested-item-title">Safety Archive</span>
+                <span class="nested-item-sub"><span id="safety-archive-badge">0</span> protected snapshots</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel-bottom-actions">
+        <div class="panel-action" id="btn-pwa-install-left"><span>💻</span> Install Desktop App</div>
+      </div>
+
+      <input type="file" id="file-input-load-device" accept=".json,.txt,.md,.epub,text/plain,text/markdown,application/json,application/epub+zip" class="hidden">
       <input type="file" id="file-input-import-manuscript" accept=".json,.txt,.md,.epub,text/plain,text/markdown,application/json,application/epub+zip" class="hidden">
-      <div class="panel-action" id="btn-drive-backup"><span><svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#34A853" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/><path fill="#EA4335" d="M22 18.5l-3.5-6h-7.5l3.5 6z"/></svg></span> Backup Session to Google Drive</div>
-      <div class="panel-action" id="btn-drive-import"><span>📥</span> Import from Google Drive</div>
-      <div class="panel-action" id="btn-drive-manager"><span>📁</span> Files on Google Drive</div>
-      <div class="panel-action" id="btn-pwa-install-left"><span>💻</span> Install Desktop App</div>
-      <div class="panel-action" id="btn-backup-cloud"><span>💾</span> Backup Full Session / Instance (.json)</div>
-      <div class="panel-action" id="btn-restore-cloud"><span>📂</span> Load Full Session / Instance</div>
-      <div class="panel-action" id="btn-safety-archive"><span>🛡️</span> Safety Archive (<span id="safety-archive-badge">0</span>)</div>
       <input type="file" id="file-input-restore" accept=".json" class="hidden">
     </div>
 
@@ -270,45 +415,103 @@
     </div>
   </div>
 
+  <!-- ── SAVE TO DEVICE MODAL DIALOG ── -->
+  <div id="save-device-modal" class="modal-backdrop hidden">
+    <div class="modal-card">
+      <div class="modal-header">
+        <div class="modal-title-with-icon">
+          <span>💻</span>
+          <h3>Save to Device</h3>
+        </div>
+        <button id="btn-close-save-device-modal" class="btn-close">×</button>
+      </div>
+      <p class="modal-desc">Save the active manuscript or complete studio session directly to your local computer or phone disk:</p>
+
+      <div class="modal-section-divider-label">
+        <span>Current Manuscript:</span>
+        <strong id="save-device-book-title" style="color:var(--accent-light);">"Book"</strong>
+      </div>
+      <div class="export-options-grid">
+        <button id="btn-device-save-txt" class="export-card-btn" title="Save clean unformatted text file to your device">
+          <span class="export-icon">📄</span>
+          <div class="export-info">
+            <strong>Plain Text File (.txt)</strong>
+            <span>Universal text draft saved to your local drive</span>
+          </div>
+        </button>
+        <button id="btn-device-save-md" class="export-card-btn" title="Save formatted Markdown file to your device">
+          <span class="export-icon">📝</span>
+          <div class="export-info">
+            <strong>Markdown File (.md)</strong>
+            <span>Formatted with page headings and chapter dividers</span>
+          </div>
+        </button>
+        <button id="btn-device-save-pdf" class="export-card-btn" title="Save printable PDF document to your device">
+          <span class="export-icon">
+            <svg class="drive-doc-icon" viewBox="0 0 24 24"><path fill="#EA4335" d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm-1.5 14h-1.2v-1.8H9.8V16H8.5v-5h2.8c.9 0 1.5.6 1.5 1.5v1c0 .7-.4 1.3-1.1 1.4L12.5 16zm-1.2-3.3c0-.3-.2-.5-.5-.5H9.8v1.3h1c.3 0 .5-.2.5-.5v-.3zm5.7 3.3h-1.3v-1.8h-1.5V16h-1.3v-5h1.3v1.8h1.5V11H17v5zm-3.5-7V3.5L17.5 9H13.5z"/></svg>
+          </span>
+          <div class="export-info">
+            <strong>PDF Document (.pdf)</strong>
+            <span>Printable typewriter layout manuscript</span>
+          </div>
+        </button>
+        <button id="btn-device-save-epub" class="export-card-btn" title="Save standard EPUB eBook to your device">
+          <span class="export-icon">📚</span>
+          <div class="export-info">
+            <strong>EPUB eBook (.epub)</strong>
+            <span>Formatted eBook for Apple Books, Kindle, and e-readers</span>
+          </div>
+        </button>
+        <button id="btn-device-save-json" class="export-card-btn" title="Save single book data file to your device">
+          <span class="export-icon">💾</span>
+          <div class="export-info">
+            <strong>Manuscript Data (.json)</strong>
+            <span>Single book file ready to re-import anytime</span>
+          </div>
+        </button>
+      </div>
+
+      <div class="modal-section-divider-label" style="margin-top:16px;">
+        <span>All Books & Session State:</span>
+      </div>
+      <div class="export-options-grid">
+        <button id="btn-device-save-session" class="export-card-btn drive-highlight" title="Save complete studio backup snapshot to your device">
+          <span class="export-icon">📦</span>
+          <div class="export-info">
+            <strong>Full Studio Session Backup (.json)</strong>
+            <span>Complete snapshot of all books, pages, and custom settings</span>
+          </div>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── EXPORT MODAL DIALOG ── -->
   <div id="export-modal" class="modal-backdrop hidden">
     <div class="modal-card">
       <div class="modal-header">
-        <h3>Export Manuscript</h3>
+        <div class="modal-title-with-icon">
+          <span>📚</span>
+          <h3>Export Manuscript</h3>
+        </div>
         <button id="btn-close-export-modal" class="btn-close">×</button>
       </div>
-      <p class="modal-desc">Export the entire current book draft into your preferred format or sync to Google Drive:</p>
+      <p class="modal-desc">Export the active book draft into your preferred format, save to device, or sync to Google Drive:</p>
+      
+      <div class="modal-section-divider-label">Save to Device (Local Storage)</div>
       <div class="export-options-grid">
-        <button id="btn-export-drive-doc" class="export-card-btn drive-highlight">
-          <span class="export-icon">
-            <svg class="drive-doc-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
-          </span>
-          <div class="export-info">
-            <strong>Save as Google Doc</strong>
-            <span>Create an editable document in your Google Drive</span>
-          </div>
-        </button>
-        <button id="btn-export-drive-txt" class="export-card-btn">
-          <span class="export-icon">
-            <svg class="drive-doc-icon" viewBox="0 0 24 24"><path fill="#34A853" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#4285F4" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/></svg>
-          </span>
-          <div class="export-info">
-            <strong>Save Text to Google Drive</strong>
-            <span>Upload raw manuscript file to your Google Drive</span>
-          </div>
-        </button>
         <button id="btn-export-txt" class="export-card-btn">
           <span class="export-icon">📄</span>
           <div class="export-info">
             <strong>Plain Text File (.txt)</strong>
-            <span>Download clean unformatted text file</span>
+            <span>Download clean unformatted text file to device</span>
           </div>
         </button>
         <button id="btn-export-md" class="export-card-btn">
           <span class="export-icon">📝</span>
           <div class="export-info">
             <strong>Markdown File (.md)</strong>
-            <span>Download formatted with page headers</span>
+            <span>Download formatted with page headers to device</span>
           </div>
         </button>
         <button id="btn-export-pdf" class="export-card-btn">
@@ -334,11 +537,37 @@
             <span>Download single book data file ready to re-import</span>
           </div>
         </button>
+      </div>
+
+      <div class="modal-section-divider-label" style="margin-top:16px;">Save to Google Drive (Cloud)</div>
+      <div class="export-options-grid">
+        <button id="btn-export-drive-doc" class="export-card-btn drive-highlight">
+          <span class="export-icon">
+            <svg class="drive-doc-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
+          </span>
+          <div class="export-info">
+            <strong>Save as Google Doc</strong>
+            <span>Create an editable document in your Google Drive</span>
+          </div>
+        </button>
+        <button id="btn-export-drive-txt" class="export-card-btn">
+          <span class="export-icon">
+            <svg class="drive-doc-icon" viewBox="0 0 24 24"><path fill="#34A853" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#4285F4" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/></svg>
+          </span>
+          <div class="export-info">
+            <strong>Save Text to Google Drive</strong>
+            <span>Upload raw manuscript file to your Google Drive</span>
+          </div>
+        </button>
+      </div>
+
+      <div class="modal-section-divider-label" style="margin-top:16px;">Clipboard</div>
+      <div class="export-options-grid">
         <button id="btn-copy-all" class="export-card-btn">
           <span class="export-icon">📋</span>
           <div class="export-info">
             <strong>Copy to Clipboard</strong>
-            <span>Quick paste into any document editor</span>
+            <span>Quick paste full manuscript into any document editor</span>
           </div>
         </button>
       </div>

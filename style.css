@@ -673,7 +673,7 @@ body.theme-dark .commit-hint kbd {
 
 /* Left panel — books & pages list */
 #panel-left {
-  width: 250px;
+  width: 270px;
   background: var(--panel-bg);
   display: flex;
   flex-direction: column;
@@ -853,7 +853,246 @@ body.theme-dark .commit-hint kbd {
 .panel-divider {
   height: 1px;
   background: var(--panel-border);
-  margin: 16px 0;
+  margin: 14px 0;
+}
+
+/* Add Page Button */
+.panel-add-page-wrapper {
+  padding: 6px 14px 0;
+}
+
+.panel-add-page-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  border-radius: 5px;
+  color: #9e9a93;
+  font-size: 11px;
+  font-family: 'Inter', sans-serif;
+  font-weight: 500;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.panel-add-page-btn:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+/* Header row with section label and micro-toggle */
+.panel-section-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 16px 8px;
+}
+
+.nested-menu-toggle-all {
+  background: none;
+  border: none;
+  color: #777777;
+  font-size: 10px;
+  font-family: 'Inter', sans-serif;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 3px;
+  transition: color 0.15s ease;
+}
+
+.nested-menu-toggle-all:hover {
+  color: var(--accent-light);
+}
+
+/* ─── NESTED MENU CONTAINER & GROUPS ──────────────────────── */
+.nested-menu {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 10px;
+}
+
+.nested-group {
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  overflow: hidden;
+  transition: border-color 0.18s ease, background-color 0.18s ease;
+}
+
+.nested-group:hover {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.nested-group.open {
+  background: rgba(255, 255, 255, 0.03);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.nested-group-header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: transparent;
+  border: none;
+  padding: 8px 10px;
+  color: #e0deda;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  text-align: left;
+  user-select: none;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.nested-group-header:hover {
+  background: rgba(255, 255, 255, 0.04);
+  color: #ffffff;
+}
+
+.nested-group-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.nested-group-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.nested-group-name {
+  color: inherit;
+}
+
+.nested-chevron {
+  font-size: 11px;
+  color: #777777;
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1), color 0.15s ease;
+  line-height: 1;
+  display: inline-block;
+}
+
+.nested-group-header:hover .nested-chevron {
+  color: #bbbbbb;
+}
+
+.nested-group.open .nested-chevron {
+  transform: rotate(0deg);
+}
+
+.nested-group:not(.open) .nested-chevron {
+  transform: rotate(-90deg);
+}
+
+.nested-group-body {
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-height 0.26s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease, padding 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  padding: 0 4px;
+  border-top: 1px solid transparent;
+}
+
+.nested-group.open .nested-group-body {
+  max-height: 420px;
+  opacity: 1;
+  padding: 4px 4px 6px;
+  border-top-color: rgba(255, 255, 255, 0.05);
+}
+
+/* ─── NESTED MENU ITEMS ────────────────────────────────────── */
+.nested-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 5px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+  color: #9f9b94;
+  font-family: 'Inter', sans-serif;
+  transition: background-color 0.14s ease, color 0.14s ease, transform 0.1s ease;
+  position: relative;
+  user-select: none;
+}
+
+.nested-item.highlight-item {
+  background: rgba(180, 80, 30, 0.08);
+  border: 1px solid rgba(180, 80, 30, 0.18);
+  margin-bottom: 2px;
+}
+
+.nested-item.highlight-item:hover,
+.nested-item.highlight-item:focus-visible {
+  background: rgba(180, 80, 30, 0.16);
+  border-color: rgba(180, 80, 30, 0.35);
+  color: #ffffff;
+}
+
+.nested-item:hover,
+.nested-item:focus-visible {
+  background: rgba(255, 255, 255, 0.07);
+  color: #ffffff;
+  outline: none;
+}
+
+.nested-item:active {
+  transform: scale(0.985);
+}
+
+.nested-item-icon {
+  font-size: 13px;
+  width: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+.nested-item-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  line-height: 1.25;
+}
+
+.nested-item-title {
+  font-size: 11.5px;
+  font-weight: 500;
+  color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.nested-item-sub {
+  font-size: 9.5px;
+  color: #6a6762;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 1px;
+}
+
+.nested-item:hover .nested-item-sub {
+  color: #918d86;
+}
+
+.panel-bottom-actions {
+  margin-top: 10px;
+  padding-top: 4px;
 }
 
 .panel-action {
@@ -871,6 +1110,16 @@ body.theme-dark .commit-hint kbd {
 .panel-action:hover {
   color: #ffffff;
   background: rgba(255, 255, 255, 0.04);
+}
+
+.panel-bottom-actions .panel-action {
+  padding: 7px 16px;
+  font-size: 11px;
+  color: #777777;
+}
+
+.panel-bottom-actions .panel-action:hover {
+  color: #cccccc;
 }
 
 /* Center — main menu area */
@@ -1283,6 +1532,19 @@ body.theme-dark .replay-speed-tick.active {
   margin-bottom: 18px;
   font-family: 'Inter', sans-serif;
   line-height: 1.4;
+}
+
+.modal-section-divider-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #888888;
+  font-family: 'Inter', sans-serif;
+  font-weight: 600;
+  margin: 10px 0 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
 .export-options-grid {
