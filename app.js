@@ -296,7 +296,9 @@ function initDOM() {
     btnCloseSearchModal: document.getElementById('btn-close-search-modal'),
     btnDismissSearchModal: document.getElementById('btn-dismiss-search-modal'),
 
-    toast: document.getElementById('toast')
+    toast: document.getElementById('toast'),
+    syncToast: document.getElementById('sync-toast'),
+    syncToastMsg: document.getElementById('sync-toast-msg')
   };
 }
 
@@ -497,22 +499,79 @@ function renderUserUI() {
   }
 }
 
+let localClientWriteId = null;
+let pendingRemoteSnapshot = null;
+
 function syncToFirestore() {
   if (!db || !currentUser) return;
   if (DOM.syncStatus) DOM.syncStatus.textContent = "🔄 Syncing...";
+
+  const writeId = 'w_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
+  localClientWriteId = writeId;
 
   db.collection("users").doc(currentUser.uid).set({
     books: state.books,
     settings: state.settings,
     activeBookId: state.activeBookId,
     currentPageId: state.currentPageId,
+    lastWriteId: writeId,
     lastSynced: firebase.firestore.FieldValue.serverTimestamp()
   }, { merge: true }).then(() => {
     if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Firestore Synced";
+    showTopSyncNotification("☁️ Synced with Firestore");
   }).catch((e) => {
     console.warn("Firestore sync error:", e);
     if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Local (Sync paused)";
   });
+}
+
+function applyRemoteSnapshot(data) {
+  if (!data) return;
+  let changed = false;
+
+  if (data.books && Array.isArray(data.books) && data.books.length > 0) {
+    if (JSON.stringify(state.books) !== JSON.stringify(data.books)) {
+      state.books = data.books;
+      changed = true;
+    }
+  }
+
+  if (data.settings && typeof data.settings === 'object') {
+    if (JSON.stringify(state.settings) !== JSON.stringify({ ...state.settings, ...data.settings })) {
+      state.settings = { ...state.settings, ...data.settings };
+      changed = true;
+    }
+  }
+
+  if (data.activeBookId && state.books.some(b => b.id === data.activeBookId)) {
+    if (state.activeBookId !== data.activeBookId) {
+      state.activeBookId = data.activeBookId;
+      changed = true;
+    }
+  } else if (state.books.length > 0 && (!state.activeBookId || !state.books.some(b => b.id === state.activeBookId))) {
+    state.activeBookId = state.books[0].id;
+    changed = true;
+  }
+
+  const activeBook = getActiveBook();
+  if (data.currentPageId && activeBook && activeBook.pages && activeBook.pages.some(p => p.id === data.currentPageId)) {
+    if (state.currentPageId !== data.currentPageId) {
+      state.currentPageId = data.currentPageId;
+      changed = true;
+    }
+  } else if (activeBook && activeBook.pages && activeBook.pages.length > 0) {
+    const lastPageId = activeBook.pages[activeBook.pages.length - 1].id;
+    if (state.currentPageId !== lastPageId) {
+      state.currentPageId = lastPageId;
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    saveStorage(false);
+    renderAll();
+    showTopSyncNotification("☁️ Synced across devices");
+  }
 }
 
 function subscribeToFirestore(uid) {
@@ -525,7 +584,7 @@ function subscribeToFirestore(uid) {
       return;
     }
 
-    // Ignore local write echoes to avoid unwanted UI re-renders while typing
+    // Ignore local write echoes to avoid unwanted UI re-renders while typing/replaying
     if (doc.metadata && doc.metadata.hasPendingWrites) {
       return;
     }
@@ -533,51 +592,19 @@ function subscribeToFirestore(uid) {
     const data = doc.data();
     if (!data) return;
 
-    let changed = false;
-
-    if (data.books && Array.isArray(data.books) && data.books.length > 0) {
-      if (JSON.stringify(state.books) !== JSON.stringify(data.books)) {
-        state.books = data.books;
-        changed = true;
-      }
+    // If this snapshot was produced by this client's own write, do not re-render or interrupt playback
+    if (data.lastWriteId && data.lastWriteId === localClientWriteId) {
+      if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Firestore Synced";
+      return;
     }
 
-    if (data.settings && typeof data.settings === 'object') {
-      if (JSON.stringify(state.settings) !== JSON.stringify({ ...state.settings, ...data.settings })) {
-        state.settings = { ...state.settings, ...data.settings };
-        changed = true;
-      }
+    // If a keystroke replay animation is currently active, defer applying remote snapshot until replay finishes
+    if (activeTypewriterTimer !== null) {
+      pendingRemoteSnapshot = data;
+      return;
     }
 
-    if (data.activeBookId && state.books.some(b => b.id === data.activeBookId)) {
-      if (state.activeBookId !== data.activeBookId) {
-        state.activeBookId = data.activeBookId;
-        changed = true;
-      }
-    } else if (state.books.length > 0 && (!state.activeBookId || !state.books.some(b => b.id === state.activeBookId))) {
-      state.activeBookId = state.books[0].id;
-      changed = true;
-    }
-
-    const activeBook = getActiveBook();
-    if (data.currentPageId && activeBook && activeBook.pages && activeBook.pages.some(p => p.id === data.currentPageId)) {
-      if (state.currentPageId !== data.currentPageId) {
-        state.currentPageId = data.currentPageId;
-        changed = true;
-      }
-    } else if (activeBook && activeBook.pages && activeBook.pages.length > 0) {
-      const lastPageId = activeBook.pages[activeBook.pages.length - 1].id;
-      if (state.currentPageId !== lastPageId) {
-        state.currentPageId = lastPageId;
-        changed = true;
-      }
-    }
-
-    if (changed) {
-      saveStorage(false);
-      renderAll();
-      showToast("Synced active manuscript & settings across devices!");
-    }
+    applyRemoteSnapshot(data);
   }, (e) => {
     console.warn("Firestore snapshot error:", e);
   });
@@ -2915,6 +2942,11 @@ function renderActivePage(lastChunkIsNew = false) {
             if (DOM.writingSurface) {
               scrollToPageBottom(true);
             }
+            if (pendingRemoteSnapshot) {
+              const pending = pendingRemoteSnapshot;
+              pendingRemoteSnapshot = null;
+              applyRemoteSnapshot(pending);
+            }
             if (wpm > 0) {
               const speedTag = replaySpeed > 1 ? ` (${replaySpeed}x replay)` : '';
               showToast(`⚡ Committed at ${wpm} WPM!${speedTag}`);
@@ -2946,6 +2978,11 @@ function renderActivePage(lastChunkIsNew = false) {
             playCarriageReturnBell();
             if (DOM.writingSurface) {
               scrollToPageBottom(true);
+            }
+            if (pendingRemoteSnapshot) {
+              const pending = pendingRemoteSnapshot;
+              pendingRemoteSnapshot = null;
+              applyRemoteSnapshot(pending);
             }
             if (wpm > 0) {
               const speedTag = replaySpeed > 1 ? ` (${replaySpeed}x replay)` : '';
@@ -3075,11 +3112,25 @@ function applySettingsUI() {
   updateCommitHint();
 }
 
+let toastDismissTimer = null;
+let topSyncTimer = null;
+
+function showTopSyncNotification(msg = "Synced with Firestore") {
+  if (!DOM.syncToast) return;
+  if (DOM.syncToastMsg) DOM.syncToastMsg.textContent = msg;
+  DOM.syncToast.classList.add('show');
+  if (topSyncTimer) clearTimeout(topSyncTimer);
+  topSyncTimer = setTimeout(() => {
+    if (DOM.syncToast) DOM.syncToast.classList.remove('show');
+  }, 2400);
+}
+
 function showToast(msg) {
   if (!DOM.toast) return;
   DOM.toast.textContent = msg;
   DOM.toast.classList.add('show');
-  setTimeout(() => {
+  if (toastDismissTimer) clearTimeout(toastDismissTimer);
+  toastDismissTimer = setTimeout(() => {
     DOM.toast.classList.remove('show');
   }, 2600);
 }
