@@ -224,6 +224,7 @@ function initDOM() {
     archiveFilesList: document.getElementById('archive-files-list'),
 
     btnGoogleSignIn: document.getElementById('btn-google-signin'),
+    emailAuthForm: document.getElementById('email-auth-form'),
     authEmail: document.getElementById('auth-email'),
     authPassword: document.getElementById('auth-password'),
     btnEmailSignIn: document.getElementById('btn-email-signin'),
@@ -709,6 +710,7 @@ async function getGoogleDriveToken() {
 function renderUserUI() {
   if (currentUser) {
     if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.classList.add('hidden');
+    if (DOM.emailAuthForm) DOM.emailAuthForm.classList.add('hidden');
     if (DOM.userProfile) DOM.userProfile.classList.remove('hidden');
     if (DOM.userName) DOM.userName.textContent = currentUser.displayName || currentUser.email.split('@')[0];
     if (DOM.syncStatus) {
@@ -716,6 +718,7 @@ function renderUserUI() {
     }
   } else {
     if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.classList.remove('hidden');
+    if (DOM.emailAuthForm) DOM.emailAuthForm.classList.remove('hidden');
     if (DOM.userProfile) DOM.userProfile.classList.add('hidden');
   }
 }

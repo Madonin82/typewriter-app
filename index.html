@@ -274,7 +274,7 @@
           Sign in with Google
         </button>
 
-        <div class="email-auth-form">
+        <div class="email-auth-form" id="email-auth-form">
           <input id="auth-email" class="auth-input" type="email" autocomplete="email" placeholder="Email address">
           <input id="auth-password" class="auth-input" type="password" autocomplete="current-password" placeholder="Password">
           <div class="email-auth-actions">
@@ -283,12 +283,14 @@
           </div>
         </div>
 
-        <div id="user-profile" class="user-row hidden">
-          <div class="user-text">
-            <span id="user-name" class="user-name">Author</span>
-            <span id="sync-status" class="sync-status">☁️ Firestore Synced</span>
+        <div id="user-profile" class="user-profile-block hidden">
+          <div class="user-status-card">
+            <div class="user-text">
+              <span id="user-name" class="user-name">Author</span>
+              <span id="sync-status" class="sync-status">☁️ Firestore Synced</span>
+            </div>
           </div>
-          <button id="btn-logout" class="btn-icon-subtle" title="Sign Out">🚪</button>
+          <button id="btn-logout" class="menu-btn email-auth-btn logout-btn">Sign out</button>
         </div>
       </div>
 
