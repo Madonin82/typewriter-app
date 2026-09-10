@@ -562,11 +562,18 @@ function closeOverlay() {
 }
 
 function updateCommitHint() {
-  if (!DOM.commitHint) return;
   const isCtrl = state.settings.commitKey === 'ctrl-enter';
-  DOM.commitHint.innerHTML = isCtrl
-    ? 'Commit with <kbd>Ctrl</kbd>+<kbd>Enter</kbd>'
-    : 'Commit with <kbd>Enter</kbd>';
+  const label = isCtrl ? 'Ctrl+Enter to Commit' : 'Enter to Commit';
+  const fullTip = isCtrl
+    ? 'Commit with Ctrl+Enter — or tap to commit'
+    : 'Commit with Enter (Shift+Enter for line break) — or tap to commit';
+
+  if (DOM.commitHint) {
+    DOM.commitHint.textContent = label;
+  }
+  if (DOM.btnCommit) {
+    DOM.btnCommit.title = fullTip;
+  }
 }
 
 // ─── FIREBASE AUTH & FIRESTORE SYNC ─────────────────────────
@@ -4636,15 +4643,6 @@ function applyFont() {
   document.body.className = document.body.className.replace(/\bfont-\S+/g, '');
   document.body.classList.add(`font-${state.settings.font}`);
   if (DOM.settingFont) DOM.settingFont.value = state.settings.font;
-}
-
-function updateCommitHint() {
-  if (!DOM.commitHint) return;
-  if (state.settings.commitKey === 'enter') {
-    DOM.commitHint.innerHTML = 'Commit with <kbd>Enter</kbd> (Shift+Enter for line break)';
-  } else {
-    DOM.commitHint.innerHTML = 'Commit with <kbd>Ctrl</kbd>+<kbd>Enter</kbd>';
-  }
 }
 
 function applySettingsUI() {

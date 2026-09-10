@@ -66,10 +66,11 @@
             <span class="char-counter" id="char-counter">0 / 200</span>
             <span class="meta-separator">•</span>
             <button id="btn-toggle-timestamps" class="btn-timestamp-toggle" title="Toggle commit timestamps in left margin">⏱️ Timestamps</button>
-          </div>
-          <div class="draft-footer-actions">
-            <span class="commit-hint" id="commit-hint">Commit with <kbd>Ctrl</kbd>+<kbd>Enter</kbd></span>
-            <button id="btn-commit" class="btn-commit-mini" tabindex="-1" title="Commit to Ink">🖋️ Commit</button>
+            <span class="meta-separator">•</span>
+            <button id="btn-commit" class="btn-commit-mini" tabindex="-1" title="Commit to Ink (Enter)">
+              <span class="commit-icon" aria-hidden="true">↵</span>
+              <span id="commit-hint">Enter to Commit</span>
+            </button>
           </div>
         </div>
       </div>

@@ -573,13 +573,13 @@ input:checked + .toggle-slider:before {
 .draft-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   margin-top: 8px;
   padding-top: 10px;
   border-top: 1px solid rgba(0, 0, 0, 0.08);
-  gap: 12px;
+  gap: 8px;
   flex-wrap: wrap;
   min-width: 0;
+  width: 100%;
 }
 
 body.theme-dark .draft-footer {
@@ -589,9 +589,10 @@ body.theme-dark .draft-footer {
 .draft-footer-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px 8px;
   min-width: 0;
   flex-wrap: wrap;
+  width: 100%;
 }
 
 .page-meta-info {
@@ -609,6 +610,7 @@ body.theme-dark .draft-footer {
   font-size: 10px;
   color: #999999;
   opacity: 0.6;
+  user-select: none;
 }
 
 .page-word-counter {
@@ -639,58 +641,60 @@ body.theme-dark .draft-footer {
   font-weight: 700;
 }
 
-.draft-footer-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-  min-width: 0;
-}
-
-.commit-hint {
-  font-size: 11px;
-  color: #888888;
-  font-family: 'Inter', sans-serif;
-}
-
-.commit-hint kbd {
-  background: #eee;
-  border: 1px solid #ccc;
-  border-radius: 3px;
-  padding: 1px 5px;
-  font-size: 10px;
-  font-family: var(--font-family);
-  color: #555;
-}
-
-body.theme-dark .commit-hint kbd {
-  background: #333;
-  border-color: #555;
-  color: #ddd;
-}
-
 .btn-commit-mini {
   background: var(--accent);
   color: #ffffff;
-  border: none;
-  border-radius: 4px;
-  padding: 4px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 12px;
+  padding: 2px 9px;
   font-size: 11px;
+  line-height: 1.2;
   font-family: 'Inter', sans-serif;
   font-weight: 500;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: all 0.18s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.btn-commit-mini .commit-icon {
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  opacity: 0.9;
 }
 
 .btn-commit-mini:hover:not(:disabled) {
   background: var(--accent-hover);
+  border-color: var(--accent-hover);
 }
 
 .btn-commit-mini:disabled {
-  background: #333333;
-  color: #777777;
+  background: rgba(0, 0, 0, 0.08);
+  border-color: rgba(0, 0, 0, 0.12);
+  color: #999999;
   cursor: not-allowed;
-  opacity: 0.6;
+  opacity: 0.55;
+}
+
+body.theme-dark .btn-commit-mini {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #ffffff;
+}
+
+body.theme-dark .btn-commit-mini:hover:not(:disabled) {
+  background: var(--accent-hover);
+  border-color: var(--accent-hover);
+}
+
+body.theme-dark .btn-commit-mini:disabled {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.35);
 }
 
 /* ─── ESC OVERLAY ─────────────────────────────────────────── */
@@ -2367,7 +2371,17 @@ body.theme-paper .sync-toast {
   #draft-box {
     margin: 0 auto;
     width: 100%;
-    padding: 12px 12px 10px;
+    padding: 10px 12px 8px;
+  }
+  .draft-footer {
+    margin-top: 6px;
+    padding-top: 8px;
+  }
+  .draft-footer-left {
+    gap: 5px 6px;
+  }
+  .page-meta-info {
+    max-width: 135px;
   }
   .backup-inspect-stats-grid {
     grid-template-columns: repeat(2, 1fr);
