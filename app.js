@@ -200,6 +200,9 @@ function initDOM() {
     escOverlay: document.getElementById('esc-overlay'),
     escHint: document.getElementById('esc-hint'),
     btnResume: document.getElementById('btn-resume'),
+    lockedPageOverlay: document.getElementById('locked-page-overlay'),
+    btnLockedEsc: document.getElementById('btn-locked-esc'),
+    lockedStatusText: document.getElementById('locked-status-text'),
 
     selectBookSlot: document.getElementById('select-book-slot'),
     btnNewBook: document.getElementById('btn-new-book'),
@@ -543,6 +546,7 @@ function openOverlay() {
   if (DOM.escOverlay) DOM.escOverlay.classList.add('open');
   if (DOM.writingSurface) DOM.writingSurface.classList.add('blurred');
   if (DOM.escHint) DOM.escHint.classList.add('active');
+  if (DOM.lockedPageOverlay) DOM.lockedPageOverlay.classList.add('hidden');
 }
 
 function closeOverlay() {
@@ -556,8 +560,15 @@ function closeOverlay() {
   if (DOM.pageDescModal) DOM.pageDescModal.classList.add('hidden');
   if (DOM.searchResultsModal) DOM.searchResultsModal.classList.add('hidden');
 
+  const page = getCurrentPage();
+  if (page && page.locked && DOM.lockedPageOverlay) {
+    DOM.lockedPageOverlay.classList.remove('hidden');
+  }
+
   setTimeout(() => {
-    if (DOM.draftInput) DOM.draftInput.focus();
+    if (page && !page.locked && DOM.draftInput) {
+      DOM.draftInput.focus();
+    }
   }, 100);
   if (DOM.escHint) DOM.escHint.classList.remove('active');
 }
@@ -4571,12 +4582,18 @@ function renderActivePage(lastChunkIsNew = false) {
   }
 
   const draftOverlay = document.getElementById('draft-overlay');
-  if (draftOverlay) {
-    if (page.locked) {
-      draftOverlay.classList.add('hidden');
-    } else {
-      draftOverlay.classList.remove('hidden');
+  const lockedOverlay = DOM.lockedPageOverlay || document.getElementById('locked-page-overlay');
+  if (page.locked) {
+    if (draftOverlay) draftOverlay.classList.add('hidden');
+    if (lockedOverlay) {
+      lockedOverlay.classList.remove('hidden');
+      if (DOM.lockedStatusText) {
+        DOM.lockedStatusText.textContent = `🔒 Page ${page.number} (Locked)`;
+      }
     }
+  } else {
+    if (draftOverlay) draftOverlay.classList.remove('hidden');
+    if (lockedOverlay) lockedOverlay.classList.add('hidden');
   }
 }
 
@@ -5507,6 +5524,23 @@ function setupEventListeners() {
     };
   }
 
+  // Locked Page Floating ESC Menu Button Click
+  if (DOM.btnLockedEsc) {
+    DOM.btnLockedEsc.onclick = (e) => {
+      e.stopPropagation();
+      if (overlayOpen) closeOverlay();
+      else openOverlay();
+    };
+  }
+
+  if (DOM.lockedPageOverlay) {
+    DOM.lockedPageOverlay.onclick = (e) => {
+      if (e.target.tagName !== 'BUTTON' && !e.target.closest('button')) {
+        if (!overlayOpen) openOverlay();
+      }
+    };
+  }
+
   // Overlay Backdrop Click to close
   if (DOM.escOverlay) {
     DOM.escOverlay.onclick = (e) => {
@@ -5579,7 +5613,19 @@ function setupEventListeners() {
       }
 
       // Ignore if user tapped inside the draft box or interactive controls
-      if (!target || target.closest('#draft-overlay') || target.closest('button, select, input, textarea, a, .modal-backdrop, #esc-overlay')) {
+      if (!target || target.closest('#draft-overlay') || target.closest('#locked-page-overlay') || target.closest('button, select, input, textarea, a, .modal-backdrop, #esc-overlay')) {
+        return;
+      }
+
+      // If text selection is active, do not interrupt text selection
+      if (window.getSelection && window.getSelection().toString().trim().length > 0) {
+        return;
+      }
+
+      const page = getCurrentPage();
+      if (page && page.locked) {
+        lastTouchCommitTime = Date.now();
+        openOverlay();
         return;
       }
 
@@ -5588,7 +5634,6 @@ function setupEventListeners() {
         lastTouchCommitTime = Date.now();
         commitDraft();
       } else {
-        const page = getCurrentPage();
         if (page && !page.locked && DOM.draftInput) {
           DOM.draftInput.focus();
         }
@@ -5642,14 +5687,24 @@ function setupEventListeners() {
       }
     });
 
-    // Fallback click listener (e.g. desktop mouse click to focus input)
+    // Fallback click listener (e.g. desktop mouse click to focus input or open menu on locked page)
     DOM.writingSurface.addEventListener('click', (e) => {
-      // Suppress synthetic clicks that immediately follow a touch tap commit
+      // Suppress synthetic clicks that immediately follow a touch tap commit or open
       if (Date.now() - lastTouchCommitTime < 500) return;
       if (e.target.tagName === 'BUTTON' || e.target.closest('button')) return;
-      if (e.target.closest('#draft-overlay')) return;
+      if (e.target.closest('#draft-overlay') || e.target.closest('#locked-page-overlay')) return;
+      if (overlayOpen || (DOM.writingSurface && DOM.writingSurface.classList.contains('blurred'))) return;
+
+      if (window.getSelection && window.getSelection().toString().trim().length > 0) {
+        return;
+      }
 
       const page = getCurrentPage();
+      if (page && page.locked) {
+        openOverlay();
+        return;
+      }
+
       if (page && !page.locked && DOM.draftInput) {
         DOM.draftInput.focus();
       }
