@@ -61,12 +61,15 @@
             <span class="meta-separator">•</span>
             <span class="page-meta-info" id="page-header-info">Page 1 of 1</span>
             <span class="meta-separator">•</span>
+            <span class="book-progress" id="book-progress">📖 0 / 80,000 words · write to get a projection</span>
+            <span class="meta-separator">•</span>
             <span class="page-word-counter" id="page-word-counter" title="Words written on current page / Target page word count">0 / 300 words</span>
             <span class="meta-separator">•</span>
             <span class="char-counter" id="char-counter">0 / 200</span>
             <span class="meta-separator">•</span>
             <button id="btn-toggle-timestamps" class="btn-timestamp-toggle" title="Toggle commit timestamps in left margin">⏱️ Timestamps</button>
             <span class="meta-separator">•</span>
+            <span class="best-wpm" id="best-wpm">best 0 WPM</span>
             <button id="btn-commit" class="btn-commit-mini" tabindex="-1" title="Commit to Ink (Enter)">
               <span class="commit-icon" aria-hidden="true">↵</span>
               <span id="commit-hint">Enter to Commit</span>
@@ -100,6 +103,10 @@
         <button id="btn-new-book" title="Create New Book">+</button>
         <button id="btn-import-book-quick" title="Import Manuscript or Book into Session">📤</button>
         <button id="btn-rename-book" title="Rename Current Book">✏️</button>
+      </div>
+      <div class="book-target-control">
+        <label for="book-word-target">Book word target</label>
+        <input id="book-word-target" type="number" min="1" step="1000" value="80000">
       </div>
 
       <div class="panel-section-label">Search Current Book</div>
@@ -430,6 +437,26 @@
           </label>
         </div>
         <small class="setting-help">Shows a faded ghost preview of the prior page's closing sentence above the ink stream.</small>
+      </div>
+
+      <div>
+        <div class="setting-label-row">
+          <span class="setting-label">Finish Projection</span>
+          <label class="toggle-switch" title="Show the projected finish date for the active book">
+            <input type="checkbox" id="setting-show-finish-projection">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <div>
+        <div class="setting-label-row">
+          <span class="setting-label">Race Your Ghost</span>
+          <label class="toggle-switch" title="Show and celebrate your personal-best WPM">
+            <input type="checkbox" id="setting-show-ghost-race">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
       </div>
 
       <div class="stats-footer-container">

@@ -684,6 +684,19 @@ body.theme-dark .draft-footer {
   max-width: 280px;
 }
 
+.book-progress,
+.best-wpm {
+  font-size: 10px;
+  color: var(--ink-faded);
+  font-family: var(--font-family);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+.best-wpm {
+  color: var(--accent);
+}
+
 .meta-separator {
   font-size: 10px;
   color: #999999;
@@ -866,6 +879,35 @@ body.theme-dark .btn-commit-mini:disabled {
 .book-strip button:hover {
   color: #cccccc;
   border-color: #666666;
+}
+
+.book-target-control {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 20px 16px;
+  color: #777;
+  font-size: 10px;
+  font-family: 'Inter', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.book-target-control input {
+  width: 92px;
+  background: #111111;
+  border: 1px solid #333333;
+  border-radius: 4px;
+  color: #cccccc;
+  font-family: var(--font-family);
+  font-size: 11px;
+  padding: 5px 6px;
+  outline: none;
+}
+
+.book-target-control input:focus {
+  border-color: var(--accent);
 }
 
 .pages-list {

@@ -83,6 +83,8 @@ let state = {
     soundEnabled: true,
     showTimestamps: false,
     prevPageGhost: true,
+    showFinishProjection: true,
+    showGhostRace: true,
     typewriterAnim: false,
     replaySpeed: 1, // 1 to 10 (whole number multiplier)
     autoAddSpace: false,
@@ -179,6 +181,32 @@ function playCarriageReturnBell() {
   } catch (e) {}
 }
 
+function playNewBestSound() {
+  if (!state.settings.soundEnabled || state.settings.volume === 0) return;
+  try {
+    initAudio();
+    if (!audioCtx) return;
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+
+    const volume = (state.settings.volume / 100) * 0.3;
+    const now = audioCtx.currentTime;
+    [880, 1175, 1568].forEach((frequency, index) => {
+      const osc = audioCtx.createOscillator();
+      const gainNode = audioCtx.createGain();
+      const start = now + index * 0.09;
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(frequency, start);
+      gainNode.gain.setValueAtTime(0.0001, start);
+      gainNode.gain.exponentialRampToValueAtTime(volume, start + 0.015);
+      gainNode.gain.exponentialRampToValueAtTime(0.0001, start + 0.24);
+      osc.connect(gainNode);
+      gainNode.connect(audioCtx.destination);
+      osc.start(start);
+      osc.stop(start + 0.25);
+    });
+  } catch (e) {}
+}
+
 // DOM Cache
 let DOM = {};
 
@@ -189,6 +217,8 @@ function initDOM() {
     prevPageGhost: document.getElementById('prev-page-ghost'),
     pageHeaderInfo: document.getElementById('page-header-info'),
     pageWordCounter: document.getElementById('page-word-counter'),
+    bookProgress: document.getElementById('book-progress'),
+    bestWpm: document.getElementById('best-wpm'),
     inkStream: document.getElementById('ink-stream'),
     draftBox: document.getElementById('draft-box'),
     draftInput: document.getElementById('draft-input'),
@@ -208,6 +238,7 @@ function initDOM() {
     btnNewBook: document.getElementById('btn-new-book'),
     btnImportBookQuick: document.getElementById('btn-import-book-quick'),
     btnRenameBook: document.getElementById('btn-rename-book'),
+    bookWordTarget: document.getElementById('book-word-target'),
     btnDeleteBook: document.getElementById('btn-delete-book'),
 
     pagesList: document.getElementById('pages-list'),
@@ -255,6 +286,8 @@ function initDOM() {
     settingShowTimestamps: document.getElementById('setting-show-timestamps'),
     btnToggleTimestamps: document.getElementById('btn-toggle-timestamps'),
     settingPrevPageGhost: document.getElementById('setting-prev-page-ghost'),
+    settingShowFinishProjection: document.getElementById('setting-show-finish-projection'),
+    settingShowGhostRace: document.getElementById('setting-show-ghost-race'),
 
     statTotalWords: document.getElementById('stat-total-words'),
     statTotalPages: document.getElementById('stat-total-pages'),
@@ -820,6 +853,8 @@ function sanitizeBooksForCloudSync(books) {
     return {
       id: book.id,
       title: book.title || 'Untitled',
+      wordTarget: book.wordTarget || 80000,
+      bestWpm: book.bestWpm || 0,
       createdAt: book.createdAt || Date.now(),
       updatedAt: book.updatedAt || Date.now(),
       pages: (book.pages || []).map(page => ({
@@ -1006,8 +1041,8 @@ function loadFromFirestore(uid) {
 
 // ─── STORAGE ARCHITECTURE & ENGINE ──────────────────────────
 
-const CURRENT_SCHEMA_VERSION = "1.2";
-const CURRENT_SETTINGS_VERSION = "1.2";
+const CURRENT_SCHEMA_VERSION = "1.3";
+const CURRENT_SETTINGS_VERSION = "1.3";
 const IDB_DATABASE_NAME = 'NoteToSelf_DB';
 const IDB_DATABASE_VERSION = 1;
 const IDB_STORE_DOCUMENTS = 'documents_store';
@@ -1341,6 +1376,15 @@ function migrateBookToV12(book) {
   return b;
 }
 
+function migrateBookToV13(book) {
+  const b = { ...book };
+  if (typeof b.wordTarget !== 'number' || b.wordTarget < 1) b.wordTarget = 80000;
+  if (typeof b.bestWpm !== 'number' || b.bestWpm < 0) b.bestWpm = 0;
+  b.version = CURRENT_SCHEMA_VERSION;
+  b.schemaVersion = CURRENT_SCHEMA_VERSION;
+  return b;
+}
+
 /**
  * Runs the full sequential migration pipeline on a single book
  */
@@ -1348,6 +1392,7 @@ function migrateSingleBook(rawBook, idx = 0) {
   let book = migrateBookToV10(rawBook, idx);
   book = migrateBookToV11(book);
   book = migrateBookToV12(book);
+  book = migrateBookToV13(book);
   return book;
 }
 
@@ -1364,6 +1409,8 @@ function migrateBooksSchema(books) {
       Array.isArray(rawBook.tags) &&
       rawBook.folderId !== undefined &&
       Array.isArray(rawBook.pages) &&
+      typeof rawBook.wordTarget === 'number' &&
+      typeof rawBook.bestWpm === 'number' &&
       rawBook.pages.every(p => p.version === CURRENT_SCHEMA_VERSION && Array.isArray(p.chunks));
 
     if (!isUpToDate) {
@@ -1394,6 +1441,8 @@ function migrateSettingsSchema(savedSettings) {
     volume: 50,
     showTimestamps: false,
     prevPageGhost: true,
+    showFinishProjection: true,
+    showGhostRace: true,
     typewriterAnim: false,
     replaySpeed: 1,
     autoAddSpace: false,
@@ -3337,6 +3386,8 @@ function createNewBook(titlePrompt = null, showNotification = true) {
     category: '',
     starred: false,
     archived: false,
+    wordTarget: 80000,
+    bestWpm: 0,
     pages: [],
     createdAt: Date.now(),
     updatedAt: Date.now(),
@@ -3703,6 +3754,87 @@ function getBookTotalWordCount(book) {
   return book.pages.reduce((sum, page) => sum + getPageWordCount(page), 0);
 }
 
+const FinishProjectionCache = {
+  cache: new Map(),
+
+  get(book) {
+    if (!book) return null;
+    const chunks = (book.pages || []).flatMap(page => page.chunks || []);
+    const lastTimestamp = chunks.length > 0 ? getChunkTimestamp(chunks[chunks.length - 1]) : null;
+    const totalWords = getBookTotalWordCount(book);
+    const todayKey = new Date().toLocaleDateString('en-CA');
+    const cached = this.cache.get(book.id);
+    if (cached && cached.chunkCount === chunks.length && cached.lastTimestamp === lastTimestamp && cached.totalWords === totalWords && cached.todayKey === todayKey) {
+      return cached.value;
+    }
+
+    const dayMs = 24 * 60 * 60 * 1000;
+    const today = new Date();
+    const activeDays = new Map();
+    for (let offset = 0; offset < 14; offset++) {
+      const date = new Date(today.getFullYear(), today.getMonth(), today.getDate() - offset);
+      activeDays.set(date.toLocaleDateString('en-CA'), 0);
+    }
+
+    chunks.forEach(chunk => {
+      const timestamp = getChunkTimestamp(chunk);
+      if (!timestamp) return;
+      const date = new Date(timestamp);
+      if (Number.isNaN(date.getTime())) return;
+      const dayKey = date.toLocaleDateString('en-CA');
+      if (activeDays.has(dayKey)) activeDays.set(dayKey, activeDays.get(dayKey) + countWords(getChunkText(chunk)));
+    });
+
+    const activeDayValues = [...activeDays.values()].filter(words => words > 0);
+    const pace = activeDayValues.length > 0
+      ? activeDayValues.reduce((sum, words) => sum + words, 0) / activeDayValues.length
+      : 0;
+    const remainingWords = Math.max(0, (book.wordTarget || 80000) - totalWords);
+    const value = { totalWords, target: book.wordTarget || 80000, pace, remainingWords };
+    if (pace > 0 && remainingWords > 0) {
+      value.finishDate = new Date(today.getTime() + Math.ceil(remainingWords / pace) * dayMs);
+    }
+    this.cache.set(book.id, { chunkCount: chunks.length, lastTimestamp, totalWords, todayKey, value });
+    return value;
+  },
+
+  invalidate(bookId) {
+    if (bookId) this.cache.delete(bookId);
+  }
+};
+
+function formatProjectionDate(date) {
+  return date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function updateBookProgressUI() {
+  const book = getActiveBook();
+  if (!book) return;
+
+  if (DOM.bookWordTarget && document.activeElement !== DOM.bookWordTarget) {
+    DOM.bookWordTarget.value = book.wordTarget || 80000;
+  }
+  const projection = FinishProjectionCache.get(book);
+  if (DOM.bookProgress) {
+    if (!state.settings.showFinishProjection) {
+      DOM.bookProgress.classList.add('hidden');
+    } else {
+      DOM.bookProgress.classList.remove('hidden');
+      if (projection.remainingWords === 0) {
+        DOM.bookProgress.textContent = '🎉 Book complete!';
+      } else if (projection.pace <= 0) {
+        DOM.bookProgress.textContent = `📖 ${projection.totalWords.toLocaleString()} / ${projection.target.toLocaleString()} words · write to get a projection`;
+      } else {
+        DOM.bookProgress.textContent = `📖 ${projection.totalWords.toLocaleString()} / ${projection.target.toLocaleString()} words · done ~${formatProjectionDate(projection.finishDate)} at your pace`;
+      }
+    }
+  }
+  if (DOM.bestWpm) {
+    DOM.bestWpm.classList.toggle('hidden', !state.settings.showGhostRace);
+    DOM.bestWpm.textContent = `best ${Math.max(0, book.bestWpm || 0)} WPM`;
+  }
+}
+
 // ─── DRAFTING BUFFER & FORWARD-ONLY INK STREAM ──────────────
 
 let currentKeystrokeSession = {
@@ -3797,6 +3929,16 @@ function commitDraft() {
     };
     activePage.chunks.push(newChunk);
     PageWordCountCache.invalidate(activePage.id);
+    const activeBook = getActiveBook();
+    FinishProjectionCache.invalidate(activeBook.id);
+    const previousBestWpm = activeBook.bestWpm || 0;
+    if (commitWPM > 0 && commitWPM > previousBestWpm) {
+      activeBook.bestWpm = commitWPM;
+      if (previousBestWpm > 0 && state.settings.showGhostRace) {
+        playNewBestSound();
+        showToast(`⚡ New best! ${commitWPM} WPM`);
+      }
+    }
     DOM.draftInput.value = '';
     state.buffer = '';
     if (DOM.draftInputBackdrop) DOM.draftInputBackdrop.innerHTML = '';
@@ -4731,6 +4873,7 @@ function updateStats() {
   if (DOM.statTotalPages) DOM.statTotalPages.textContent = book ? book.pages.length : 0;
   if (DOM.statTotalBooks) DOM.statTotalBooks.textContent = state.books.length;
   updatePageWordCounter();
+  updateBookProgressUI();
 }
 
 function applyTheme() {
@@ -4771,6 +4914,8 @@ function applySettingsUI() {
   if (DOM.settingShowTimestamps) DOM.settingShowTimestamps.checked = Boolean(state.settings.showTimestamps);
   if (DOM.btnToggleTimestamps) DOM.btnToggleTimestamps.classList.toggle('active', Boolean(state.settings.showTimestamps));
   if (DOM.settingPrevPageGhost) DOM.settingPrevPageGhost.checked = Boolean(state.settings.prevPageGhost);
+  if (DOM.settingShowFinishProjection) DOM.settingShowFinishProjection.checked = Boolean(state.settings.showFinishProjection);
+  if (DOM.settingShowGhostRace) DOM.settingShowGhostRace.checked = Boolean(state.settings.showGhostRace);
   updateCommitHint();
 }
 
@@ -5850,6 +5995,16 @@ function setupEventListeners() {
   if (DOM.btnNewBook) DOM.btnNewBook.onclick = () => createNewBook();
   if (DOM.btnRenameBook) DOM.btnRenameBook.onclick = () => renameCurrentBook();
   if (DOM.btnDeleteBook) DOM.btnDeleteBook.onclick = () => deleteCurrentBook();
+  if (DOM.bookWordTarget) {
+    DOM.bookWordTarget.onchange = (e) => {
+      const book = getActiveBook();
+      if (!book) return;
+      book.wordTarget = Math.max(1, parseInt(e.target.value, 10) || 80000);
+      FinishProjectionCache.invalidate(book.id);
+      saveStorage();
+      updateBookProgressUI();
+    };
+  }
 
   // Pages
   if (DOM.btnNewPage) {
@@ -6227,6 +6382,22 @@ function setupEventListeners() {
       applySettingsUI();
       renderActivePage(false);
       showToast(state.settings.prevPageGhost ? "Previous page context ON" : "Previous page context OFF");
+    };
+  }
+
+  if (DOM.settingShowFinishProjection) {
+    DOM.settingShowFinishProjection.onchange = (e) => {
+      state.settings.showFinishProjection = e.target.checked;
+      saveStorage();
+      updateBookProgressUI();
+    };
+  }
+
+  if (DOM.settingShowGhostRace) {
+    DOM.settingShowGhostRace.onchange = (e) => {
+      state.settings.showGhostRace = e.target.checked;
+      saveStorage();
+      updateBookProgressUI();
     };
   }
 
