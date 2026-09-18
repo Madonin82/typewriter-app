@@ -4,6 +4,8 @@ A forward-only micro-drafting studio designed to cure editing paralysis. Write i
 
 **Live demo:** https://madonin82.github.io/typewriter-app
 
+**Audience page:** https://madonin82.github.io/typewriter-app/#/station/
+
 ## The Philosophy
 
 Traditional writing tools invite endless back-editing, which traps writers in perfectionism. Note to Self separates drafting from committing:
@@ -24,10 +26,23 @@ Traditional writing tools invite endless back-editing, which traps writers in pe
 - **Words-per-page target** — Pages automatically lock and turn when the target is reached.
 - **Locked pages** — Finished pages are protected behind a floating overlay.
 
+### 📈 Progress & Pace
+
+- **Finish Projection** — Set a book word target (default 80,000) and the header shows live progress plus a projected finish date computed from your recent writing activity.
+- **Race Your Ghost** — A best-WPM badge tracks your personal record per book, with a toast and sound when you set a new one.
+- Both can be toggled independently in settings.
+
 ### 📚 Books & Pages
 
 - **Multiple books** — Create, rename, search, and delete books; page descriptions double as chapter labels.
 - **In-book search** — Find text across the current book and jump straight to the page.
+
+### 📡 Public Station
+
+- **Publish a book** — Push any book to your public Station with one click; readers get a clean reading page at `#/station/{book}`.
+- **Go live** — Toggle live mode and your committed ink streams to readers in near-real-time as you write.
+- **Station home** — `#/station/` lists everything you've published, live books first.
+- No login needed to read. Unpublishing is instant, and deleting or resetting a book automatically pulls it from the Station.
 
 ### 📊 Manuscript Analysis
 
@@ -42,7 +57,8 @@ Traditional writing tools invite endless back-editing, which traps writers in pe
 
 ### ☁️ Sync
 
-- **Firebase email/password auth** with real-time **Firestore sync** across devices, plus a live sync-status indicator.
+- **Firebase auth** — Sign in with Google or email/password; verified email is required to sync.
+- **Firestore sync** — Real-time sync across devices behind owner-only security rules (each account can read and write only its own data), plus a live sync-status indicator.
 - Fully usable offline — local-first storage is the default, cloud is opt-in.
 
 ### 🎨 Customization
@@ -92,6 +108,10 @@ Sync features need a Firebase project. Copy `.env.example` to `.env` and add you
 
 - HTML5 / CSS3 / Vanilla JavaScript (no framework, no build step)
 - Node.js static server
-- Firebase Auth + Firestore (optional sync)
+- Firebase Auth + Firestore (verified-email-gated sync)
 - Google Drive API (backup & export)
 - jsPDF, JSZip, Web Audio API, Web Workers
+
+## License
+
+Personal, non-commercial use only — see the `LICENSE` file for the full terms.
