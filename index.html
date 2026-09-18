@@ -31,6 +31,11 @@
 </head>
 <body class="theme-cream font-courier">
 
+  <!-- ── PUBLIC STATION SURFACE ── -->
+  <main id="station-root" class="station-root hidden" aria-live="polite">
+    <div id="station-content" class="station-content"></div>
+  </main>
+
   <!-- ── MAIN WRITING SURFACE ── -->
   <div id="writing-surface" class="writing-surface">
     <div class="page" id="page-sheet">
@@ -107,6 +112,11 @@
       <div class="book-target-control">
         <label for="book-word-target">Book word target</label>
         <input id="book-word-target" type="number" min="1" step="1000" value="80000">
+      </div>
+      <div class="station-controls">
+        <button id="btn-publish-station" class="station-control-btn" title="Publish this book to the public Station">📡 Publish to Station</button>
+        <button id="btn-toggle-live" class="station-control-btn hidden" title="Start or end the public live stream">● Go Live</button>
+        <span id="station-publish-status" class="station-publish-status"></span>
       </div>
 
       <div class="panel-section-label">Search Current Book</div>

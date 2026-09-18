@@ -212,6 +212,8 @@ let DOM = {};
 
 function initDOM() {
   DOM = {
+    stationRoot: document.getElementById('station-root'),
+    stationContent: document.getElementById('station-content'),
     writingSurface: document.getElementById('writing-surface'),
     pageSheet: document.getElementById('page-sheet'),
     prevPageGhost: document.getElementById('prev-page-ghost'),
@@ -239,6 +241,9 @@ function initDOM() {
     btnImportBookQuick: document.getElementById('btn-import-book-quick'),
     btnRenameBook: document.getElementById('btn-rename-book'),
     bookWordTarget: document.getElementById('book-word-target'),
+    btnPublishStation: document.getElementById('btn-publish-station'),
+    btnToggleLive: document.getElementById('btn-toggle-live'),
+    stationPublishStatus: document.getElementById('station-publish-status'),
     btnDeleteBook: document.getElementById('btn-delete-book'),
 
     pagesList: document.getElementById('pages-list'),
@@ -627,6 +632,10 @@ function updateCommitHint() {
 
 let firestoreUnsubscribe = null;
 let verificationNoticeShown = false;
+let stationUnsubscribe = null;
+let stationPushTimeout = null;
+let stationDraftTimeout = null;
+let stationRouteActive = false;
 
 function requiresEmailVerification(user = currentUser) {
   return isEmailPasswordUser(user) && !user.emailVerified;
@@ -1037,6 +1046,247 @@ function subscribeToFirestore(uid) {
 
 function loadFromFirestore(uid) {
   subscribeToFirestore(uid);
+}
+
+// ─── PUBLIC STATION ─────────────────────────────────────────
+
+function getStationRoute() {
+  const hash = window.location.hash || '';
+  const match = hash.match(/^#\/station\/?(.*)$/);
+  if (!match) return null;
+  return { bookId: match[1] ? decodeURIComponent(match[1].split('/')[0]) : null };
+}
+
+function stationPagesForBook(book) {
+  return (sanitizeBooksForCloudSync([book])[0]?.pages || []).map(page => ({
+    number: page.number,
+    chunks: (page.chunks || []).map(chunk => ({
+      text: chunk.text || '',
+      timestamp: chunk.timestamp || null
+    }))
+  }));
+}
+
+function stationPayloadForBook(book, overrides = {}) {
+  const payload = {
+    ownerUid: currentUser.uid,
+    title: book.title || 'Untitled',
+    isLive: Boolean(book.stationLive),
+    liveDraft: '',
+    pages: stationPagesForBook(book),
+    updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    ...overrides
+  };
+  if (overrides.updatedAt === null) delete payload.updatedAt;
+  return payload;
+}
+
+function pushStationSnapshot(book, overrides = {}) {
+  if (!db || !currentUser || !book || !book.stationPublished || requiresEmailVerification()) return;
+  const payload = stationPayloadForBook(book, overrides);
+  // v1 trusts the ownerUid retained on the created document; tighten update rules later.
+  db.collection('station').doc(book.id).set(payload, { merge: true }).catch(error => {
+    console.warn('[Station] Push failed:', error);
+  });
+}
+
+function scheduleStationPush(book, overrides = {}, delay = 1200) {
+  if (stationPushTimeout) clearTimeout(stationPushTimeout);
+  stationPushTimeout = setTimeout(() => {
+    stationPushTimeout = null;
+    pushStationSnapshot(book, overrides);
+  }, delay);
+}
+
+function scheduleStationDraftPush() {
+  const book = getActiveBook();
+  if (!book || !book.stationPublished || !book.stationLive) return;
+  if (stationDraftTimeout) clearTimeout(stationDraftTimeout);
+  stationDraftTimeout = setTimeout(() => {
+    stationDraftTimeout = null;
+    pushStationSnapshot(book, { liveDraft: DOM.draftInput ? DOM.draftInput.value : '', updatedAt: null });
+  }, 500);
+}
+
+function updateStationControls() {
+  const book = getActiveBook();
+  const published = Boolean(book && book.stationPublished);
+  if (DOM.btnPublishStation) {
+    DOM.btnPublishStation.textContent = published ? '📡 Unpublish from Station' : '📡 Publish to Station';
+    DOM.btnPublishStation.classList.toggle('published', published);
+  }
+  if (DOM.btnToggleLive) {
+    DOM.btnToggleLive.classList.toggle('hidden', !published);
+    DOM.btnToggleLive.textContent = book && book.stationLive ? '■ End Stream' : '● Go Live';
+    DOM.btnToggleLive.classList.toggle('live', Boolean(book && book.stationLive));
+  }
+  if (DOM.stationPublishStatus) {
+    DOM.stationPublishStatus.textContent = published ? (book.stationLive ? 'ON AIR' : 'Published') : '';
+  }
+}
+
+function publishActiveBook() {
+  const book = getActiveBook();
+  if (!book) return;
+  if (!currentUser || requiresEmailVerification()) {
+    showToast('Sign in with a verified account to publish a Station.');
+    return;
+  }
+  book.stationPublished = true;
+  book.stationLive = false;
+  pushStationSnapshot(book, { isLive: false, liveDraft: '' });
+  saveStorage();
+  updateStationControls();
+  showToast(`Published "${book.title}" to the Station.`);
+}
+
+function unpublishActiveBook() {
+  const book = getActiveBook();
+  if (!book || !book.stationPublished) return;
+  if (!confirm(`Unpublish "${book.title}" from the Station? Your local book will remain untouched.`)) return;
+  deleteStationSnapshot(book);
+  book.stationPublished = false;
+  book.stationLive = false;
+  saveStorage();
+  updateStationControls();
+  showToast(`Unpublished "${book.title}". Your local book is safe.`);
+}
+
+function deleteStationSnapshot(book) {
+  if (db && currentUser && book && book.stationPublished && !requiresEmailVerification()) {
+    db.collection('station').doc(book.id).delete().catch(error => console.warn('[Station] Unpublish failed:', error));
+  }
+}
+
+function toggleStationLive() {
+  const book = getActiveBook();
+  if (!book || !book.stationPublished) return;
+  book.stationLive = !book.stationLive;
+  pushStationSnapshot(book, { isLive: book.stationLive, liveDraft: book.stationLive && DOM.draftInput ? DOM.draftInput.value : '' });
+  saveStorage();
+  updateStationControls();
+  showToast(book.stationLive ? 'Station is ON AIR.' : 'Stream ended. Archive remains public.');
+}
+
+function formatStationDate(value) {
+  if (!value) return '';
+  const date = value.toDate ? value.toDate() : new Date(value);
+  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
+}
+
+function renderStationDocument(data, bookId = null) {
+  if (!DOM.stationContent) return;
+  DOM.stationContent.innerHTML = '';
+  if (!data) {
+    const empty = document.createElement('section');
+    empty.className = 'station-off-air';
+    empty.innerHTML = '<div class="station-kicker">NOTE TO SELF</div><h1>This station is off air.</h1><p>The book may be unpublished or the channel may not exist.</p><a href="#/station/">Return to the station home</a>';
+    DOM.stationContent.appendChild(empty);
+    return;
+  }
+
+  const header = document.createElement('header');
+  header.className = 'station-header';
+  const back = document.createElement('a');
+  back.href = '#/station/';
+  back.className = 'station-back';
+  back.textContent = '← Station';
+  header.appendChild(back);
+  const title = document.createElement('h1');
+  title.textContent = data.title || 'Untitled';
+  header.appendChild(title);
+  if (data.isLive) {
+    const live = document.createElement('div');
+    live.className = 'station-live-banner';
+    live.innerHTML = '<span class="station-live-dot">●</span> ON AIR';
+    header.appendChild(live);
+  }
+  DOM.stationContent.appendChild(header);
+
+  const manuscript = document.createElement('article');
+  manuscript.className = 'station-manuscript';
+  (data.pages || []).forEach(page => {
+    const pageSection = document.createElement('section');
+    pageSection.className = 'station-page';
+    const pageLabel = document.createElement('div');
+    pageLabel.className = 'station-page-label';
+    pageLabel.textContent = `Page ${page.number}`;
+    pageSection.appendChild(pageLabel);
+    const ink = document.createElement('div');
+    ink.className = 'station-ink';
+    (page.chunks || []).forEach(chunk => {
+      const span = document.createElement('span');
+      span.textContent = chunk.text || '';
+      ink.appendChild(span);
+    });
+    pageSection.appendChild(ink);
+    manuscript.appendChild(pageSection);
+  });
+  if (data.isLive && data.liveDraft) {
+    const ghost = document.createElement('div');
+    ghost.className = 'station-live-draft';
+    ghost.textContent = data.liveDraft;
+    const caret = document.createElement('span');
+    caret.className = 'station-caret';
+    ghost.appendChild(caret);
+    manuscript.appendChild(ghost);
+  }
+  DOM.stationContent.appendChild(manuscript);
+  if (bookId) document.title = `${data.title || 'Station'} · Note to Self`;
+}
+
+function renderStationHome(docs) {
+  if (!DOM.stationContent) return;
+  DOM.stationContent.innerHTML = '<header class="station-home-header"><div class="station-kicker">NOTE TO SELF</div><h1>Station</h1><p>Published pages, live when they are being written.</p></header>';
+  const shelf = document.createElement('div');
+  shelf.className = 'station-shelf';
+  docs.forEach(doc => {
+    const data = doc.data();
+    const card = document.createElement('a');
+    card.href = `#/station/${encodeURIComponent(doc.id)}`;
+    card.className = `station-card${data.isLive ? ' is-live' : ''}`;
+    card.innerHTML = data.isLive ? '<span class="station-card-live">● ON AIR</span>' : '<span class="station-card-label">ARCHIVE</span>';
+    const title = document.createElement('h2');
+    title.textContent = data.title || 'Untitled';
+    card.appendChild(title);
+    const meta = document.createElement('span');
+    meta.className = 'station-card-meta';
+    meta.textContent = `${(data.pages || []).length} page${(data.pages || []).length === 1 ? '' : 's'}${data.isLive ? ' · live now' : ` · updated ${formatStationDate(data.updatedAt)}`}`;
+    card.appendChild(meta);
+    shelf.appendChild(card);
+  });
+  if (docs.length === 0) {
+    shelf.innerHTML = '<div class="station-off-air"><h2>No published stations yet.</h2><p>Check back when a writer takes the air.</p></div>';
+  }
+  DOM.stationContent.appendChild(shelf);
+}
+
+function subscribeToStationRoute() {
+  if (!db || !DOM.stationContent) return;
+  const route = getStationRoute();
+  if (!route) return;
+  if (stationUnsubscribe) stationUnsubscribe();
+  if (route.bookId) {
+    stationUnsubscribe = db.collection('station').doc(route.bookId).onSnapshot(doc => {
+      renderStationDocument(doc.exists ? doc.data() : null, route.bookId);
+    }, () => renderStationDocument(null, route.bookId));
+  } else {
+    stationUnsubscribe = db.collection('station').orderBy('isLive', 'desc').orderBy('updatedAt', 'desc').onSnapshot(snapshot => {
+      renderStationHome(snapshot.docs);
+    }, () => {
+      db.collection('station').orderBy('updatedAt', 'desc').onSnapshot(snapshot => renderStationHome(snapshot.docs), () => renderStationHome([]));
+    });
+  }
+}
+
+function initStationPage() {
+  stationRouteActive = Boolean(getStationRoute());
+  if (!stationRouteActive) return false;
+  document.body.classList.add('station-mode');
+  if (DOM.stationRoot) DOM.stationRoot.classList.remove('hidden');
+  subscribeToStationRoute();
+  window.addEventListener('hashchange', () => window.location.reload());
+  return true;
 }
 
 // ─── STORAGE ARCHITECTURE & ENGINE ──────────────────────────
@@ -3453,6 +3703,7 @@ function deleteCurrentBook() {
   if (confirm(`Delete "${book.title}"?\n\n(A safety backup will automatically be saved and downloaded to your files in case this was an accident.)`)) {
     // Automatically create safety backup
     createSafetyBackupForBook(book, 'Deleted Book');
+    deleteStationSnapshot(book);
 
     state.books = state.books.filter(b => b.id !== book.id);
     state.activeBookId = state.books[0].id;
@@ -3951,8 +4202,14 @@ function commitDraft() {
       activePage.locked = true;
       showToast(`Target of ${state.settings.wordsPerPage} words reached! Page turned.`);
       createNewPage(true);
+      if (activeBook.stationPublished) {
+        scheduleStationPush(activeBook, { liveDraft: '' }, 1200);
+      }
     } else {
       saveStorage(true, false);
+      if (activeBook.stationPublished) {
+        scheduleStationPush(activeBook, { liveDraft: '' }, 1200);
+      }
       if (Boolean(state.settings.typewriterAnim)) {
         renderAll(true);
       } else {
@@ -4109,6 +4366,7 @@ function renderAll(lastChunkIsNew = false) {
   renderActivePage(lastChunkIsNew);
   updateStats();
   updateCharCounter();
+  updateStationControls();
   renderUserUI();
 }
 
@@ -5961,6 +6219,7 @@ function setupEventListeners() {
           scrollToPageBottom(false);
         });
       }
+      scheduleStationDraftPush();
     };
   }
 
@@ -5995,6 +6254,12 @@ function setupEventListeners() {
   if (DOM.btnNewBook) DOM.btnNewBook.onclick = () => createNewBook();
   if (DOM.btnRenameBook) DOM.btnRenameBook.onclick = () => renameCurrentBook();
   if (DOM.btnDeleteBook) DOM.btnDeleteBook.onclick = () => deleteCurrentBook();
+  if (DOM.btnPublishStation) DOM.btnPublishStation.onclick = () => {
+    const book = getActiveBook();
+    if (book && book.stationPublished) unpublishActiveBook();
+    else publishActiveBook();
+  };
+  if (DOM.btnToggleLive) DOM.btnToggleLive.onclick = toggleStationLive;
   if (DOM.bookWordTarget) {
     DOM.bookWordTarget.onchange = (e) => {
       const book = getActiveBook();
@@ -6188,6 +6453,7 @@ function setupEventListeners() {
       if (confirm("Reset all books, pages, and preferences?\n\n(An automatic safety backup of ALL your manuscripts will be created and downloaded first in case this was an accident.)")) {
         // Automatically back up all manuscripts before resetting
         createSafetyBackupForReset(state.books, state.settings, 'Full Studio Reset');
+        state.books.forEach(book => deleteStationSnapshot(book));
 
         // Retain safety archive and reset other items
         const preservedArchive = [...memorySafetyArchive];
@@ -6530,6 +6796,11 @@ function setupEventListeners() {
 
 function init() {
   initDOM();
+  if (getStationRoute()) {
+    initFirebase();
+    initStationPage();
+    return;
+  }
   TextWorkerBridge.init();
   loadStorage();
   setupEventListeners();

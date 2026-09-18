@@ -169,6 +169,209 @@ html, body {
   display: none !important;
 }
 
+/* ─── PUBLIC STATION ──────────────────────────────────────── */
+body.station-mode > :not(#station-root) {
+  display: none !important;
+}
+
+.station-root {
+  position: fixed;
+  inset: 0;
+  overflow-y: auto;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.station-content {
+  width: min(760px, 100%);
+  margin: 0 auto;
+  padding: 42px 28px 90px;
+}
+
+.station-home-header,
+.station-header {
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  padding-bottom: 24px;
+  margin-bottom: 32px;
+}
+
+.station-kicker,
+.station-page-label,
+.station-card-label {
+  color: var(--accent);
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.station-home-header h1,
+.station-header h1 {
+  font-family: var(--font-family);
+  font-size: clamp(28px, 6vw, 46px);
+  font-weight: 400;
+  line-height: 1.1;
+  margin: 12px 0 8px;
+}
+
+.station-home-header p,
+.station-off-air p {
+  color: var(--ink-faded);
+  font-family: 'Inter', sans-serif;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.station-back {
+  color: var(--ink-faded);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  text-decoration: none;
+}
+
+.station-back:hover { color: var(--accent); }
+
+.station-live-banner,
+.station-card-live {
+  color: #b42318;
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  margin-top: 18px;
+}
+
+.station-live-dot {
+  animation: stationPulse 1.2s ease-in-out infinite;
+}
+
+@keyframes stationPulse {
+  50% { opacity: 0.25; }
+}
+
+.station-shelf {
+  display: grid;
+  gap: 12px;
+}
+
+.station-card {
+  display: block;
+  color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
+  padding: 20px 22px;
+  text-decoration: none;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.station-card:hover {
+  border-color: var(--accent);
+  transform: translateX(3px);
+}
+
+.station-card h2 {
+  font-family: var(--font-family);
+  font-size: 20px;
+  font-weight: 400;
+  margin: 8px 0 10px;
+}
+
+.station-card-meta {
+  color: var(--ink-faded);
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+}
+
+.station-manuscript {
+  font-size: 17px;
+  line-height: 1.85;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.station-page + .station-page {
+  border-top: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+  margin-top: 48px;
+  padding-top: 28px;
+}
+
+.station-ink { margin-top: 10px; }
+
+.station-live-draft {
+  color: var(--ink);
+  opacity: 0.38;
+  margin-top: 20px;
+}
+
+.station-caret {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: var(--accent);
+  margin-left: 3px;
+  vertical-align: text-bottom;
+  animation: blink 1.1s step-end infinite;
+}
+
+.station-off-air {
+  padding: 18vh 0;
+}
+
+.station-off-air h1,
+.station-off-air h2 {
+  font-family: var(--font-family);
+  font-weight: 400;
+  margin: 12px 0;
+}
+
+.station-off-air a {
+  display: inline-block;
+  color: var(--accent);
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  margin-top: 18px;
+}
+
+@media (max-width: 600px) {
+  .station-content { padding: 28px 18px 64px; }
+  .station-manuscript { font-size: 16px; }
+}
+
+/* ─── WRITER STATION CONTROLS ─────────────────────────────── */
+.station-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 0 20px 16px;
+}
+
+.station-control-btn {
+  background: #111111;
+  border: 1px solid #333333;
+  border-radius: 4px;
+  color: #aaaaaa;
+  cursor: pointer;
+  font-family: 'Inter', sans-serif;
+  font-size: 10px;
+  padding: 6px 8px;
+}
+
+.station-control-btn:hover,
+.station-control-btn.published,
+.station-control-btn.live {
+  border-color: var(--accent);
+  color: var(--accent-light);
+}
+
+.station-publish-status {
+  color: #7ee896;
+  font-family: 'Inter', sans-serif;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 /* ─── MAIN WRITING SURFACE ─────────────────────────────────── */
 #writing-surface {
   position: fixed;
