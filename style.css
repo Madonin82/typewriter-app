@@ -282,6 +282,10 @@ body.station-mode > :not(#station-root) {
   font-size: 11px;
 }
 
+.station-hint { opacity: 0.7; font-size: 0.95em; }
+.station-card-cta { display: inline-block; margin-top: 8px; font-size: 0.85em; opacity: 0.65; }
+.station-card:hover .station-card-cta { opacity: 1; }
+
 .station-manuscript {
   font-size: 17px;
   line-height: 1.85;

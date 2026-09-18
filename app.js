@@ -1237,7 +1237,7 @@ function renderStationDocument(data, bookId = null) {
 
 function renderStationHome(docs) {
   if (!DOM.stationContent) return;
-  DOM.stationContent.innerHTML = '<header class="station-home-header"><div class="station-kicker">NOTE TO SELF</div><h1>Station</h1><p>Published pages, live when they are being written.</p></header>';
+  DOM.stationContent.innerHTML = '<header class="station-home-header"><div class="station-kicker">NOTE TO SELF</div><h1>Station</h1><p>Published pages, live when they are being written.</p><p class="station-hint">Click a station below to start reading.</p></header>';
   const shelf = document.createElement('div');
   shelf.className = 'station-shelf';
   docs.forEach(doc => {
@@ -1253,6 +1253,7 @@ function renderStationHome(docs) {
     meta.className = 'station-card-meta';
     meta.textContent = `${(data.pages || []).length} page${(data.pages || []).length === 1 ? '' : 's'}${data.isLive ? ' · live now' : ` · updated ${formatStationDate(data.updatedAt)}`}`;
     card.appendChild(meta);
+    const cta = document.createElement('span');cta.className = 'station-card-cta';cta.textContent = 'Click to view →';card.appendChild(cta);
     shelf.appendChild(card);
   });
   if (docs.length === 0) {
