@@ -1067,6 +1067,28 @@ function stationPagesForBook(book) {
   }));
 }
 
+function getStationDisplaySettings() {
+  return {
+    theme: state.settings.theme || 'cream',
+    font: state.settings.font || 'courier',
+    showTimestamps: Boolean(state.settings.showTimestamps),
+    fontSize: Math.min(36, Math.max(12, parseInt(state.settings.fontSize, 10) || 18)),
+    lineHeight: Math.min(3, Math.max(1, parseFloat(state.settings.lineHeight) || 1.8)),
+    letterSpacing: typeof state.settings.letterSpacing === 'string' ? state.settings.letterSpacing : '0.02em'
+  };
+}
+
+function getStationDisplaySettingsOrDefaults(display) {
+  return {
+    theme: typeof display?.theme === 'string' ? display.theme : 'cream',
+    font: typeof display?.font === 'string' ? display.font : 'courier',
+    showTimestamps: Boolean(display?.showTimestamps),
+    fontSize: Math.min(36, Math.max(12, parseInt(display?.fontSize, 10) || 18)),
+    lineHeight: Math.min(3, Math.max(1, parseFloat(display?.lineHeight) || 1.8)),
+    letterSpacing: typeof display?.letterSpacing === 'string' ? display.letterSpacing : '0.02em'
+  };
+}
+
 function stationPayloadForBook(book, overrides = {}) {
   const payload = {
     ownerUid: currentUser.uid,
@@ -1074,6 +1096,7 @@ function stationPayloadForBook(book, overrides = {}) {
     isLive: Boolean(book.stationLive),
     liveDraft: '',
     pages: stationPagesForBook(book),
+    display: getStationDisplaySettings(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
     ...overrides
   };
@@ -1174,8 +1197,26 @@ function formatStationDate(value) {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
 }
 
+function applyStationDisplaySettings(display) {
+  const settings = getStationDisplaySettingsOrDefaults(display);
+  const validThemes = ['cream', 'white', 'sepia', 'dark', 'matrix'];
+  const validFonts = ['courier', 'special', 'mono'];
+  const theme = validThemes.includes(settings.theme) ? settings.theme : 'cream';
+  const font = validFonts.includes(settings.font) ? settings.font : 'courier';
+  const stationRoot = DOM.stationRoot || document.documentElement;
+  stationRoot.style.setProperty('--station-font-size', `${settings.fontSize}px`);
+  stationRoot.style.setProperty('--station-line-height', String(settings.lineHeight));
+  stationRoot.style.setProperty('--station-letter-spacing', settings.letterSpacing);
+  document.body.className = document.body.className
+    .replace(/\btheme-\S+/g, '')
+    .replace(/\bfont-\S+/g, '')
+    .replace(/\bstation-timestamps-\S+/g, '');
+  document.body.classList.add(`theme-${theme}`, `font-${font}`, `station-timestamps-${settings.showTimestamps ? 'on' : 'off'}`);
+}
+
 function renderStationDocument(data, bookId = null) {
   if (!DOM.stationContent) return;
+  applyStationDisplaySettings(data ? data.display : null);
   DOM.stationContent.innerHTML = '';
   if (!data) {
     const empty = document.createElement('section');
@@ -1215,6 +1256,14 @@ function renderStationDocument(data, bookId = null) {
     const ink = document.createElement('div');
     ink.className = 'station-ink';
     (page.chunks || []).forEach(chunk => {
+      const timestamp = chunk.timestamp;
+      const displaySettings = getStationDisplaySettingsOrDefaults(data.display);
+      if (displaySettings.showTimestamps && timestamp) {
+        const timestampSpan = document.createElement('span');
+        timestampSpan.className = 'station-timestamp';
+        timestampSpan.textContent = `[${formatChunkTime(timestamp)}] `;
+        ink.appendChild(timestampSpan);
+      }
       const span = document.createElement('span');
       span.textContent = chunk.text || '';
       ink.appendChild(span);
@@ -1937,6 +1986,13 @@ function saveStorage(syncCloud = true, immediateDisk = false) {
 
   if (syncCloud && currentUser) {
     syncToFirestore();
+  }
+
+  const stationBook = getActiveBook();
+  if (stationBook && stationBook.stationPublished) {
+    scheduleStationPush(stationBook, {
+      liveDraft: stationBook.stationLive && DOM.draftInput ? DOM.draftInput.value : ''
+    }, 1200);
   }
 }
 

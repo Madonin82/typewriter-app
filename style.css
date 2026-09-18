@@ -256,12 +256,15 @@ body.station-mode > :not(#station-root) {
 }
 
 .station-card {
-  display: block;
   color: var(--ink);
   border: 1px solid color-mix(in srgb, var(--ink) 16%, transparent);
   padding: 20px 22px;
   text-decoration: none;
   transition: border-color 0.18s ease, transform 0.18s ease;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
 }
 
 .station-card:hover {
@@ -283,12 +286,19 @@ body.station-mode > :not(#station-root) {
 }
 
 .station-hint { opacity: 0.7; font-size: 0.95em; }
-.station-card-cta { display: inline-block; margin-top: 8px; font-size: 0.85em; opacity: 0.65; }
+.station-card-cta {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 1.15em;
+  opacity: 0.75;
+  white-space: nowrap;
+}
 .station-card:hover .station-card-cta { opacity: 1; }
 
 .station-manuscript {
-  font-size: 17px;
-  line-height: 1.85;
+  font-size: var(--station-font-size, 18px);
+  line-height: var(--station-line-height, 1.8);
+  letter-spacing: var(--station-letter-spacing, 0.02em);
   white-space: pre-wrap;
   word-break: break-word;
 }
@@ -300,6 +310,13 @@ body.station-mode > :not(#station-root) {
 }
 
 .station-ink { margin-top: 10px; }
+
+.station-timestamp {
+  color: var(--ink-faded);
+  font-size: 0.65em;
+  opacity: 0.75;
+  white-space: nowrap;
+}
 
 .station-live-draft {
   color: var(--ink);
@@ -338,7 +355,6 @@ body.station-mode > :not(#station-root) {
 
 @media (max-width: 600px) {
   .station-content { padding: 28px 18px 64px; }
-  .station-manuscript { font-size: 16px; }
 }
 
 /* ─── WRITER STATION CONTROLS ─────────────────────────────── */
