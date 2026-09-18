@@ -596,7 +596,11 @@ let firestoreUnsubscribe = null;
 let verificationNoticeShown = false;
 
 function requiresEmailVerification(user = currentUser) {
-  return Boolean(user && user.providerData && user.providerData.some((provider) => provider.providerId === 'password') && !user.emailVerified);
+  return isEmailPasswordUser(user) && !user.emailVerified;
+}
+
+function isEmailPasswordUser(user = currentUser) {
+  return Boolean(user && user.providerData && user.providerData.some((provider) => provider.providerId === 'password'));
 }
 
 function showVerificationRequiredNotice() {
@@ -899,7 +903,7 @@ function executeFirestoreSync() {
     showTopSyncNotification("☁️ Synced with Firestore");
   }).catch((e) => {
     console.warn("Firestore sync error:", e);
-    if (e.code === 'permission-denied' && requiresEmailVerification()) {
+    if (e.code === 'permission-denied' && isEmailPasswordUser()) {
       showVerificationRequiredNotice();
       return;
     }
@@ -990,7 +994,7 @@ function subscribeToFirestore(uid) {
     applyRemoteSnapshot(data);
   }, (e) => {
     console.warn("Firestore snapshot error:", e);
-    if (e.code === 'permission-denied' && requiresEmailVerification()) {
+    if (e.code === 'permission-denied' && isEmailPasswordUser()) {
       showVerificationRequiredNotice();
     }
   });
