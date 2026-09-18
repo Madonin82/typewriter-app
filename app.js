@@ -235,6 +235,8 @@ function initDOM() {
     userProfile: document.getElementById('user-profile'),
     userName: document.getElementById('user-name'),
     syncStatus: document.getElementById('sync-status'),
+    btnResendVerification: document.getElementById('btn-resend-verification'),
+    btnCheckVerification: document.getElementById('btn-check-verification'),
     btnLogout: document.getElementById('btn-logout'),
     btnClearAll: document.getElementById('btn-clear-all'),
 
@@ -591,6 +593,19 @@ function updateCommitHint() {
 // ─── FIREBASE AUTH & FIRESTORE SYNC ─────────────────────────
 
 let firestoreUnsubscribe = null;
+let verificationNoticeShown = false;
+
+function requiresEmailVerification(user = currentUser) {
+  return Boolean(user && user.providerData && user.providerData.some((provider) => provider.providerId === 'password') && !user.emailVerified);
+}
+
+function showVerificationRequiredNotice() {
+  if (DOM.syncStatus) DOM.syncStatus.textContent = "✉️ Verify email to enable Firestore";
+  if (!verificationNoticeShown) {
+    verificationNoticeShown = true;
+    showToast("Please verify your email before syncing with Firestore.");
+  }
+}
 
 function initFirebase() {
   if (typeof firebase !== 'undefined' && firebase.initializeApp) {
@@ -604,8 +619,16 @@ function initFirebase() {
       auth.onAuthStateChanged((user) => {
         if (user) {
           currentUser = user;
+          if (!requiresEmailVerification(user)) verificationNoticeShown = false;
           renderUserUI();
-          subscribeToFirestore(user.uid);
+          if (requiresEmailVerification(user)) {
+            if (firestoreUnsubscribe) {
+              firestoreUnsubscribe();
+              firestoreUnsubscribe = null;
+            }
+          } else {
+            subscribeToFirestore(user.uid);
+          }
         } else {
           if (firestoreUnsubscribe) {
             firestoreUnsubscribe();
@@ -663,7 +686,17 @@ function handleEmailAuth(mode) {
 
   authRequest.then((result) => {
     const name = result.user.email ? result.user.email.split('@')[0] : 'Author';
-    showToast(mode === 'signup' ? `Welcome, ${name}! Your account is ready.` : `Welcome back, ${name}!`);
+    if (mode === 'signup') {
+      return result.user.sendEmailVerification().then(() => {
+        showToast(`Verification email sent to ${result.user.email}. Verify it before syncing with Firestore.`);
+        renderUserUI();
+      });
+    }
+    if (result.user.providerData.some((provider) => provider.providerId === 'password') && !result.user.emailVerified) {
+      showToast(`Please verify ${result.user.email} before syncing with Firestore.`);
+    } else {
+      showToast(`Welcome back, ${name}!`);
+    }
     renderUserUI();
   }).catch((error) => {
     console.error("Email auth error:", error);
@@ -677,6 +710,28 @@ function handleEmailAuth(mode) {
     };
     showToast(messages[error.code] || `Sign in error: ${error.message}`);
   });
+}
+
+function resendEmailVerification() {
+  if (!currentUser || currentUser.emailVerified || !currentUser.sendEmailVerification) return;
+  currentUser.sendEmailVerification()
+    .then(() => showToast(`Verification email sent to ${currentUser.email}.`))
+    .catch((error) => showToast(`Could not send verification email: ${error.message}`));
+}
+
+function checkEmailVerification() {
+  if (!currentUser || !currentUser.reload) return;
+  currentUser.reload().then(() => currentUser.getIdToken(true)).then(() => {
+    currentUser = auth.currentUser;
+    renderUserUI();
+    if (currentUser && currentUser.emailVerified) {
+      verificationNoticeShown = false;
+      subscribeToFirestore(currentUser.uid);
+      showToast("Email verified. Firestore sync is now active.");
+    } else {
+      showToast("Your email is not verified yet. Check your inbox and try again.");
+    }
+  }).catch((error) => showToast(`Could not check verification: ${error.message}`));
 }
 
 function handleSignOut() {
@@ -725,8 +780,14 @@ function renderUserUI() {
     if (DOM.userProfile) DOM.userProfile.classList.remove('hidden');
     if (DOM.userName) DOM.userName.textContent = currentUser.displayName || currentUser.email.split('@')[0];
     if (DOM.syncStatus) {
-      DOM.syncStatus.textContent = googleAccessToken ? "☁️ Firestore + Drive Active" : "☁️ Firestore Synced";
+      if (currentUser.providerData.some((provider) => provider.providerId === 'password') && !currentUser.emailVerified) {
+        DOM.syncStatus.textContent = "✉️ Verify email to enable Firestore";
+      } else {
+        DOM.syncStatus.textContent = googleAccessToken ? "☁️ Firestore + Drive Active" : "☁️ Firestore Synced";
+      }
     }
+    if (DOM.btnResendVerification) DOM.btnResendVerification.classList.toggle('hidden', currentUser.emailVerified);
+    if (DOM.btnCheckVerification) DOM.btnCheckVerification.classList.toggle('hidden', currentUser.emailVerified);
   } else {
     if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.classList.remove('hidden');
     if (DOM.emailAuthForm) DOM.emailAuthForm.classList.remove('hidden');
@@ -782,6 +843,10 @@ function sanitizeBooksForCloudSync(books) {
 
 function syncToFirestore() {
   if (!db || !currentUser) return;
+  if (requiresEmailVerification()) {
+    showVerificationRequiredNotice();
+    return;
+  }
 
   // Debounce rapid typing sync calls so Firestore writes aren't hammered on every keystroke
   if (firestoreSyncTimeout) {
@@ -796,6 +861,10 @@ function syncToFirestore() {
 
 function executeFirestoreSync() {
   if (!db || !currentUser) return;
+  if (requiresEmailVerification()) {
+    showVerificationRequiredNotice();
+    return;
+  }
   if (DOM.syncStatus) DOM.syncStatus.textContent = "🔄 Syncing...";
 
   const writeId = 'w_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
@@ -830,6 +899,10 @@ function executeFirestoreSync() {
     showTopSyncNotification("☁️ Synced with Firestore");
   }).catch((e) => {
     console.warn("Firestore sync error:", e);
+    if (e.code === 'permission-denied' && requiresEmailVerification()) {
+      showVerificationRequiredNotice();
+      return;
+    }
     if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Local (Sync paused)";
   });
 }
@@ -917,6 +990,9 @@ function subscribeToFirestore(uid) {
     applyRemoteSnapshot(data);
   }, (e) => {
     console.warn("Firestore snapshot error:", e);
+    if (e.code === 'permission-denied' && requiresEmailVerification()) {
+      showVerificationRequiredNotice();
+    }
   });
 }
 
@@ -5783,6 +5859,8 @@ function setupEventListeners() {
   if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.onclick = handleGoogleSignIn;
   if (DOM.btnEmailSignIn) DOM.btnEmailSignIn.onclick = () => handleEmailAuth('signin');
   if (DOM.btnEmailSignUp) DOM.btnEmailSignUp.onclick = () => handleEmailAuth('signup');
+  if (DOM.btnResendVerification) DOM.btnResendVerification.onclick = resendEmailVerification;
+  if (DOM.btnCheckVerification) DOM.btnCheckVerification.onclick = checkEmailVerification;
   if (DOM.btnLogout) DOM.btnLogout.onclick = handleSignOut;
 
   if (DOM.btnBackupCloud) DOM.btnBackupCloud.onclick = exportBackupFile;
