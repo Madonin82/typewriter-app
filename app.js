@@ -829,7 +829,7 @@ function renderUserUI() {
       if (currentUser.providerData.some((provider) => provider.providerId === 'password') && !currentUser.emailVerified) {
         DOM.syncStatus.textContent = "✉️ Verify email to enable Firestore";
       } else {
-        DOM.syncStatus.textContent = googleAccessToken ? "☁️ Firestore + Drive Active" : "☁️ Firestore Synced";
+        DOM.syncStatus.textContent = googleAccessToken ? "☁️ Firestore + Google Drive Active" : "☁️ Firestore Synced";
       }
     }
     if (DOM.btnResendVerification) DOM.btnResendVerification.classList.toggle('hidden', currentUser.emailVerified);
@@ -933,7 +933,7 @@ function executeFirestoreSync() {
 
   if (payloadSize > MAX_FIRESTORE_SIZE) {
     console.warn(`[FirestoreSync] Manuscript payload size (${Math.round(payloadSize / 1024)} KB) exceeds safe Firestore document limit.`);
-    if (DOM.syncStatus) DOM.syncStatus.textContent = "⚠️ Cloud Limit: Use Drive Sync";
+    if (DOM.syncStatus) DOM.syncStatus.textContent = "⚠️ Cloud Limit: Use Google Drive Sync";
     showToast("⚠️ Manuscript exceeds Firestore 1MB limit. Syncing to Google Drive / local disk.");
     // Auto-backup to Google Drive if authorized
     if (googleAccessToken) {
@@ -5608,7 +5608,7 @@ async function saveBackupToDrive() {
     showToast(`Full session/instance backup saved to Google Drive as "${result.name}"!`);
   } catch (err) {
     console.error("Drive backup error:", err);
-    showToast(`Drive backup: ${err.message || 'Failed to save.'}`);
+    showToast(`Google Drive backup: ${err.message || 'Failed to save.'}`);
   }
 }
 

@@ -140,13 +140,13 @@
 
       <div class="panel-section-header-row">
         <span class="panel-section-label" style="padding:0;">Data & Storage</span>
-        <button type="button" id="btn-toggle-all-groups" class="nested-menu-toggle-all" title="Expand or collapse all sections">Collapse all</button>
+        <button type="button" id="btn-toggle-all-groups" class="nested-menu-toggle-all" title="Expand or collapse all sections">Expand all</button>
       </div>
 
       <div class="nested-menu" id="data-storage-nested-menu">
         <!-- ── Nested Group 1: Import & Load ── -->
-        <div class="nested-group open" id="group-import-load">
-          <button class="nested-group-header" type="button" aria-expanded="true" data-group="import-load">
+        <div class="nested-group" id="group-import-load">
+          <button class="nested-group-header" type="button" aria-expanded="false" data-group="import-load">
             <div class="nested-group-title">
               <span class="nested-group-icon">📤</span>
               <span class="nested-group-name">Import & Load</span>
@@ -173,7 +173,7 @@
                 <svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#34A853" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/><path fill="#EA4335" d="M22 18.5l-3.5-6h-7.5l3.5 6z"/></svg>
               </span>
               <div class="nested-item-text">
-                <span class="nested-item-title">Import from Drive</span>
+                <span class="nested-item-title">Import from Google Drive</span>
                 <span class="nested-item-sub">Docs, Books & Files</span>
               </div>
             </div>
@@ -187,7 +187,7 @@
             <div class="nested-item" id="btn-drive-restore-quick" role="button" tabindex="0" title="Restore full session backup directly from Google Drive">
               <span class="nested-item-icon">☁️</span>
               <div class="nested-item-text">
-                <span class="nested-item-title">Restore from Drive</span>
+                <span class="nested-item-title">Restore from Google Drive</span>
                 <span class="nested-item-sub">Cloud session backup</span>
               </div>
             </div>
@@ -195,8 +195,8 @@
         </div>
 
         <!-- ── Nested Group 2: Export & Share ── -->
-        <div class="nested-group open" id="group-export-share">
-          <button class="nested-group-header" type="button" aria-expanded="true" data-group="export-share">
+        <div class="nested-group" id="group-export-share">
+          <button class="nested-group-header" type="button" aria-expanded="false" data-group="export-share">
             <div class="nested-group-title">
               <span class="nested-group-icon">📥</span>
               <span class="nested-group-name">Export & Share</span>
@@ -224,7 +224,7 @@
               </span>
               <div class="nested-item-text">
                 <span class="nested-item-title">Save as Google Doc</span>
-                <span class="nested-item-sub">Direct Drive export</span>
+                <span class="nested-item-sub">Direct Google Drive export</span>
               </div>
             </div>
             <div class="nested-item" id="btn-quick-copy-clip" role="button" tabindex="0" title="Quickly copy full text of current manuscript to clipboard">
@@ -238,8 +238,8 @@
         </div>
 
         <!-- ── Nested Group 3: Backups & Safety Archive ── -->
-        <div class="nested-group open" id="group-backup-archive">
-          <button class="nested-group-header" type="button" aria-expanded="true" data-group="backup-archive">
+        <div class="nested-group" id="group-backup-archive">
+          <button class="nested-group-header" type="button" aria-expanded="false" data-group="backup-archive">
             <div class="nested-group-title">
               <span class="nested-group-icon">🛡️</span>
               <span class="nested-group-name">Backups & Safety</span>
@@ -259,8 +259,8 @@
                 <svg class="drive-mini-icon" viewBox="0 0 24 24"><path fill="#4285F4" d="M12 2L4.5 15h7.5l7.5-13z"/><path fill="#34A853" d="M2.5 18.5l3.5 6h15l-3.5-6z"/><path fill="#FBBC05" d="M12 2L2.5 18.5l3.5 6 9.5-16.5z"/><path fill="#EA4335" d="M22 18.5l-3.5-6h-7.5l3.5 6z"/></svg>
               </span>
               <div class="nested-item-text">
-                <span class="nested-item-title">Backup to Drive</span>
-                <span class="nested-item-sub">Save session to Drive cloud</span>
+                <span class="nested-item-title">Backup to Google Drive</span>
+                <span class="nested-item-sub">Save session to Google Drive cloud</span>
               </div>
             </div>
             <div class="nested-item" id="btn-drive-manager" role="button" tabindex="0" title="View, download, or manage files saved on your Google Drive">
@@ -695,7 +695,7 @@
           <!-- Populated dynamically -->
         </ul>
         <div id="drive-empty-message" class="drive-state-message hidden">
-          No Note to Self files found on your Google Drive yet. Click "Backup Current Studio to Drive" or export a book to get started!
+          No Note to Self files found on your Google Drive yet. Click "Backup Current Studio to Google Drive" or export a book to get started!
         </div>
       </div>
     </div>
