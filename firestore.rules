@@ -1,33 +1,85 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /users/{userId} {
-      allow read, write: if request.auth != null
-                         && request.auth.uid == userId
-                         && request.auth.token.email_verified == true;
-
-      match /{document=**} {
-        allow read, write: if request.auth != null
-                           && request.auth.uid == userId
-                           && request.auth.token.email_verified == true;
-      }
-    }
-
     function isStationAdmin() {
       return request.auth != null && request.auth.uid in
         ['vW2BVmvIxQap7mYBhzUU1l7P0VH3', 'HQe2aRANHoOFFPofQyfPTUV4LXB2'];
     }
 
-    // Public Station: anyone can read published books;
-    // verified owners and Station admins can publish, update, or unpublish.
+    function isAnonymous() {
+      return request.auth != null
+        && request.auth.token.firebase.sign_in_provider == 'anonymous';
+    }
+
+    function isVerifiedUser() {
+      return request.auth != null
+        && !isAnonymous()
+        && request.auth.token.email_verified == true;
+    }
+
+    function stationKeysAreValid() {
+      return request.resource.data.keys().hasOnly([
+        'ownerUid', 'isGuest', 'title', 'stationName', 'isLive', 'liveDraft',
+        'pages', 'display', 'updatedAt', 'lastWrite'
+      ]);
+    }
+
+    function stationContentIsValid() {
+      return request.resource.data.title is string
+        && request.resource.data.title.size() <= 500
+        && request.resource.data.stationName is string
+        && request.resource.data.stationName.size() <= 40
+        && request.resource.data.liveDraft is string
+        && request.resource.data.liveDraft.size() <= 50000
+        && request.resource.data.pages is list
+        && request.resource.data.pages.size() <= 50000;
+    }
+
+    function stationWriteIsNotTooSoon() {
+      return !resource.data.keys().hasAll(['lastWrite'])
+        || request.time >= resource.data.lastWrite + duration.value(5, 's');
+    }
+
+    function existingStationIsGuest() {
+      return resource.data.keys().hasAll(['isGuest']) && resource.data.isGuest == true;
+    }
+
+    // Private writer data is available only to its owner with a verified email.
+    // Anonymous users are intentionally excluded from both this match and its recursive children.
+    match /users/{userId} {
+      allow read, write: if isVerifiedUser() && request.auth.uid == userId;
+
+      match /{document=**} {
+        allow read, write: if isVerifiedUser() && request.auth.uid == userId;
+      }
+    }
+
+    // Station is public to read. Writers must use the fixed schema and stamp lastWrite.
     match /station/{bookId} {
       allow read: if true;
+
       allow create: if request.auth != null
-                    && request.auth.token.email_verified == true
-                    && (request.resource.data.ownerUid == request.auth.uid || isStationAdmin());
-      allow update, delete: if request.auth != null
-                            && request.auth.token.email_verified == true
-                            && (resource.data.ownerUid == request.auth.uid || isStationAdmin());
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.isGuest == isAnonymous()
+                    && stationKeysAreValid()
+                    && stationContentIsValid();
+
+      allow update: if request.auth != null
+                    && stationKeysAreValid()
+                    && stationContentIsValid()
+                    && stationWriteIsNotTooSoon()
+                    && request.resource.data.ownerUid == resource.data.ownerUid
+                    && request.resource.data.isGuest == existingStationIsGuest()
+                    && (
+                      isStationAdmin()
+                      || (resource.data.ownerUid == request.auth.uid
+                          && ((!isAnonymous()) || existingStationIsGuest()))
+                    );
+
+      allow delete: if request.auth != null
+                    && (isStationAdmin()
+                        || (resource.data.ownerUid == request.auth.uid
+                            && ((!isAnonymous()) || existingStationIsGuest())));
     }
 
     match /{document=**} {

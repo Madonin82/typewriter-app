@@ -849,6 +849,24 @@ body.theme-matrix .commit-timestamp {
   user-select: none;
 }
 
+.guest-mode-indicator {
+  color: #8f4b22;
+  font: 10px 'Inter', sans-serif;
+  white-space: nowrap;
+}
+
+body.theme-dark .guest-mode-indicator {
+  color: #f2ad78;
+}
+
+.station-guest-badge {
+  display: inline-block;
+  margin-top: 6px;
+  color: var(--accent);
+  font: 10px 'Inter', sans-serif;
+  letter-spacing: 0.08em;
+}
+
 body.theme-dark .btn-timestamp-toggle,
 body.theme-dark .btn-esc-menu,
 body.theme-dark #esc-hint {

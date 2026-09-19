@@ -272,6 +272,7 @@ function initDOM() {
     archiveFilesList: document.getElementById('archive-files-list'),
 
     btnGoogleSignIn: document.getElementById('btn-google-signin'),
+    btnGuestSignIn: document.getElementById('btn-guest-signin'),
     emailAuthForm: document.getElementById('email-auth-form'),
     authEmail: document.getElementById('auth-email'),
     authPassword: document.getElementById('auth-password'),
@@ -282,7 +283,11 @@ function initDOM() {
     syncStatus: document.getElementById('sync-status'),
     btnResendVerification: document.getElementById('btn-resend-verification'),
     btnCheckVerification: document.getElementById('btn-check-verification'),
+    btnCreateAccount: document.getElementById('btn-create-account'),
+    btnResetPassword: document.getElementById('btn-reset-password'),
+    btnChangeEmail: document.getElementById('btn-change-email'),
     btnLogout: document.getElementById('btn-logout'),
+    guestModeIndicator: document.getElementById('guest-mode-indicator'),
     btnClearAll: document.getElementById('btn-clear-all'),
 
     settingMaxChars: document.getElementById('setting-max-chars'),
@@ -657,6 +662,10 @@ function isEmailPasswordUser(user = currentUser) {
   return Boolean(user && user.providerData && user.providerData.some((provider) => provider.providerId === 'password'));
 }
 
+function isAnonymousUser(user = currentUser) {
+  return Boolean(user && user.isAnonymous);
+}
+
 function showVerificationRequiredNotice() {
   if (DOM.syncStatus) DOM.syncStatus.textContent = "✉️ Verify email to enable Firestore";
   if (!verificationNoticeShown) {
@@ -679,7 +688,7 @@ function initFirebase() {
           currentUser = user;
           if (!requiresEmailVerification(user)) verificationNoticeShown = false;
           renderUserUI();
-          if (requiresEmailVerification(user)) {
+          if (isAnonymousUser(user) || requiresEmailVerification(user)) {
             if (firestoreUnsubscribe) {
               firestoreUnsubscribe();
               firestoreUnsubscribe = null;
@@ -729,6 +738,28 @@ function handleGoogleSignIn() {
   }
 }
 
+function handleGuestSignIn() {
+  if (!auth) initFirebase();
+  if (!auth) {
+    showToast("Firebase Auth initializing...");
+    return;
+  }
+  auth.signInAnonymously().then(() => {
+    showToast("Guest mode — books saved on this device only.");
+    renderUserUI();
+  }).catch((error) => {
+    console.error("Guest auth error:", error);
+    showToast(`Guest sign-in error: ${error.message}`);
+  });
+}
+
+function showGuestUpgradeForm() {
+  if (!currentUser || !isAnonymousUser()) return;
+  if (DOM.emailAuthForm) DOM.emailAuthForm.classList.remove('hidden');
+  if (DOM.btnEmailSignUp) DOM.btnEmailSignUp.textContent = 'Create account';
+  if (DOM.authEmail) DOM.authEmail.focus();
+}
+
 function handleEmailAuth(mode) {
   if (!auth) initFirebase();
   if (!auth) {
@@ -743,12 +774,19 @@ function handleEmailAuth(mode) {
     return;
   }
 
-  const authRequest = mode === 'signup'
+  const authRequest = mode === 'signup' && isAnonymousUser()
+    ? currentUser.linkWithCredential(firebase.auth.EmailAuthProvider.credential(email, password))
+    : mode === 'signup'
     ? auth.createUserWithEmailAndPassword(email, password)
     : auth.signInWithEmailAndPassword(email, password);
 
   authRequest.then((result) => {
     const name = result.user.email ? result.user.email.split('@')[0] : 'Author';
+    if (mode === 'signup' && !result.user.isAnonymous && currentUser && currentUser.uid === result.user.uid) {
+      showToast(`Account created for ${result.user.email}. Your local books can now sync.`);
+      renderUserUI();
+      return;
+    }
     if (mode === 'signup') {
       return result.user.sendEmailVerification().then(() => {
         showToast(`Verification email sent to ${result.user.email}. Verify it before syncing with Firestore.`);
@@ -773,6 +811,47 @@ function handleEmailAuth(mode) {
     };
     showToast(messages[error.code] || `Sign in error: ${error.message}`);
   });
+}
+
+function resetPasswordForCurrentUser() {
+  if (!currentUser || !isEmailPasswordUser() || isAnonymousUser()) return;
+  auth.sendPasswordResetEmail(currentUser.email).then(() => {
+    showToast(`Reset link sent to ${currentUser.email}.`);
+  }).catch((error) => {
+    const messages = {
+      'auth/user-not-found': 'No account was found for that email.',
+      'auth/too-many-requests': 'Too many requests. Please wait and try again.'
+    };
+    showToast(messages[error.code] || `Could not send reset link: ${error.message}`);
+  });
+}
+
+async function changeEmailForCurrentUser() {
+  if (!currentUser || !isEmailPasswordUser() || isAnonymousUser()) return;
+  const newEmail = window.prompt('Enter your new email address:', currentUser.email || '');
+  if (!newEmail || newEmail.trim() === currentUser.email) return;
+  try {
+    await currentUser.verifyBeforeUpdateEmail(newEmail.trim());
+    showToast(`Verification link sent to ${newEmail.trim()}.`);
+    await currentUser.reload();
+    currentUser = auth.currentUser;
+    renderUserUI();
+  } catch (error) {
+    if (error.code === 'auth/requires-recent-login') {
+      const password = window.prompt('For security, enter your current password:');
+      if (!password) return;
+      try {
+        const credential = firebase.auth.EmailAuthProvider.credential(currentUser.email, password);
+        await currentUser.reauthenticateWithCredential(credential);
+        await currentUser.verifyBeforeUpdateEmail(newEmail.trim());
+        showToast(`Verification link sent to ${newEmail.trim()}.`);
+      } catch (reauthError) {
+        showToast(`Could not re-authenticate: ${reauthError.message}`);
+      }
+      return;
+    }
+    showToast(`Could not change email: ${error.message}`);
+  }
 }
 
 function resendEmailVerification() {
@@ -813,6 +892,9 @@ function handleSignOut() {
     stationAdminUnsubscribe = null;
   }
   if (auth) {
+    if (isAnonymousUser() && !confirm('Guest identity will be discarded. Your local books will stay on this device. Continue?')) {
+      return;
+    }
     auth.signOut().then(() => {
       showToast("Signed out.");
       renderUserUI();
@@ -849,20 +931,37 @@ function renderUserUI() {
     if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.classList.add('hidden');
     if (DOM.emailAuthForm) DOM.emailAuthForm.classList.add('hidden');
     if (DOM.userProfile) DOM.userProfile.classList.remove('hidden');
-    if (DOM.userName) DOM.userName.textContent = currentUser.displayName || currentUser.email.split('@')[0];
+    if (DOM.userName) DOM.userName.textContent = isAnonymousUser() ? 'Guest' : (currentUser.displayName || (currentUser.email || 'Author').split('@')[0]);
     if (DOM.syncStatus) {
-      if (currentUser.providerData.some((provider) => provider.providerId === 'password') && !currentUser.emailVerified) {
+      if (isAnonymousUser()) {
+        DOM.syncStatus.textContent = 'Guest mode — books saved on this device only.';
+      } else if (currentUser.providerData.some((provider) => provider.providerId === 'password') && !currentUser.emailVerified) {
         DOM.syncStatus.textContent = "✉️ Verify email to enable Firestore";
       } else {
         DOM.syncStatus.textContent = googleAccessToken ? "☁️ Firestore + Google Drive Active" : "☁️ Firestore Synced";
       }
     }
+    if (DOM.guestModeIndicator) DOM.guestModeIndicator.classList.toggle('hidden', !isAnonymousUser());
     if (DOM.btnResendVerification) DOM.btnResendVerification.classList.toggle('hidden', currentUser.emailVerified);
     if (DOM.btnCheckVerification) DOM.btnCheckVerification.classList.toggle('hidden', currentUser.emailVerified);
+    if (DOM.btnGuestSignIn) DOM.btnGuestSignIn.classList.add('hidden');
+    if (DOM.btnCreateAccount) DOM.btnCreateAccount.classList.toggle('hidden', !isAnonymousUser());
+    if (DOM.btnResetPassword) DOM.btnResetPassword.classList.toggle('hidden', !isEmailPasswordUser() || isAnonymousUser());
+    if (DOM.btnChangeEmail) DOM.btnChangeEmail.classList.toggle('hidden', !isEmailPasswordUser() || isAnonymousUser());
+    const cloudControls = [
+      DOM.btnDriveBackup, DOM.btnDriveImport, DOM.btnDriveManager, DOM.btnDriveRestoreQuick,
+      DOM.btnExportDriveDoc, DOM.btnExportDriveTxt, DOM.btnQuickExportDoc,
+      DOM.btnQuickBackupDrive, DOM.btnQuickExportDrive, DOM.btnQuickImportDrive, DOM.btnQuickRestoreDrive
+    ];
+    cloudControls.forEach((control) => {
+      if (control) control.classList.toggle('hidden', isAnonymousUser());
+    });
   } else {
     if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.classList.remove('hidden');
     if (DOM.emailAuthForm) DOM.emailAuthForm.classList.remove('hidden');
     if (DOM.userProfile) DOM.userProfile.classList.add('hidden');
+    if (DOM.btnGuestSignIn) DOM.btnGuestSignIn.classList.remove('hidden');
+    if (DOM.guestModeIndicator) DOM.guestModeIndicator.classList.add('hidden');
   }
 }
 
@@ -915,7 +1014,7 @@ function sanitizeBooksForCloudSync(books) {
 }
 
 function syncToFirestore() {
-  if (!db || !currentUser) return;
+  if (!db || !currentUser || isAnonymousUser()) return;
   if (requiresEmailVerification()) {
     showVerificationRequiredNotice();
     return;
@@ -933,7 +1032,7 @@ function syncToFirestore() {
 }
 
 function executeFirestoreSync() {
-  if (!db || !currentUser) return;
+  if (!db || !currentUser || isAnonymousUser()) return;
   if (requiresEmailVerification()) {
     showVerificationRequiredNotice();
     return;
@@ -1031,7 +1130,7 @@ function applyRemoteSnapshot(data) {
 }
 
 function reconcileStationPublishState() {
-  if (!db || !currentUser || !Array.isArray(state.books)) return Promise.resolve();
+  if (!db || !currentUser || isAnonymousUser() || !Array.isArray(state.books)) return Promise.resolve();
   return db.collection('station').get().then(snapshot => {
     const stationDocs = new Map(snapshot.docs.map(doc => [doc.id, doc.data()]));
     let changed = false;
@@ -1193,6 +1292,7 @@ function resetStationReaderView() {
 function stationPayloadForBook(book, overrides = {}) {
   const payload = {
     ownerUid: currentUser.uid,
+    isGuest: isAnonymousUser(),
     title: book.title || 'Untitled',
     stationName: typeof book.stationName === 'string' ? book.stationName.trim().slice(0, 40) : '',
     isLive: Boolean(book.stationLive),
@@ -1200,16 +1300,17 @@ function stationPayloadForBook(book, overrides = {}) {
     pages: stationPagesForBook(book),
     display: getStationDisplaySettings(),
     updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+    lastWrite: firebase.firestore.FieldValue.serverTimestamp(),
     ...overrides
   };
   if (overrides.updatedAt === null) delete payload.updatedAt;
+  payload.lastWrite = firebase.firestore.FieldValue.serverTimestamp();
   return payload;
 }
 
 function pushStationSnapshot(book, overrides = {}) {
-  if (!db || !currentUser || !book || !book.stationPublished || requiresEmailVerification()) return;
+  if (!db || !currentUser || !book || !book.stationPublished || (requiresEmailVerification() && !isAnonymousUser())) return;
   const payload = stationPayloadForBook(book, overrides);
-  // v1 trusts the ownerUid retained on the created document; tighten update rules later.
   db.collection('station').doc(book.id).set(payload, { merge: true }).catch(error => {
     console.warn('[Station] Push failed:', error);
   });
@@ -1335,8 +1436,8 @@ function createStationReaderMenu(settings) {
 function publishActiveBook() {
   const book = getActiveBook();
   if (!book) return;
-  if (!currentUser || requiresEmailVerification()) {
-    showToast('Sign in with a verified account to publish a Station.');
+  if (!currentUser || (requiresEmailVerification() && !isAnonymousUser())) {
+    showToast('Sign in with a verified account or continue as a guest to publish a Station.');
     return;
   }
   book.stationPublished = true;
@@ -1391,7 +1492,7 @@ function unpublishActiveBook() {
 }
 
 function deleteStationSnapshot(book) {
-  if (db && currentUser && book && book.stationPublished && !requiresEmailVerification()) {
+  if (db && currentUser && book && book.stationPublished && (!requiresEmailVerification() || isAnonymousUser())) {
     db.collection('station').doc(book.id).delete().catch(error => console.warn('[Station] Unpublish failed:', error));
   }
 }
@@ -1502,6 +1603,12 @@ function renderStationDocument(data, bookId = null) {
     live.className = 'station-live-banner';
     live.innerHTML = '<span class="station-live-dot">●</span> ON AIR';
     header.appendChild(live);
+    if (data.isGuest) {
+      const guestBadge = document.createElement('span');
+      guestBadge.className = 'station-guest-badge';
+      guestBadge.textContent = 'GUEST STREAM';
+      header.appendChild(guestBadge);
+    }
   }
   DOM.stationContent.appendChild(header);
 
@@ -1604,6 +1711,16 @@ function renderStationHome(docs) {
     meta.className = 'station-card-meta';
     meta.textContent = `${(data.pages || []).length} page${(data.pages || []).length === 1 ? '' : 's'}${data.isLive ? ' · live now' : ` · updated ${formatStationDate(data.updatedAt)}`}`;
     cardInfo.appendChild(meta);
+    if (data.isGuest) {
+      const guestBadge = document.createElement('span');
+      guestBadge.className = 'station-guest-badge';
+      guestBadge.textContent = 'GUEST STREAM';
+      cardInfo.appendChild(guestBadge);
+    }
+      if (isAnonymousUser()) {
+        showToast('Google Drive is unavailable in guest mode.');
+        throw new Error('Google Drive is unavailable in guest mode.');
+      }
     card.appendChild(cardInfo);
     const cta = document.createElement('span');cta.className = 'station-card-cta';cta.textContent = 'Click to view →';card.appendChild(cta);
     shelf.appendChild(card);
@@ -2532,7 +2649,7 @@ function createSafetyBackupForBook(book, reason = 'Deleted Book') {
   }
 
   // 4. Firestore safety backup if authorized
-  if (db && currentUser) {
+  if (db && currentUser && !isAnonymousUser()) {
     db.collection("users").doc(currentUser.uid).collection("safety_backups").add({
       type: 'single_book',
       reason: reason,
@@ -2613,7 +2730,7 @@ function createSafetyBackupForReset(books, settings, reason = 'Full Studio Reset
   }
 
   // 4. Firestore safety backup if authorized
-  if (db && currentUser) {
+  if (db && currentUser && !isAnonymousUser()) {
     db.collection("users").doc(currentUser.uid).collection("safety_backups").add({
       type: 'full_reset',
       reason: reason,
@@ -5936,6 +6053,10 @@ function copyManuscriptToClipboard() {
 // ─── GOOGLE DRIVE REST API INTEGRATION ───────────────────────
 
 async function uploadToGoogleDrive({ name, content, mimeType = 'text/plain', isDoc = false }) {
+    if (isAnonymousUser()) {
+      showToast('Google Drive is unavailable in guest mode.');
+      return null;
+    }
   const token = await getGoogleDriveToken();
   showToast(isDoc ? "Creating Google Doc..." : "Uploading to Google Drive...");
 
@@ -6786,10 +6907,14 @@ function setupEventListeners() {
 
   // Auth & Cloud
   if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.onclick = handleGoogleSignIn;
+  if (DOM.btnGuestSignIn) DOM.btnGuestSignIn.onclick = handleGuestSignIn;
   if (DOM.btnEmailSignIn) DOM.btnEmailSignIn.onclick = () => handleEmailAuth('signin');
   if (DOM.btnEmailSignUp) DOM.btnEmailSignUp.onclick = () => handleEmailAuth('signup');
   if (DOM.btnResendVerification) DOM.btnResendVerification.onclick = resendEmailVerification;
   if (DOM.btnCheckVerification) DOM.btnCheckVerification.onclick = checkEmailVerification;
+  if (DOM.btnCreateAccount) DOM.btnCreateAccount.onclick = showGuestUpgradeForm;
+  if (DOM.btnResetPassword) DOM.btnResetPassword.onclick = resetPasswordForCurrentUser;
+  if (DOM.btnChangeEmail) DOM.btnChangeEmail.onclick = changeEmailForCurrentUser;
   if (DOM.btnLogout) DOM.btnLogout.onclick = handleSignOut;
 
   if (DOM.btnBackupCloud) DOM.btnBackupCloud.onclick = exportBackupFile;
@@ -7313,6 +7438,11 @@ function init() {
   TextWorkerBridge.init();
   loadStorage();
   setupEventListeners();
+  window.addEventListener('hashchange', () => {
+    if (getStationRoute() || getAdminRoute() || window.location.hash === '') {
+      window.location.reload();
+    }
+  });
   applySettingsUI();
   initFirebase();
   renderAll();
