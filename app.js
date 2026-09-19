@@ -243,6 +243,7 @@ function initDOM() {
     bookWordTarget: document.getElementById('book-word-target'),
     btnPublishStation: document.getElementById('btn-publish-station'),
     btnToggleLive: document.getElementById('btn-toggle-live'),
+    stationName: document.getElementById('station-name'),
     stationPublishStatus: document.getElementById('station-publish-status'),
     stationShareModal: document.getElementById('station-share-modal'),
     stationShareUrl: document.getElementById('station-share-url'),
@@ -642,6 +643,8 @@ let stationUnsubscribe = null;
 let stationPushTimeout = null;
 let stationDraftTimeout = null;
 let stationRouteActive = false;
+let stationReaderData = null;
+let stationReaderBookId = null;
 
 function requiresEmailVerification(user = currentUser) {
   return isEmailPasswordUser(user) && !user.emailVerified;
@@ -1095,10 +1098,56 @@ function getStationDisplaySettingsOrDefaults(display) {
   };
 }
 
+const STATION_READER_OVERRIDES_KEY = 'station_reader_display_overrides';
+
+function getStationReaderOverrides(bookId) {
+  const allOverrides = SafeStorage.getJSON(STATION_READER_OVERRIDES_KEY, {});
+  return allOverrides && allOverrides[bookId] && typeof allOverrides[bookId] === 'object' ? allOverrides[bookId] : {};
+}
+
+function saveStationReaderOverrides(bookId, overrides) {
+  const savedOverrides = SafeStorage.getJSON(STATION_READER_OVERRIDES_KEY, {});
+  const allOverrides = savedOverrides && typeof savedOverrides === 'object' ? savedOverrides : {};
+  if (Object.keys(overrides).length === 0) {
+    delete allOverrides[bookId];
+  } else {
+    allOverrides[bookId] = overrides;
+  }
+  SafeStorage.setItem(STATION_READER_OVERRIDES_KEY, allOverrides);
+}
+
+function getStationReaderDisplaySettings(display, bookId) {
+  const authorSettings = getStationDisplaySettingsOrDefaults(display);
+  const overrides = getStationReaderOverrides(bookId);
+  return {
+    ...authorSettings,
+    ...overrides,
+    fontSize: Math.min(36, Math.max(12, parseInt(overrides.fontSize ?? authorSettings.fontSize, 10) || authorSettings.fontSize)),
+    lineHeight: Math.min(3, Math.max(1, parseFloat(overrides.lineHeight ?? authorSettings.lineHeight) || authorSettings.lineHeight)),
+    showTimestamps: typeof overrides.showTimestamps === 'boolean' ? overrides.showTimestamps : authorSettings.showTimestamps
+  };
+}
+
+function updateStationReaderOverride(name, value) {
+  if (!stationReaderBookId) return;
+  const overrides = getStationReaderOverrides(stationReaderBookId);
+  if (value === null) delete overrides[name];
+  else overrides[name] = value;
+  saveStationReaderOverrides(stationReaderBookId, overrides);
+  renderStationDocument(stationReaderData, stationReaderBookId);
+}
+
+function resetStationReaderView() {
+  if (!stationReaderBookId) return;
+  saveStationReaderOverrides(stationReaderBookId, {});
+  renderStationDocument(stationReaderData, stationReaderBookId);
+}
+
 function stationPayloadForBook(book, overrides = {}) {
   const payload = {
     ownerUid: currentUser.uid,
     title: book.title || 'Untitled',
+    stationName: typeof book.stationName === 'string' ? book.stationName.trim().slice(0, 40) : '',
     isLive: Boolean(book.stationLive),
     liveDraft: '',
     pages: stationPagesForBook(book),
@@ -1140,6 +1189,7 @@ function scheduleStationDraftPush() {
 function updateStationControls() {
   const book = getActiveBook();
   const published = Boolean(book && book.stationPublished);
+  if (DOM.stationName) DOM.stationName.value = book && typeof book.stationName === 'string' ? book.stationName : '';
   if (DOM.btnPublishStation) {
     DOM.btnPublishStation.textContent = published ? '📡 Unpublish from Station' : '📡 Publish to Station';
     DOM.btnPublishStation.classList.toggle('published', published);
@@ -1152,6 +1202,87 @@ function updateStationControls() {
   if (DOM.stationPublishStatus) {
     DOM.stationPublishStatus.textContent = published ? (book.stationLive ? 'ON AIR' : 'Published') : '';
   }
+}
+
+function createStationReaderMenu(settings) {
+  const menu = document.createElement('div');
+  menu.className = 'station-reader-menu hidden';
+  menu.setAttribute('aria-label', 'Reader display settings');
+
+  const addField = (labelText, control) => {
+    const field = document.createElement('label');
+    field.className = 'station-reader-field';
+    const label = document.createElement('span');
+    label.textContent = labelText;
+    field.append(label, control);
+    menu.appendChild(field);
+  };
+
+  const paper = document.createElement('select');
+  [['white', 'Light'], ['dark', 'Dark'], ['sepia', 'Sepia']].forEach(([value, text]) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    paper.appendChild(option);
+  });
+  paper.value = ['dark', 'matrix'].includes(settings.theme) ? 'dark' : settings.theme === 'sepia' ? 'sepia' : 'white';
+  paper.onchange = () => updateStationReaderOverride('theme', paper.value);
+  addField('Paper tone', paper);
+
+  const font = document.createElement('select');
+  [['courier', 'Courier Prime'], ['special', 'Special Elite'], ['mono', 'Monospace']].forEach(([value, text]) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    font.appendChild(option);
+  });
+  font.value = ['courier', 'special', 'mono'].includes(settings.font) ? settings.font : 'courier';
+  font.onchange = () => updateStationReaderOverride('font', font.value);
+  addField('Font', font);
+
+  const size = document.createElement('input');
+  size.type = 'range';
+  size.min = '12';
+  size.max = '36';
+  size.step = '1';
+  size.value = settings.fontSize;
+  const sizeValue = document.createElement('output');
+  sizeValue.textContent = `${settings.fontSize}px`;
+  size.oninput = () => {
+    sizeValue.textContent = `${size.value}px`;
+    updateStationReaderOverride('fontSize', parseInt(size.value, 10));
+  };
+  const sizeField = document.createElement('label');
+  sizeField.className = 'station-reader-field station-reader-range';
+  const sizeLabel = document.createElement('span');
+  sizeLabel.textContent = 'Font size';
+  sizeField.append(sizeLabel, size, sizeValue);
+  menu.appendChild(sizeField);
+
+  const spacing = document.createElement('select');
+  [['1.45', 'Compact'], ['1.8', 'Comfortable'], ['2.2', 'Relaxed']].forEach(([value, text]) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    spacing.appendChild(option);
+  });
+  spacing.value = settings.lineHeight <= 1.6 ? '1.45' : settings.lineHeight >= 2 ? '2.2' : '1.8';
+  spacing.onchange = () => updateStationReaderOverride('lineHeight', parseFloat(spacing.value));
+  addField('Line spacing', spacing);
+
+  const timestamps = document.createElement('input');
+  timestamps.type = 'checkbox';
+  timestamps.checked = settings.showTimestamps;
+  timestamps.onchange = () => updateStationReaderOverride('showTimestamps', timestamps.checked);
+  addField('Timestamps', timestamps);
+
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'station-reader-reset';
+  reset.textContent = "Reset to author's view";
+  reset.onclick = resetStationReaderView;
+  menu.appendChild(reset);
+  return menu;
 }
 
 function publishActiveBook() {
@@ -1282,8 +1413,11 @@ function applyStationHomeTheme() {
 
 function renderStationDocument(data, bookId = null) {
   if (!DOM.stationContent) return;
+  stationReaderData = data;
+  stationReaderBookId = bookId;
   const shouldFollowStation = Boolean(data && data.isLive && isStationNearBottom());
-  applyStationDisplaySettings(data ? data.display : null);
+  const displaySettings = data ? getStationReaderDisplaySettings(data.display, bookId) : null;
+  applyStationDisplaySettings(displaySettings);
   DOM.stationContent.innerHTML = '';
   if (!data) {
     const empty = document.createElement('section');
@@ -1300,9 +1434,22 @@ function renderStationDocument(data, bookId = null) {
   back.className = 'station-back';
   back.textContent = '← Station';
   header.appendChild(back);
+  const headerMain = document.createElement('div');
+  headerMain.className = 'station-header-main';
   const title = document.createElement('h1');
-  title.textContent = data.title || 'Untitled';
-  header.appendChild(title);
+  const stationName = typeof data.stationName === 'string' ? data.stationName.trim().slice(0, 40) : '';
+  title.textContent = stationName ? `${stationName} — ${data.title || 'Untitled'}` : (data.title || 'Untitled');
+  headerMain.appendChild(title);
+  const settingsButton = document.createElement('button');
+  settingsButton.type = 'button';
+  settingsButton.className = 'station-reader-settings';
+  settingsButton.textContent = '⚙';
+  settingsButton.title = 'Reader display settings';
+  settingsButton.setAttribute('aria-label', 'Reader display settings');
+  const readerMenu = createStationReaderMenu(displaySettings);
+  settingsButton.onclick = () => readerMenu.classList.toggle('hidden');
+  headerMain.append(settingsButton, readerMenu);
+  header.appendChild(headerMain);
   if (data.isLive) {
     const live = document.createElement('div');
     live.className = 'station-live-banner';
@@ -1312,7 +1459,6 @@ function renderStationDocument(data, bookId = null) {
   DOM.stationContent.appendChild(header);
 
   const manuscript = document.createElement('article');
-  const displaySettings = getStationDisplaySettingsOrDefaults(data.display);
   manuscript.className = `station-manuscript timestamp-layout${displaySettings.showTimestamps ? ' has-timestamps' : ''}`;
   let lastInk = null;
   (data.pages || []).forEach(page => {
@@ -1395,13 +1541,23 @@ function renderStationHome(docs) {
     card.href = `#/station/${encodeURIComponent(doc.id)}`;
     card.className = `station-card${data.isLive ? ' is-live' : ''}`;
     card.innerHTML = data.isLive ? '<span class="station-card-live">● ON AIR</span>' : '<span class="station-card-label">ARCHIVE</span>';
+    const cardInfo = document.createElement('div');
+    cardInfo.className = 'station-card-info';
+    const stationName = typeof data.stationName === 'string' ? data.stationName.trim().slice(0, 40) : '';
+    if (stationName) {
+      const stationNameLabel = document.createElement('span');
+      stationNameLabel.className = 'station-card-station-name';
+      stationNameLabel.textContent = stationName;
+      cardInfo.appendChild(stationNameLabel);
+    }
     const title = document.createElement('h2');
     title.textContent = data.title || 'Untitled';
-    card.appendChild(title);
+    cardInfo.appendChild(title);
     const meta = document.createElement('span');
     meta.className = 'station-card-meta';
     meta.textContent = `${(data.pages || []).length} page${(data.pages || []).length === 1 ? '' : 's'}${data.isLive ? ' · live now' : ` · updated ${formatStationDate(data.updatedAt)}`}`;
-    card.appendChild(meta);
+    cardInfo.appendChild(meta);
+    card.appendChild(cardInfo);
     const cta = document.createElement('span');cta.className = 'station-card-cta';cta.textContent = 'Click to view →';card.appendChild(cta);
     shelf.appendChild(card);
   });
@@ -1435,6 +1591,11 @@ function initStationPage() {
   document.body.classList.add('station-mode');
   if (DOM.stationRoot) DOM.stationRoot.classList.remove('hidden');
   subscribeToStationRoute();
+  window.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || !stationReaderBookId) return;
+    const menu = document.querySelector('.station-reader-menu');
+    if (menu) menu.classList.toggle('hidden');
+  });
   window.addEventListener('hashchange', () => window.location.reload());
   return true;
 }
@@ -6418,6 +6579,17 @@ function setupEventListeners() {
     else publishActiveBook();
   };
   if (DOM.btnToggleLive) DOM.btnToggleLive.onclick = toggleStationLive;
+  if (DOM.stationName) {
+    DOM.stationName.onchange = () => {
+      const book = getActiveBook();
+      if (!book) return;
+      book.stationName = DOM.stationName.value.trim().slice(0, 40);
+      DOM.stationName.value = book.stationName;
+      saveStorage();
+      if (book.stationPublished) pushStationSnapshot(book, { stationName: book.stationName });
+      updateStationControls();
+    };
+  }
   if (DOM.btnCloseStationShare) DOM.btnCloseStationShare.onclick = closeStationShareConfirmation;
   if (DOM.btnCloseStationShareSecondary) DOM.btnCloseStationShareSecondary.onclick = closeStationShareConfirmation;
   if (DOM.btnCopyStationLink) DOM.btnCopyStationLink.onclick = copyStationLink;

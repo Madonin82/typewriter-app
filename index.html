@@ -114,6 +114,10 @@
         <input id="book-word-target" type="number" min="1" step="1000" value="80000">
       </div>
       <div class="station-controls">
+        <label class="station-name-field" for="station-name">
+          <span>Station name</span>
+          <input id="station-name" type="text" maxlength="40" placeholder="e.g. Midnight Desk" autocomplete="off">
+        </label>
         <button id="btn-publish-station" class="station-control-btn" title="Publish this book to the public Station">📡 Publish to Station</button>
         <button id="btn-toggle-live" class="station-control-btn hidden" title="Start or end the public live stream">● Go Live</button>
         <span id="station-publish-status" class="station-publish-status"></span>

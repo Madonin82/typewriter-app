@@ -217,6 +217,106 @@ body.station-mode > :not(#station-root) {
   margin-bottom: 32px;
 }
 
+.station-header-main {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.station-reader-settings {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--ink-faded);
+  cursor: pointer;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.station-reader-settings:hover,
+.station-reader-settings:focus-visible {
+  border-color: var(--accent);
+  color: var(--accent);
+  outline: none;
+}
+
+.station-reader-menu {
+  position: absolute;
+  top: 44px;
+  right: 0;
+  z-index: 5;
+  width: min(270px, calc(100vw - 44px));
+  padding: 14px;
+  background: var(--paper);
+  border: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.18);
+}
+
+.station-reader-field {
+  display: grid;
+  grid-template-columns: 1fr minmax(110px, 1fr);
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+  color: var(--ink-faded);
+  font: 11px 'Inter', sans-serif;
+}
+
+.station-reader-field select,
+.station-reader-field input[type='range'] {
+  min-width: 0;
+  accent-color: var(--accent);
+}
+
+.station-reader-field select {
+  padding: 5px 6px;
+  background: var(--paper-subtle);
+  border: 1px solid color-mix(in srgb, var(--ink) 18%, transparent);
+  color: var(--ink);
+  font: 11px 'Inter', sans-serif;
+}
+
+.station-reader-range {
+  grid-template-columns: 1fr auto;
+}
+
+.station-reader-range input {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  width: 100%;
+}
+
+.station-reader-range output {
+  color: var(--ink);
+  font-variant-numeric: tabular-nums;
+}
+
+.station-reader-field input[type='checkbox'] {
+  justify-self: end;
+  accent-color: var(--accent);
+}
+
+.station-reader-reset {
+  width: 100%;
+  margin-top: 4px;
+  padding: 7px 8px;
+  border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font: 11px 'Inter', sans-serif;
+}
+
+.station-reader-reset:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .station-kicker,
 .station-page-label,
 .station-card-label {
@@ -301,10 +401,22 @@ body.station-mode > :not(#station-root) {
   margin: 8px 0 10px;
 }
 
+.station-card-info {
+  min-width: 0;
+}
+
 .station-card-meta {
   color: var(--ink-faded);
   font-family: 'Inter', sans-serif;
   font-size: 11px;
+}
+
+.station-card-station-name {
+  display: block;
+  color: var(--accent);
+  font: 10px 'Inter', sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .station-hint { opacity: 0.7; font-size: 0.95em; }
@@ -388,6 +500,29 @@ body.station-mode > :not(#station-root) {
   gap: 6px;
   flex-wrap: wrap;
   padding: 0 20px 16px;
+}
+
+.station-name-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #aaaaaa;
+  font: 10px 'Inter', sans-serif;
+}
+
+.station-name-field input {
+  width: 150px;
+  padding: 6px 8px;
+  background: #141414;
+  border: 1px solid #333333;
+  border-radius: 4px;
+  color: #eeeeee;
+  font: 11px 'Inter', sans-serif;
+}
+
+.station-name-field input:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 .station-control-btn {
