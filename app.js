@@ -1204,6 +1204,8 @@ function applyStationDisplaySettings(display) {
   const theme = validThemes.includes(settings.theme) ? settings.theme : 'cream';
   const font = validFonts.includes(settings.font) ? settings.font : 'courier';
   const stationRoot = DOM.stationRoot || document.documentElement;
+  stationRoot.classList.remove('station-home-view');
+  stationRoot.classList.add('station-reading-view');
   stationRoot.style.setProperty('--station-font-size', `${settings.fontSize}px`);
   stationRoot.style.setProperty('--station-line-height', String(settings.lineHeight));
   stationRoot.style.setProperty('--station-letter-spacing', settings.letterSpacing);
@@ -1212,6 +1214,15 @@ function applyStationDisplaySettings(display) {
     .replace(/\bfont-\S+/g, '')
     .replace(/\bstation-timestamps-\S+/g, '');
   document.body.classList.add(`theme-${theme}`, `font-${font}`, `station-timestamps-${settings.showTimestamps ? 'on' : 'off'}`);
+}
+
+function applyStationHomeTheme() {
+  const stationRoot = DOM.stationRoot || document.documentElement;
+  stationRoot.classList.remove('station-reading-view');
+  stationRoot.classList.add('station-home-view');
+  stationRoot.style.removeProperty('--station-font-size');
+  stationRoot.style.removeProperty('--station-line-height');
+  stationRoot.style.removeProperty('--station-letter-spacing');
 }
 
 function renderStationDocument(data, bookId = null) {
@@ -1245,7 +1256,8 @@ function renderStationDocument(data, bookId = null) {
   DOM.stationContent.appendChild(header);
 
   const manuscript = document.createElement('article');
-  manuscript.className = 'station-manuscript';
+  const displaySettings = getStationDisplaySettingsOrDefaults(data.display);
+  manuscript.className = `station-manuscript timestamp-layout${displaySettings.showTimestamps ? ' has-timestamps' : ''}`;
   (data.pages || []).forEach(page => {
     const pageSection = document.createElement('section');
     pageSection.className = 'station-page';
@@ -1254,17 +1266,29 @@ function renderStationDocument(data, bookId = null) {
     pageLabel.textContent = `Page ${page.number}`;
     pageSection.appendChild(pageLabel);
     const ink = document.createElement('div');
-    ink.className = 'station-ink';
+    ink.className = `station-ink timestamp-layout${displaySettings.showTimestamps ? ' has-timestamps' : ''}`;
     (page.chunks || []).forEach(chunk => {
       const timestamp = chunk.timestamp;
-      const displaySettings = getStationDisplaySettingsOrDefaults(data.display);
-      if (displaySettings.showTimestamps && timestamp) {
+      if (displaySettings.showTimestamps) {
+        const row = document.createElement('div');
+        row.className = 'ink-chunk-row';
+
         const timestampSpan = document.createElement('span');
-        timestampSpan.className = 'station-timestamp';
-        timestampSpan.textContent = `[${formatChunkTime(timestamp)}] `;
-        ink.appendChild(timestampSpan);
+        const timeStr = formatChunkTime(timestamp);
+        timestampSpan.className = timeStr ? 'commit-timestamp' : 'commit-timestamp muted';
+        timestampSpan.textContent = timeStr || '—';
+        if (timestamp) timestampSpan.title = `Committed at ${new Date(timestamp).toLocaleString()}`;
+        row.appendChild(timestampSpan);
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'ink-chunk';
+        textSpan.textContent = chunk.text || '';
+        row.appendChild(textSpan);
+        ink.appendChild(row);
+        return;
       }
       const span = document.createElement('span');
+      span.className = 'ink-chunk';
       span.textContent = chunk.text || '';
       ink.appendChild(span);
     });
@@ -1286,6 +1310,7 @@ function renderStationDocument(data, bookId = null) {
 
 function renderStationHome(docs) {
   if (!DOM.stationContent) return;
+  applyStationHomeTheme();
   DOM.stationContent.innerHTML = '<header class="station-home-header"><div class="station-kicker">NOTE TO SELF</div><h1>Station</h1><p>Published pages, live when they are being written.</p><p class="station-hint">Click a station below to start reading.</p></header>';
   const shelf = document.createElement('div');
   shelf.className = 'station-shelf';

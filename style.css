@@ -180,6 +180,27 @@ body.station-mode > :not(#station-root) {
   overflow-y: auto;
   background: var(--paper);
   color: var(--ink);
+  color-scheme: light dark;
+  font-family: var(--font-family);
+}
+
+.station-root.station-home-view {
+  --paper: #f7f8fa;
+  --paper-subtle: #edf0f3;
+  --ink: #20252b;
+  --ink-faded: #66707a;
+  --accent: #315f85;
+  --font-family: 'Inter', 'Segoe UI', sans-serif;
+}
+
+@media (prefers-color-scheme: dark) {
+  .station-root.station-home-view {
+    --paper: #20252b;
+    --paper-subtle: #2b3239;
+    --ink: #edf1f4;
+    --ink-faded: #aeb8c1;
+    --accent: #8db7d6;
+  }
 }
 
 .station-content {
@@ -303,6 +324,11 @@ body.station-mode > :not(#station-root) {
   word-break: break-word;
 }
 
+.station-manuscript.has-timestamps {
+  padding-left: 170px;
+  transition: padding-left 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
 .station-page + .station-page {
   border-top: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
   margin-top: 48px;
@@ -310,13 +336,6 @@ body.station-mode > :not(#station-root) {
 }
 
 .station-ink { margin-top: 10px; }
-
-.station-timestamp {
-  color: var(--ink-faded);
-  font-size: 0.65em;
-  opacity: 0.75;
-  white-space: nowrap;
-}
 
 .station-live-draft {
   color: var(--ink);
@@ -521,7 +540,7 @@ body.theme-matrix .prev-page-ghost {
   transition: padding-left 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.ink-stream.has-timestamps .ink-chunk-row {
+.timestamp-layout.has-timestamps .ink-chunk-row {
   position: relative;
   display: block;
   margin-bottom: 6px;
@@ -2540,7 +2559,10 @@ body.theme-paper .sync-toast {
   .page.has-timestamps {
     padding-left: 20px;
   }
-  .ink-stream.has-timestamps .ink-chunk-row {
+  .station-manuscript.has-timestamps {
+    padding-left: 20px;
+  }
+  .timestamp-layout.has-timestamps .ink-chunk-row {
     margin-bottom: 12px;
   }
   .commit-timestamp {
