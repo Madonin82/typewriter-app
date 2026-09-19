@@ -1282,6 +1282,7 @@ function applyStationHomeTheme() {
 
 function renderStationDocument(data, bookId = null) {
   if (!DOM.stationContent) return;
+  const shouldFollowStation = Boolean(data && data.isLive && isStationNearBottom());
   applyStationDisplaySettings(data ? data.display : null);
   DOM.stationContent.innerHTML = '';
   if (!data) {
@@ -1313,6 +1314,7 @@ function renderStationDocument(data, bookId = null) {
   const manuscript = document.createElement('article');
   const displaySettings = getStationDisplaySettingsOrDefaults(data.display);
   manuscript.className = `station-manuscript timestamp-layout${displaySettings.showTimestamps ? ' has-timestamps' : ''}`;
+  let lastInk = null;
   (data.pages || []).forEach(page => {
     const pageSection = document.createElement('section');
     pageSection.className = 'station-page';
@@ -1322,6 +1324,7 @@ function renderStationDocument(data, bookId = null) {
     pageSection.appendChild(pageLabel);
     const ink = document.createElement('div');
     ink.className = `station-ink timestamp-layout${displaySettings.showTimestamps ? ' has-timestamps' : ''}`;
+    lastInk = ink;
     (page.chunks || []).forEach(chunk => {
       const timestamp = chunk.timestamp;
       if (displaySettings.showTimestamps) {
@@ -1351,16 +1354,33 @@ function renderStationDocument(data, bookId = null) {
     manuscript.appendChild(pageSection);
   });
   if (data.isLive && data.liveDraft) {
-    const ghost = document.createElement('div');
-    ghost.className = 'station-live-draft';
+    const ghost = document.createElement('span');
+    ghost.className = 'station-live-draft ink-chunk';
     ghost.textContent = data.liveDraft;
     const caret = document.createElement('span');
     caret.className = 'station-caret';
     ghost.appendChild(caret);
-    manuscript.appendChild(ghost);
+    if (lastInk) lastInk.appendChild(ghost);
+    else manuscript.appendChild(ghost);
   }
   DOM.stationContent.appendChild(manuscript);
+  if (shouldFollowStation) {
+    requestAnimationFrame(() => scrollStationToBottom(true));
+  }
   if (bookId) document.title = `${data.title || 'Station'} · Note to Self`;
+}
+
+function isStationNearBottom(threshold = 96) {
+  if (!DOM.stationRoot) return false;
+  return DOM.stationRoot.scrollHeight - DOM.stationRoot.scrollTop - DOM.stationRoot.clientHeight <= threshold;
+}
+
+function scrollStationToBottom(smooth = false) {
+  if (!DOM.stationRoot) return;
+  DOM.stationRoot.scrollTo({
+    top: DOM.stationRoot.scrollHeight,
+    behavior: smooth ? 'smooth' : 'auto'
+  });
 }
 
 function renderStationHome(docs) {
@@ -4269,6 +4289,7 @@ function commitDraft() {
 
   let text = rawText;
   if (!text) return;
+  const commitTime = Date.now();
 
   // Auto add space after each commit if enabled in settings
   if (state.settings.autoAddSpace) {
@@ -4282,8 +4303,8 @@ function commitDraft() {
 
   // Calculate WPM
   let commitWPM = 0;
-  if (currentKeystrokeSession.startTime && currentKeystrokeSession.lastTime && currentKeystrokeSession.snapshots.length > 0) {
-    const totalDurationSec = (currentKeystrokeSession.lastTime - currentKeystrokeSession.startTime) / 1000;
+  if (currentKeystrokeSession.startTime && currentKeystrokeSession.snapshots.length > 0) {
+    const totalDurationSec = (commitTime - currentKeystrokeSession.startTime) / 1000;
     if (totalDurationSec >= 0.2) {
       commitWPM = Math.round((text.length / 5) / (totalDurationSec / 60));
     }

@@ -7,6 +7,7 @@
 }
 
 :root {
+  --tab-width: 5;
   --paper: #f5f0e8;
   --paper-subtle: #eee7db;
   --ink: #1a1a1a;
@@ -322,6 +323,8 @@ body.station-mode > :not(#station-root) {
   letter-spacing: var(--station-letter-spacing, 0.02em);
   white-space: pre-wrap;
   word-break: break-word;
+  tab-size: var(--tab-width);
+  -moz-tab-size: var(--tab-width);
 }
 
 .station-manuscript.has-timestamps {
@@ -340,7 +343,9 @@ body.station-mode > :not(#station-root) {
 .station-live-draft {
   color: var(--ink);
   opacity: 0.38;
-  margin-top: 20px;
+  display: inline;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .station-caret {
@@ -528,8 +533,8 @@ body.theme-matrix .prev-page-ghost {
   color: var(--ink);
   white-space: pre-wrap;
   word-break: break-word;
-  tab-size: 4;
-  -moz-tab-size: 4;
+  tab-size: var(--tab-width);
+  -moz-tab-size: var(--tab-width);
   font-family: var(--font-family);
   margin-top: auto;
   transition: transform 0.2s ease;
@@ -887,8 +892,8 @@ input:checked + .toggle-slider:before {
   min-height: 28px;
   height: 28px;
   max-height: 180px;
-  tab-size: 4;
-  -moz-tab-size: 4;
+  tab-size: var(--tab-width);
+  -moz-tab-size: var(--tab-width);
   box-sizing: border-box;
   padding: 0;
   margin: 0;
@@ -910,8 +915,8 @@ input:checked + .toggle-slider:before {
   white-space: pre-wrap;
   word-wrap: break-word;
   overflow-wrap: break-word;
-  tab-size: 4;
-  -moz-tab-size: 4;
+  tab-size: var(--tab-width);
+  -moz-tab-size: var(--tab-width);
   padding: 0;
   margin: 0;
   text-indent: 0;
