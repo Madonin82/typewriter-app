@@ -39,10 +39,13 @@ Traditional writing tools invite endless back-editing, which traps writers in pe
 
 ### 📡 Public Station
 
-- **Publish a book** — Push any book to your public Station with one click; readers get a clean reading page at `#/station/{book}`.
-- **Go live** — Toggle live mode and your committed ink streams to readers in near-real-time as you write.
-- **Station home** — `#/station/` lists everything you've published, live books first.
-- No login needed to read. Unpublishing is instant, and deleting or resetting a book automatically pulls it from the Station.
+- **Publish a book** — Push any book to your public Station with one click; a share modal hands you the direct reader URL (`#/station/{book}`) with copy and open actions.
+- **Station names** — Give each published book a short display name (up to 40 characters) shown on its Station card and reading header.
+- **Go live** — Toggle live mode and your committed ink streams to readers in near-real-time, with an ON AIR badge and auto-scroll that keeps readers pinned to your latest words as you type.
+- **Author's view, reader's choice** — Your display settings (paper theme, font, size, spacing, timestamps) travel with the published book, so readers see it the way you see it. Readers can open the display menu (gear icon) to switch paper (light / dark / sepia), fonts, text size, and spacing, toggle timestamps independently, or reset to your view — their preferences are remembered per book, on their device only.
+- **Station home** — `#/station/` lists everything you've published, live books first. No login needed to read.
+- **Safety rails** — Closing the tab while a book is live or published prompts you first (and stops the broadcast); logging out with a book published or live asks for confirmation; the writer re-checks the Station on login so a stream can never get stranded; unpublishing is instant.
+- **Station admin** — `#/admin` (owner only) is mission control for the public Station: a realtime dashboard of everything live and published, with End stream, Unpublish, and View controls.
 
 ### 📊 Manuscript Analysis
 
@@ -58,7 +61,7 @@ Traditional writing tools invite endless back-editing, which traps writers in pe
 ### ☁️ Sync
 
 - **Firebase auth** — Sign in with Google or email/password; verified email is required to sync.
-- **Firestore sync** — Real-time sync across devices behind owner-only security rules (each account can read and write only its own data), plus a live sync-status indicator.
+- **Firestore sync** — Real-time sync across devices behind owner-only security rules (each account can read and write only its own data), plus a live sync-status indicator. Security rules live in `firestore.rules`, version-controlled in the repo.
 - Fully usable offline — local-first storage is the default, cloud is opt-in.
 
 ### 🎨 Customization
@@ -92,6 +95,16 @@ Open http://localhost:3000 — no build step, the server serves the static app d
 
 Sync features need a Firebase project. Copy `.env.example` to `.env` and add your Firebase API key. Everything else — writing, export, local backups — works with no configuration at all.
 
+### Deploying Firestore rules
+
+Security rules are version-controlled in `firestore.rules` (`firebase.json` wires it up for the CLI). Deploy with:
+
+```bash
+firebase deploy --only firestore:rules
+```
+
+or paste the file's contents into the Firebase console Rules tab. Console edits and the file can drift — treat the file as the source of truth.
+
 ## Project Structure
 
 | File | Purpose |
@@ -102,6 +115,8 @@ Sync features need a Firebase project. Copy `.env.example` to `.env` and add you
 | `text-worker.js` | Web Worker for readability analysis |
 | `server.js` | Zero-dependency static server with smart cache headers |
 | `sw.js` / `manifest.json` | PWA service worker and install manifest |
+| `firestore.rules` | Version-controlled Firestore security rules |
+| `firebase.json` | Firebase CLI config (points at `firestore.rules`) |
 | `jspdf.umd.min.js` / `jszip.min.js` | Bundled locally — PDF and ZIP export work offline |
 
 ## Built With
