@@ -551,6 +551,80 @@ body.station-mode > :not(#station-root) {
   text-transform: uppercase;
 }
 
+.station-admin-link {
+  color: #888888;
+  font: 10px 'Inter', sans-serif;
+  margin-left: auto;
+  text-decoration: none;
+}
+
+.station-admin-link:hover {
+  color: var(--accent);
+}
+
+.station-admin-section {
+  margin-top: 28px;
+}
+
+.station-admin-section h2 {
+  color: var(--ink);
+  font: 18px var(--font-family);
+  margin-bottom: 10px;
+}
+
+.station-admin-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 14px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 12%, transparent);
+}
+
+.station-admin-row-info {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.station-admin-row-info strong {
+  overflow: hidden;
+  color: var(--ink);
+  font: 15px var(--font-family);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.station-admin-row-info span,
+.station-admin-empty {
+  color: var(--ink-faded);
+  font: 11px 'Inter', sans-serif;
+}
+
+.station-admin-actions {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
+.station-admin-actions button,
+.station-admin-actions a {
+  padding: 5px 8px;
+  border: 1px solid color-mix(in srgb, var(--ink) 20%, transparent);
+  background: transparent;
+  color: var(--ink);
+  cursor: pointer;
+  font: 10px 'Inter', sans-serif;
+  text-decoration: none;
+}
+
+.station-admin-actions button:hover,
+.station-admin-actions a:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .station-share-url {
   width: 100%;
   padding: 9px 10px;

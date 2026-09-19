@@ -14,6 +14,8 @@ const firebaseConfig = {
   appId: "1:1010879061490:web:83c43a410788f62d401f6b"
 };
 
+const STATION_ADMIN_UIDS = ['vW2BVmvIxQap7mYBhzUU1l7P0VH3', 'HQe2aRANHoOFFPofQyfPTUV4LXB2'];
+
 let auth = null;
 let db = null;
 let currentUser = null;
@@ -645,6 +647,7 @@ let stationDraftTimeout = null;
 let stationRouteActive = false;
 let stationReaderData = null;
 let stationReaderBookId = null;
+let stationAdminUnsubscribe = null;
 
 function requiresEmailVerification(user = currentUser) {
   return isEmailPasswordUser(user) && !user.emailVerified;
@@ -683,6 +686,10 @@ function initFirebase() {
             }
           } else {
             subscribeToFirestore(user.uid);
+            reconcileStationPublishState();
+          }
+          if (getAdminRoute()) {
+            subscribeToStationAdmin();
           }
         } else {
           if (firestoreUnsubscribe) {
@@ -691,6 +698,7 @@ function initFirebase() {
           }
           currentUser = null;
           renderUserUI();
+          if (getAdminRoute()) renderStationAdmin();
         }
       });
     } catch (e) {
@@ -790,11 +798,19 @@ function checkEmailVerification() {
 }
 
 function handleSignOut() {
+  if (state.books.some(book => book && (book.stationPublished || book.stationLive)) &&
+      !confirm('You have books published on Station (one is live). Logging out will leave them up. End streams / unpublish first?')) {
+    return;
+  }
   googleAccessToken = null;
   setSafeSessionItem('google_drive_access_token', null);
   if (firestoreUnsubscribe) {
     firestoreUnsubscribe();
     firestoreUnsubscribe = null;
+  }
+  if (stationAdminUnsubscribe) {
+    stationAdminUnsubscribe();
+    stationAdminUnsubscribe = null;
   }
   if (auth) {
     auth.signOut().then(() => {
@@ -1014,6 +1030,32 @@ function applyRemoteSnapshot(data) {
   }
 }
 
+function reconcileStationPublishState() {
+  if (!db || !currentUser || !Array.isArray(state.books)) return Promise.resolve();
+  return db.collection('station').get().then(snapshot => {
+    const stationDocs = new Map(snapshot.docs.map(doc => [doc.id, doc.data()]));
+    let changed = false;
+    state.books.forEach(book => {
+      const stationData = stationDocs.get(book.id);
+      const nextPublished = Boolean(stationData);
+      const nextLive = Boolean(stationData && stationData.isLive);
+      const nextName = stationData && typeof stationData.stationName === 'string' ? stationData.stationName : '';
+      if (Boolean(book.stationPublished) !== nextPublished || Boolean(book.stationLive) !== nextLive || (book.stationName || '') !== nextName) {
+        book.stationPublished = nextPublished;
+        book.stationLive = nextLive;
+        book.stationName = nextName;
+        changed = true;
+      }
+    });
+    if (changed) {
+      saveStorage(false);
+      updateStationControls();
+    }
+  }).catch(error => {
+    console.warn('[Station] Could not reconcile publish state:', error);
+  });
+}
+
 function subscribeToFirestore(uid) {
   if (!db) return;
   if (firestoreUnsubscribe) firestoreUnsubscribe();
@@ -1045,6 +1087,7 @@ function subscribeToFirestore(uid) {
     }
 
     applyRemoteSnapshot(data);
+    reconcileStationPublishState();
   }, (e) => {
     console.warn("Firestore snapshot error:", e);
     if (e.code === 'permission-denied' && isEmailPasswordUser()) {
@@ -1064,6 +1107,10 @@ function getStationRoute() {
   const match = hash.match(/^#\/station\/?(.*)$/);
   if (!match) return null;
   return { bookId: match[1] ? decodeURIComponent(match[1].split('/')[0]) : null };
+}
+
+function getAdminRoute() {
+  return window.location.hash === '#/admin' || window.location.hash === '#/admin/';
 }
 
 function stationPagesForBook(book) {
@@ -1567,6 +1614,117 @@ function renderStationHome(docs) {
   DOM.stationContent.appendChild(shelf);
 }
 
+function renderStationAdmin(snapshotDocs = []) {
+  if (!DOM.stationContent || !getAdminRoute()) return;
+  applyStationHomeTheme();
+  DOM.stationContent.innerHTML = '';
+  if (!currentUser) {
+    const message = document.createElement('section');
+    message.className = 'station-off-air';
+    const title = document.createElement('h1');
+    title.textContent = 'Log in to access Station admin.';
+    const link = document.createElement('a');
+    link.href = '#/';
+    link.textContent = 'Return to Note to Self';
+    message.append(title, link);
+    DOM.stationContent.appendChild(message);
+    return;
+  }
+  if (!STATION_ADMIN_UIDS.includes(currentUser.uid)) {
+    const message = document.createElement('section');
+    message.className = 'station-off-air';
+    const title = document.createElement('h1');
+    title.textContent = 'Not authorized.';
+    message.appendChild(title);
+    DOM.stationContent.appendChild(message);
+    return;
+  }
+
+  const docs = [...snapshotDocs].sort((left, right) => {
+    const leftTime = left.data().updatedAt?.toMillis ? left.data().updatedAt.toMillis() : 0;
+    const rightTime = right.data().updatedAt?.toMillis ? right.data().updatedAt.toMillis() : 0;
+    return rightTime - leftTime;
+  });
+  const header = document.createElement('header');
+  header.className = 'station-home-header station-admin-header';
+  const title = document.createElement('h1');
+  title.textContent = 'Station Admin';
+  const counts = document.createElement('p');
+  counts.textContent = `${docs.filter(doc => doc.data().isLive).length} live · ${docs.length} published`;
+  header.append(title, counts);
+  DOM.stationContent.appendChild(header);
+
+  const liveDocs = docs.filter(doc => doc.data().isLive);
+  const publishedDocs = docs.filter(doc => !doc.data().isLive);
+  const appendSection = (heading, sectionDocs, isLive) => {
+    const section = document.createElement('section');
+    section.className = 'station-admin-section';
+    const sectionTitle = document.createElement('h2');
+    sectionTitle.textContent = heading;
+    section.appendChild(sectionTitle);
+    if (sectionDocs.length === 0) {
+      const empty = document.createElement('p');
+      empty.className = 'station-admin-empty';
+      empty.textContent = isLive ? 'No stations are live right now.' : 'No published stations.';
+      section.appendChild(empty);
+    } else {
+      sectionDocs.forEach(doc => {
+        const data = doc.data();
+        const row = document.createElement('div');
+        row.className = 'station-admin-row';
+        const info = document.createElement('div');
+        info.className = 'station-admin-row-info';
+        const identity = document.createElement('strong');
+        const stationName = typeof data.stationName === 'string' ? data.stationName.trim() : '';
+        identity.textContent = stationName ? `${stationName} — ${data.title || 'Untitled'}` : (data.title || 'Untitled');
+        const meta = document.createElement('span');
+        meta.textContent = `${(data.pages || []).length} page${(data.pages || []).length === 1 ? '' : 's'} · updated ${formatStationDate(data.updatedAt)} · ${String(data.ownerUid || '').slice(0, 8)}`;
+        info.append(identity, meta);
+        const actions = document.createElement('div');
+        actions.className = 'station-admin-actions';
+        const badge = document.createElement('span');
+        badge.className = 'station-card-label';
+        badge.textContent = isLive ? 'ON AIR' : 'PUBLISHED';
+        actions.appendChild(badge);
+        if (isLive) {
+          const end = document.createElement('button');
+          end.textContent = 'End stream';
+          end.onclick = () => db.collection('station').doc(doc.id).set({ isLive: false, liveDraft: '' }, { merge: true });
+          actions.appendChild(end);
+        }
+        const unpublish = document.createElement('button');
+        unpublish.textContent = 'Unpublish';
+        unpublish.onclick = () => {
+          if (confirm(`Unpublish "${data.title || 'Untitled'}" from the Station?`)) {
+            db.collection('station').doc(doc.id).delete();
+          }
+        };
+        const view = document.createElement('a');
+        view.href = `#/station/${encodeURIComponent(doc.id)}`;
+        view.textContent = 'View';
+        actions.append(unpublish, view);
+        row.append(info, actions);
+        section.appendChild(row);
+      });
+    }
+    DOM.stationContent.appendChild(section);
+  };
+  appendSection('Live now', liveDocs, true);
+  appendSection('Published', publishedDocs, false);
+}
+
+function subscribeToStationAdmin() {
+  if (!db || !getAdminRoute()) return;
+  if (stationAdminUnsubscribe) stationAdminUnsubscribe();
+  if (!currentUser || !STATION_ADMIN_UIDS.includes(currentUser.uid)) {
+    renderStationAdmin();
+    return;
+  }
+  stationAdminUnsubscribe = db.collection('station').onSnapshot(snapshot => {
+    renderStationAdmin(snapshot.docs);
+  }, () => renderStationAdmin([]));
+}
+
 function subscribeToStationRoute() {
   if (!db || !DOM.stationContent) return;
   const route = getStationRoute();
@@ -1596,6 +1754,15 @@ function initStationPage() {
     const menu = document.querySelector('.station-reader-menu');
     if (menu) menu.classList.toggle('hidden');
   });
+  window.addEventListener('hashchange', () => window.location.reload());
+  return true;
+}
+
+function initStationAdminPage() {
+  stationRouteActive = true;
+  document.body.classList.add('station-mode');
+  if (DOM.stationRoot) DOM.stationRoot.classList.remove('hidden');
+  subscribeToStationAdmin();
   window.addEventListener('hashchange', () => window.location.reload());
   return true;
 }
@@ -7137,9 +7304,10 @@ function setupEventListeners() {
 
 function init() {
   initDOM();
-  if (getStationRoute()) {
+  if (getStationRoute() || getAdminRoute()) {
     initFirebase();
-    initStationPage();
+    if (getAdminRoute()) initStationAdminPage();
+    else initStationPage();
     return;
   }
   TextWorkerBridge.init();
