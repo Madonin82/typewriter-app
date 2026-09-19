@@ -492,6 +492,23 @@
     </div>
   </div>
 
+  <!-- ── STATION SHARE CONFIRMATION ── -->
+  <div id="station-share-modal" class="modal-backdrop hidden">
+    <div class="modal-card station-share-card">
+      <div class="modal-header">
+        <h3>Station Published</h3>
+        <button id="btn-close-station-share" class="btn-close" title="Close">×</button>
+      </div>
+      <p class="modal-desc">Share this direct link or open it to read your station:</p>
+      <input id="station-share-url" class="station-share-url" type="text" readonly aria-label="Station link">
+      <div class="station-share-actions">
+        <a id="station-share-open" href="#" target="_blank" rel="noopener">Open station</a>
+        <button id="btn-copy-station-link" type="button">Copy link</button>
+        <button id="btn-close-station-share-secondary" type="button">Done</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── SAVE TO DEVICE MODAL DIALOG ── -->
   <div id="save-device-modal" class="modal-backdrop hidden">
     <div class="modal-card">

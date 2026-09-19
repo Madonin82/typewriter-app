@@ -80,11 +80,11 @@ let state = {
     font: 'courier',
     commitKey: 'ctrl-enter', // 'ctrl-enter' | 'enter'
     volume: 50,
-    soundEnabled: true,
+    soundEnabled: false,
     showTimestamps: false,
-    prevPageGhost: true,
-    showFinishProjection: true,
-    showGhostRace: true,
+    prevPageGhost: false,
+    showFinishProjection: false,
+    showGhostRace: false,
     typewriterAnim: false,
     replaySpeed: 1, // 1 to 10 (whole number multiplier)
     autoAddSpace: false,
@@ -244,6 +244,12 @@ function initDOM() {
     btnPublishStation: document.getElementById('btn-publish-station'),
     btnToggleLive: document.getElementById('btn-toggle-live'),
     stationPublishStatus: document.getElementById('station-publish-status'),
+    stationShareModal: document.getElementById('station-share-modal'),
+    stationShareUrl: document.getElementById('station-share-url'),
+    stationShareOpen: document.getElementById('station-share-open'),
+    btnCopyStationLink: document.getElementById('btn-copy-station-link'),
+    btnCloseStationShare: document.getElementById('btn-close-station-share'),
+    btnCloseStationShareSecondary: document.getElementById('btn-close-station-share-secondary'),
     btnDeleteBook: document.getElementById('btn-delete-book'),
 
     pagesList: document.getElementById('pages-list'),
@@ -1160,7 +1166,38 @@ function publishActiveBook() {
   pushStationSnapshot(book, { isLive: false, liveDraft: '' });
   saveStorage();
   updateStationControls();
-  showToast(`Published "${book.title}" to the Station.`);
+  showStationShareConfirmation(book);
+}
+
+function getStationUrl(book) {
+  return `${window.location.origin}${window.location.pathname}#/station/${encodeURIComponent(book.id)}`;
+}
+
+function showStationShareConfirmation(book) {
+  if (!DOM.stationShareModal || !DOM.stationShareUrl) {
+    showToast(`Published "${book.title}" to the Station.`);
+    return;
+  }
+  DOM.stationShareUrl.value = getStationUrl(book);
+  if (DOM.stationShareOpen) DOM.stationShareOpen.href = DOM.stationShareUrl.value;
+  DOM.stationShareModal.classList.remove('hidden');
+  DOM.stationShareUrl.select();
+}
+
+function closeStationShareConfirmation() {
+  if (DOM.stationShareModal) DOM.stationShareModal.classList.add('hidden');
+}
+
+async function copyStationLink() {
+  if (!DOM.stationShareUrl) return;
+  const url = DOM.stationShareUrl.value;
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch (error) {
+    DOM.stationShareUrl.select();
+    document.execCommand('copy');
+  }
+  showToast('Station link copied.');
 }
 
 function unpublishActiveBook() {
@@ -1189,6 +1226,24 @@ function toggleStationLive() {
   saveStorage();
   updateStationControls();
   showToast(book.stationLive ? 'Station is ON AIR.' : 'Stream ended. Archive remains public.');
+}
+
+function getPublishedBooks() {
+  return state.books.filter(book => book && (book.stationPublished || book.stationLive));
+}
+
+function stopStationBeforeWindowClose() {
+  const publishedBooks = getPublishedBooks();
+  publishedBooks.forEach(book => {
+    book.stationPublished = false;
+    book.stationLive = false;
+    deleteStationSnapshot({ ...book, stationPublished: true });
+  });
+  if (publishedBooks.length > 0) saveStorage(false);
+}
+
+function hasActiveStationBroadcast() {
+  return getPublishedBooks().length > 0;
 }
 
 function formatStationDate(value) {
@@ -1762,12 +1817,12 @@ function migrateSettingsSchema(savedSettings) {
     lineHeight: 1.8,
     letterSpacing: '0.02em',
     commitKey: 'ctrl-enter',
-    soundEnabled: true,
+    soundEnabled: false,
     volume: 50,
     showTimestamps: false,
-    prevPageGhost: true,
-    showFinishProjection: true,
-    showGhostRace: true,
+    prevPageGhost: false,
+    showFinishProjection: false,
+    showGhostRace: false,
     typewriterAnim: false,
     replaySpeed: 1,
     autoAddSpace: false,
@@ -6342,6 +6397,14 @@ function setupEventListeners() {
     else publishActiveBook();
   };
   if (DOM.btnToggleLive) DOM.btnToggleLive.onclick = toggleStationLive;
+  if (DOM.btnCloseStationShare) DOM.btnCloseStationShare.onclick = closeStationShareConfirmation;
+  if (DOM.btnCloseStationShareSecondary) DOM.btnCloseStationShareSecondary.onclick = closeStationShareConfirmation;
+  if (DOM.btnCopyStationLink) DOM.btnCopyStationLink.onclick = copyStationLink;
+  if (DOM.stationShareModal) {
+    DOM.stationShareModal.onclick = (event) => {
+      if (event.target === DOM.stationShareModal) closeStationShareConfirmation();
+    };
+  }
   if (DOM.bookWordTarget) {
     DOM.bookWordTarget.onchange = (e) => {
       const book = getActiveBook();
@@ -6548,9 +6611,12 @@ function setupEventListeners() {
           theme: 'cream',
           font: 'courier',
           commitKey: 'ctrl-enter',
-          soundEnabled: true,
+          soundEnabled: false,
           volume: 50,
           showTimestamps: false,
+          prevPageGhost: false,
+          showFinishProjection: false,
+          showGhostRace: false,
           typewriterAnim: false,
           replaySpeed: 1,
           autoAddSpace: false,
@@ -6897,10 +6963,15 @@ function init() {
   initServiceWorkerLifecycle();
 
   // Ensure all options and manuscripts are preserved when exiting
-  window.addEventListener('beforeunload', () => {
+  window.addEventListener('beforeunload', (event) => {
     saveStorage(false);
+    if (hasActiveStationBroadcast()) {
+      event.preventDefault();
+      event.returnValue = "You're still live on the Station. Unpublish and stop the stream?";
+    }
   });
   window.addEventListener('pagehide', () => {
+    if (hasActiveStationBroadcast()) stopStationBeforeWindowClose();
     saveStorage(false);
   });
 

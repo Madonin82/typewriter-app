@@ -411,6 +411,45 @@ body.station-mode > :not(#station-root) {
   text-transform: uppercase;
 }
 
+.station-share-url {
+  width: 100%;
+  padding: 9px 10px;
+  background: #141414;
+  border: 1px solid #333333;
+  border-radius: 4px;
+  color: #ffffff;
+  font: 12px 'Courier New', monospace;
+}
+
+.station-share-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.station-share-actions button {
+  background: #252525;
+  border: 1px solid #444444;
+  border-radius: 4px;
+  color: #eeeeee;
+  cursor: pointer;
+  font: 11px 'Inter', sans-serif;
+  padding: 7px 12px;
+}
+
+.station-share-actions a {
+  color: var(--accent-light);
+  font: 11px 'Inter', sans-serif;
+  padding: 7px 4px;
+  text-decoration: none;
+}
+
+.station-share-actions button:hover {
+  border-color: var(--accent);
+  color: var(--accent-light);
+}
+
 /* ─── MAIN WRITING SURFACE ─────────────────────────────────── */
 #writing-surface {
   position: fixed;
