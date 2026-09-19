@@ -288,6 +288,7 @@ function initDOM() {
     btnChangeEmail: document.getElementById('btn-change-email'),
     btnLogout: document.getElementById('btn-logout'),
     guestModeIndicator: document.getElementById('guest-mode-indicator'),
+    stationLiveIndicator: document.getElementById('station-live-indicator'),
     btnClearAll: document.getElementById('btn-clear-all'),
 
     settingMaxChars: document.getElementById('setting-max-chars'),
@@ -653,6 +654,7 @@ let stationRouteActive = false;
 let stationReaderData = null;
 let stationReaderBookId = null;
 let stationAdminUnsubscribe = null;
+let writerRouteInitialized = false;
 
 function requiresEmailVerification(user = currentUser) {
   return isEmailPasswordUser(user) && !user.emailVerified;
@@ -1337,6 +1339,7 @@ function scheduleStationDraftPush() {
 function updateStationControls() {
   const book = getActiveBook();
   const published = Boolean(book && book.stationPublished);
+  const live = Boolean(book && book.stationLive);
   if (DOM.stationName) DOM.stationName.value = book && typeof book.stationName === 'string' ? book.stationName : '';
   if (DOM.btnPublishStation) {
     DOM.btnPublishStation.textContent = published ? '📡 Unpublish from Station' : '📡 Publish to Station';
@@ -1348,7 +1351,11 @@ function updateStationControls() {
     DOM.btnToggleLive.classList.toggle('live', Boolean(book && book.stationLive));
   }
   if (DOM.stationPublishStatus) {
-    DOM.stationPublishStatus.textContent = published ? (book.stationLive ? 'ON AIR' : 'Published') : '';
+    DOM.stationPublishStatus.textContent = published ? (live ? 'ON AIR' : 'Published') : '';
+  }
+  if (DOM.stationLiveIndicator) {
+    DOM.stationLiveIndicator.classList.toggle('hidden', !live);
+    if (book) DOM.stationLiveIndicator.href = `#/station/${encodeURIComponent(book.id)}`;
   }
 }
 
@@ -1686,7 +1693,7 @@ function scrollStationToBottom(smooth = false) {
 function renderStationHome(docs) {
   if (!DOM.stationContent) return;
   applyStationHomeTheme();
-  DOM.stationContent.innerHTML = '<header class="station-home-header"><div class="station-kicker">NOTE TO SELF</div><h1>Station</h1><p>Published pages, live when they are being written.</p><p class="station-hint">Click a station below to start reading.</p></header>';
+  DOM.stationContent.innerHTML = '<header class="station-home-header"><div class="station-kicker">NOTE TO SELF</div><h1>Station</h1><p>Published pages, live when they are being written.</p><p class="station-hint">Click a station below to start reading.</p><a class="station-writer-link" href="#/">Start writing</a></header>';
   const shelf = document.createElement('div');
   shelf.className = 'station-shelf';
   docs.forEach(doc => {
@@ -1717,10 +1724,6 @@ function renderStationHome(docs) {
       guestBadge.textContent = 'GUEST STREAM';
       cardInfo.appendChild(guestBadge);
     }
-      if (isAnonymousUser()) {
-        showToast('Google Drive is unavailable in guest mode.');
-        throw new Error('Google Drive is unavailable in guest mode.');
-      }
     card.appendChild(cardInfo);
     const cta = document.createElement('span');cta.className = 'station-card-cta';cta.textContent = 'Click to view →';card.appendChild(cta);
     shelf.appendChild(card);
@@ -1860,6 +1863,49 @@ function subscribeToStationRoute() {
   }
 }
 
+function handleHashRouteChange() {
+  const stationRoute = getStationRoute();
+  const adminRoute = getAdminRoute();
+  if (stationRoute || adminRoute) {
+    if (!writerRouteInitialized) {
+      window.location.reload();
+      return;
+    }
+    document.body.classList.add('station-mode');
+    if (DOM.stationRoot) DOM.stationRoot.classList.remove('hidden');
+    stationRouteActive = true;
+    if (stationUnsubscribe) {
+      stationUnsubscribe();
+      stationUnsubscribe = null;
+    }
+    if (stationAdminUnsubscribe) {
+      stationAdminUnsubscribe();
+      stationAdminUnsubscribe = null;
+    }
+    if (adminRoute) subscribeToStationAdmin();
+    else subscribeToStationRoute();
+    return;
+  }
+
+  if (!writerRouteInitialized) {
+    window.location.reload();
+    return;
+  }
+  if (stationUnsubscribe) {
+    stationUnsubscribe();
+    stationUnsubscribe = null;
+  }
+  if (stationAdminUnsubscribe) {
+    stationAdminUnsubscribe();
+    stationAdminUnsubscribe = null;
+  }
+  stationRouteActive = false;
+  document.body.classList.remove('station-mode');
+  if (DOM.stationRoot) DOM.stationRoot.classList.add('hidden');
+  document.title = 'Note to Self';
+  renderAll();
+}
+
 function initStationPage() {
   stationRouteActive = Boolean(getStationRoute());
   if (!stationRouteActive) return false;
@@ -1871,7 +1917,7 @@ function initStationPage() {
     const menu = document.querySelector('.station-reader-menu');
     if (menu) menu.classList.toggle('hidden');
   });
-  window.addEventListener('hashchange', () => window.location.reload());
+  window.addEventListener('hashchange', handleHashRouteChange);
   return true;
 }
 
@@ -1880,7 +1926,7 @@ function initStationAdminPage() {
   document.body.classList.add('station-mode');
   if (DOM.stationRoot) DOM.stationRoot.classList.remove('hidden');
   subscribeToStationAdmin();
-  window.addEventListener('hashchange', () => window.location.reload());
+  window.addEventListener('hashchange', handleHashRouteChange);
   return true;
 }
 
@@ -7438,11 +7484,8 @@ function init() {
   TextWorkerBridge.init();
   loadStorage();
   setupEventListeners();
-  window.addEventListener('hashchange', () => {
-    if (getStationRoute() || getAdminRoute() || window.location.hash === '') {
-      window.location.reload();
-    }
-  });
+  writerRouteInitialized = true;
+  window.addEventListener('hashchange', handleHashRouteChange);
   applySettingsUI();
   initFirebase();
   renderAll();
