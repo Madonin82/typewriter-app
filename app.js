@@ -655,6 +655,8 @@ let stationReaderData = null;
 let stationReaderBookId = null;
 let stationAdminUnsubscribe = null;
 let writerRouteInitialized = false;
+let stationFloatingMenuCleanup = null;
+let stationPageObserver = null;
 
 function requiresEmailVerification(user = currentUser) {
   return isEmailPasswordUser(user) && !user.emailVerified;
@@ -1361,8 +1363,7 @@ function updateStationControls() {
 
 function createStationReaderMenu(settings) {
   const menu = document.createElement('div');
-  menu.className = 'station-reader-menu hidden';
-  menu.setAttribute('aria-label', 'Reader display settings');
+  menu.className = 'station-reader-display-controls';
 
   const addField = (labelText, control) => {
     const field = document.createElement('label');
@@ -1438,6 +1439,133 @@ function createStationReaderMenu(settings) {
   reset.onclick = resetStationReaderView;
   menu.appendChild(reset);
   return menu;
+}
+
+function setupStationFloatingMenu(data, displaySettings) {
+  if (!DOM.stationRoot || !DOM.stationContent) return;
+
+  if (stationFloatingMenuCleanup) stationFloatingMenuCleanup();
+  if (stationPageObserver) stationPageObserver.disconnect();
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'station-floating-toggle';
+  toggle.textContent = '☰';
+  toggle.title = 'Open Station navigation and display options';
+  toggle.setAttribute('aria-label', 'Open Station navigation and display options');
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-controls', 'station-floating-panel');
+
+  const panel = document.createElement('aside');
+  panel.id = 'station-floating-panel';
+  panel.className = 'station-floating-panel hidden';
+  panel.setAttribute('aria-label', 'Station navigation and display options');
+
+  const panelHeader = document.createElement('div');
+  panelHeader.className = 'station-floating-panel-header';
+  const panelTitle = document.createElement('h2');
+  panelTitle.textContent = 'Station menu';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'station-floating-close';
+  close.textContent = '×';
+  close.title = 'Close Station menu';
+  close.setAttribute('aria-label', 'Close Station menu');
+  panelHeader.append(panelTitle, close);
+  panel.appendChild(panelHeader);
+
+  const navigation = document.createElement('section');
+  navigation.className = 'station-floating-section';
+  const navigationTitle = document.createElement('h3');
+  navigationTitle.textContent = 'Navigation';
+  navigation.appendChild(navigationTitle);
+
+  const backToTop = document.createElement('button');
+  backToTop.type = 'button';
+  backToTop.className = 'station-floating-action';
+  backToTop.textContent = 'Back to top';
+  backToTop.onclick = () => {
+    DOM.stationRoot.scrollTo({ top: 0, behavior: 'smooth' });
+    closePanel();
+  };
+  navigation.appendChild(backToTop);
+
+  const pageList = document.createElement('div');
+  pageList.className = 'station-page-jump-list';
+  pageList.setAttribute('role', 'listbox');
+  pageList.setAttribute('aria-label', 'Jump to page');
+  const pageButtons = [];
+  const pageSections = Array.from(DOM.stationContent.querySelectorAll('.station-page'));
+  (data.pages || []).forEach((page, index) => {
+    const pageButton = document.createElement('button');
+    pageButton.type = 'button';
+    pageButton.className = 'station-page-jump';
+    pageButton.setAttribute('role', 'option');
+    pageButton.dataset.pageIndex = String(index);
+    const pageName = typeof page.description === 'string' ? page.description.trim() : '';
+    pageButton.textContent = pageName || `Page ${page.number}`;
+    pageButton.onclick = () => {
+      const target = pageSections[index];
+      if (!target) return;
+      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      closePanel();
+    };
+    pageList.appendChild(pageButton);
+    pageButtons.push(pageButton);
+  });
+  navigation.appendChild(pageList);
+  panel.appendChild(navigation);
+
+  const displaySection = document.createElement('section');
+  displaySection.className = 'station-floating-section station-floating-display';
+  const displayTitle = document.createElement('h3');
+  displayTitle.textContent = 'Display options';
+  displaySection.append(displayTitle, createStationReaderMenu(displaySettings));
+  panel.appendChild(displaySection);
+
+  const setPanelOpen = (open) => {
+    panel.classList.toggle('hidden', !open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close Station navigation and display options' : 'Open Station navigation and display options');
+    if (open) close.focus();
+  };
+  const closePanel = () => setPanelOpen(false);
+  toggle.onclick = () => setPanelOpen(panel.classList.contains('hidden'));
+  close.onclick = closePanel;
+
+  const onDocumentClick = (event) => {
+    if (!panel.classList.contains('hidden') && !panel.contains(event.target) && event.target !== toggle) closePanel();
+  };
+  const onKeydown = (event) => {
+    if (event.key === 'Escape' && !panel.classList.contains('hidden')) {
+      event.preventDefault();
+      closePanel();
+      toggle.focus();
+    }
+  };
+  document.addEventListener('click', onDocumentClick);
+  document.addEventListener('keydown', onKeydown);
+
+  DOM.stationRoot.append(toggle, panel);
+  stationPageObserver = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      const index = pageSections.indexOf(entry.target);
+      pageButtons.forEach((button, buttonIndex) => {
+        const active = buttonIndex === index;
+        button.classList.toggle('active', active);
+        button.setAttribute('aria-selected', String(active));
+      });
+    });
+  }, { root: DOM.stationRoot, threshold: 0.25 });
+  pageSections.forEach((section) => stationPageObserver.observe(section));
+
+  stationFloatingMenuCleanup = () => {
+    document.removeEventListener('click', onDocumentClick);
+    document.removeEventListener('keydown', onKeydown);
+    toggle.remove();
+    panel.remove();
+  };
 }
 
 function publishActiveBook() {
@@ -1568,6 +1696,8 @@ function applyStationHomeTheme() {
 
 function renderStationDocument(data, bookId = null) {
   if (!DOM.stationContent) return;
+  if (stationFloatingMenuCleanup) stationFloatingMenuCleanup();
+  if (stationPageObserver) stationPageObserver.disconnect();
   stationReaderData = data;
   stationReaderBookId = bookId;
   const shouldFollowStation = Boolean(data && data.isLive && isStationNearBottom());
@@ -1595,15 +1725,6 @@ function renderStationDocument(data, bookId = null) {
   const stationName = typeof data.stationName === 'string' ? data.stationName.trim().slice(0, 40) : '';
   title.textContent = stationName ? `${stationName} — ${data.title || 'Untitled'}` : (data.title || 'Untitled');
   headerMain.appendChild(title);
-  const settingsButton = document.createElement('button');
-  settingsButton.type = 'button';
-  settingsButton.className = 'station-reader-settings';
-  settingsButton.textContent = '⚙';
-  settingsButton.title = 'Reader display settings';
-  settingsButton.setAttribute('aria-label', 'Reader display settings');
-  const readerMenu = createStationReaderMenu(displaySettings);
-  settingsButton.onclick = () => readerMenu.classList.toggle('hidden');
-  headerMain.append(settingsButton, readerMenu);
   header.appendChild(headerMain);
   if (data.isLive) {
     const live = document.createElement('div');
@@ -1671,6 +1792,7 @@ function renderStationDocument(data, bookId = null) {
     else manuscript.appendChild(ghost);
   }
   DOM.stationContent.appendChild(manuscript);
+  setupStationFloatingMenu(data, displaySettings);
   if (shouldFollowStation) {
     requestAnimationFrame(() => scrollStationToBottom(true));
   }
@@ -1912,11 +2034,6 @@ function initStationPage() {
   document.body.classList.add('station-mode');
   if (DOM.stationRoot) DOM.stationRoot.classList.remove('hidden');
   subscribeToStationRoute();
-  window.addEventListener('keydown', (event) => {
-    if (event.key !== 'Escape' || !stationReaderBookId) return;
-    const menu = document.querySelector('.station-reader-menu');
-    if (menu) menu.classList.toggle('hidden');
-  });
   window.addEventListener('hashchange', handleHashRouteChange);
   return true;
 }
