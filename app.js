@@ -2012,14 +2012,29 @@ function renderStationAdmin(snapshotDocs = []) {
         if (isLive) {
           const end = document.createElement('button');
           end.textContent = 'End stream';
-          end.onclick = () => db.collection('station').doc(doc.id).set({ isLive: false, liveDraft: '' }, { merge: true });
+          end.onclick = async () => {
+            end.disabled = true;
+            try {
+              await updateStationAdminDocument(doc.id, { isLive: false, liveDraft: '' });
+              showToast('Stream ended.');
+            } catch (error) {
+              end.disabled = false;
+              showToast(`Could not end stream: ${error.message || 'Firestore write failed.'}`);
+            }
+          };
           actions.appendChild(end);
         }
         const unpublish = document.createElement('button');
         unpublish.textContent = 'Unpublish';
         unpublish.onclick = async () => {
-          if (await requestConfirmation(`Unpublish "${data.title || 'Untitled'}" from the Station?`)) {
-            db.collection('station').doc(doc.id).delete();
+          if (!(await requestConfirmation(`Unpublish "${data.title || 'Untitled'}" from the Station?`))) return;
+          unpublish.disabled = true;
+          try {
+            await deleteStationAdminDocument(doc.id);
+            showToast(`Unpublished "${data.title || 'Untitled'}".`);
+          } catch (error) {
+            unpublish.disabled = false;
+            showToast(`Could not unpublish station: ${error.message || 'Firestore delete failed.'}`);
           }
         };
         const view = document.createElement('a');
@@ -2034,6 +2049,31 @@ function renderStationAdmin(snapshotDocs = []) {
   };
   appendSection('Live now', liveDocs, true);
   appendSection('Published', publishedDocs, false);
+}
+
+async function refreshStationAdminToken() {
+  if (!currentUser || !currentUser.getIdToken) return;
+  await currentUser.getIdToken(true);
+}
+
+async function runStationAdminWrite(operation) {
+  try {
+    return await operation();
+  } catch (error) {
+    if (error && error.code === 'permission-denied') {
+      await refreshStationAdminToken();
+      return operation();
+    }
+    throw error;
+  }
+}
+
+function updateStationAdminDocument(bookId, data) {
+  return runStationAdminWrite(() => db.collection('station').doc(bookId).set(data, { merge: true }));
+}
+
+function deleteStationAdminDocument(bookId) {
+  return runStationAdminWrite(() => db.collection('station').doc(bookId).delete());
 }
 
 function subscribeToStationAdmin() {
