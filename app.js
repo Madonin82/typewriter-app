@@ -19,6 +19,16 @@ const STATION_ADMIN_UIDS = ['vW2BVmvIxQap7mYBhzUU1l7P0VH3', 'HQe2aRANHoOFFPofQyf
 let auth = null;
 let db = null;
 let currentUser = null;
+let activeStorageNamespace = 'signed-out';
+
+function getStorageKey(name) {
+  return `${activeStorageNamespace}:${name}`;
+}
+
+function getUserStorageNamespace(user) {
+  if (!user) return 'signed-out';
+  return user.isAnonymous ? 'guest' : `user:${user.uid}`;
+}
 
 function getSafeSessionItem(key) {
   try {
@@ -688,8 +698,12 @@ function initFirebase() {
       db = firebase.firestore();
 
       auth.onAuthStateChanged((user) => {
+        const previousUid = currentUser ? currentUser.uid : null;
+        currentUser = user;
+        if (previousUid !== (user ? user.uid : null)) {
+          switchStorageNamespace(getUserStorageNamespace(user), Boolean(user && user.isAnonymous));
+        }
         if (user) {
-          currentUser = user;
           if (!requiresEmailVerification(user)) verificationNoticeShown = false;
           renderUserUI();
           if (isAnonymousUser(user) || requiresEmailVerification(user)) {
@@ -759,6 +773,7 @@ function handleGuestSignIn() {
 
 function showGuestUpgradeForm() {
   if (!currentUser || !isAnonymousUser()) return;
+  clearAuthForm();
   if (DOM.emailAuthForm) DOM.emailAuthForm.classList.remove('hidden');
   if (DOM.btnEmailSignUp) DOM.btnEmailSignUp.textContent = 'Create account';
   if (DOM.authEmail) DOM.authEmail.focus();
@@ -815,6 +830,11 @@ function handleEmailAuth(mode) {
     };
     showToast(messages[error.code] || `Sign in error: ${error.message}`);
   });
+}
+
+function clearAuthForm() {
+  if (DOM.authEmail) DOM.authEmail.value = '';
+  if (DOM.authPassword) DOM.authPassword.value = '';
 }
 
 function resetPasswordForCurrentUser() {
@@ -946,8 +966,9 @@ function renderUserUI() {
       }
     }
     if (DOM.guestModeIndicator) DOM.guestModeIndicator.classList.toggle('hidden', !isAnonymousUser());
-    if (DOM.btnResendVerification) DOM.btnResendVerification.classList.toggle('hidden', currentUser.emailVerified);
-    if (DOM.btnCheckVerification) DOM.btnCheckVerification.classList.toggle('hidden', currentUser.emailVerified);
+    const showVerificationControls = requiresEmailVerification(currentUser) && !isAnonymousUser(currentUser);
+    if (DOM.btnResendVerification) DOM.btnResendVerification.classList.toggle('hidden', !showVerificationControls);
+    if (DOM.btnCheckVerification) DOM.btnCheckVerification.classList.toggle('hidden', !showVerificationControls);
     if (DOM.btnGuestSignIn) DOM.btnGuestSignIn.classList.add('hidden');
     if (DOM.btnCreateAccount) DOM.btnCreateAccount.classList.toggle('hidden', !isAnonymousUser());
     if (DOM.btnResetPassword) DOM.btnResetPassword.classList.toggle('hidden', !isEmailPasswordUser() || isAnonymousUser());
@@ -961,6 +982,7 @@ function renderUserUI() {
       if (control) control.classList.toggle('hidden', isAnonymousUser());
     });
   } else {
+    clearAuthForm();
     if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.classList.remove('hidden');
     if (DOM.emailAuthForm) DOM.emailAuthForm.classList.remove('hidden');
     if (DOM.userProfile) DOM.userProfile.classList.add('hidden');
@@ -2547,21 +2569,23 @@ let memorySafetyArchive = [];
 
 function loadStorage() {
   // 1. Synchronously load settings from SafeStorage for instant UI configuration
-  const savedSettings = SafeStorage.getJSON('typewriter_settings');
+  const savedSettings = SafeStorage.getJSON(getStorageKey('typewriter_settings')) ||
+    (activeStorageNamespace === 'signed-out' ? SafeStorage.getJSON('typewriter_settings') : null);
   state.settings = migrateSettingsSchema(savedSettings);
 
   // 2. Synchronous fallback: check if books exist in memory/legacy storage for immediate rendering
-  const legacyBooks = SafeStorage.getJSON('typewriter_books');
+  const legacyBooks = SafeStorage.getJSON(getStorageKey('typewriter_books')) ||
+    (activeStorageNamespace === 'signed-out' ? SafeStorage.getJSON('typewriter_books') : null);
   if (legacyBooks && Array.isArray(legacyBooks) && legacyBooks.length > 0) {
     const { books } = migrateBooksSchema(legacyBooks);
     state.books = books;
   }
 
   // 3. Fallback active IDs from SafeStorage
-  state.activeBookId = SafeStorage.getItem('typewriter_active_book_id', state.books[0]?.id || null);
+  state.activeBookId = SafeStorage.getItem(getStorageKey('typewriter_active_book_id'), state.books[0]?.id || null);
   const currentBook = getActiveBook();
   if (currentBook && currentBook.pages && currentBook.pages.length > 0) {
-    const savedPageId = SafeStorage.getItem('typewriter_current_page_id');
+    const savedPageId = SafeStorage.getItem(getStorageKey('typewriter_current_page_id'));
     if (savedPageId && currentBook.pages.some(p => p.id === savedPageId)) {
       state.currentPageId = savedPageId;
     } else {
@@ -2584,30 +2608,34 @@ function loadStorage() {
 }
 
 async function hydrateAndMigrateFromIndexedDB() {
+  const namespace = activeStorageNamespace;
   try {
     const [idbBooks, idbArchive] = await Promise.all([
-      idbGet('typewriter_books', null),
+      idbGet(getStorageKey('typewriter_books'), null),
       idbGet('typewriter_safety_archive', null)
     ]);
 
     let shouldRerender = false;
 
     // A. Handle document books from IndexedDB
+    if (namespace !== activeStorageNamespace) return;
     if (idbBooks && Array.isArray(idbBooks) && idbBooks.length > 0) {
       const { books, modified } = migrateBooksSchema(idbBooks);
       state.books = books;
       if (modified) {
-        idbSet('typewriter_books', state.books);
+        idbSet(getStorageKey('typewriter_books'), state.books);
       }
       shouldRerender = true;
     } else if (state.books && state.books.length > 0) {
       // First-time migration: store active books in IndexedDB and free localStorage quota
-      await idbSet('typewriter_books', state.books);
-      SafeStorage.removeItem('typewriter_books');
+      await idbSet(getStorageKey('typewriter_books'), state.books);
+      if (activeStorageNamespace === 'signed-out') SafeStorage.removeItem('typewriter_books');
     }
 
     // Ensure valid activeBookId and currentPageId after IndexedDB load
-    if (state.books && state.books.length > 0) {
+    if (namespace === activeStorageNamespace && state.books && state.books.length > 0) {
+      state.activeBookId = SafeStorage.getItem(getStorageKey('typewriter_active_book_id'), state.activeBookId);
+      state.currentPageId = SafeStorage.getItem(getStorageKey('typewriter_current_page_id'), state.currentPageId);
       if (!state.activeBookId || !state.books.some(b => b.id === state.activeBookId)) {
         state.activeBookId = state.books[0].id;
         shouldRerender = true;
@@ -2622,6 +2650,7 @@ async function hydrateAndMigrateFromIndexedDB() {
     }
 
     // B. Handle Safety Archive from IndexedDB
+    if (namespace !== activeStorageNamespace) return;
     if (idbArchive && Array.isArray(idbArchive) && idbArchive.length > 0) {
       memorySafetyArchive = migrateSafetyArchiveSchema(idbArchive);
       updateSafetyArchiveBadge();
@@ -2652,7 +2681,7 @@ function scheduleIndexedDBSave() {
     if (!idbSavePending) return;
     idbSavePending = false;
     try {
-      await idbSet('typewriter_books', state.books);
+      await idbSet(getStorageKey('typewriter_books'), state.books);
     } catch (err) {
       console.warn("[StorageEngine] Debounced IndexedDB write failed:", err);
     }
@@ -2665,7 +2694,36 @@ function flushIndexedDBSaveSync() {
     idbSaveTimer = null;
   }
   idbSavePending = false;
-  return idbSet('typewriter_books', state.books);
+  return idbSet(getStorageKey('typewriter_books'), state.books);
+}
+
+function switchStorageNamespace(namespace, hydrate) {
+  if (idbSaveTimer) {
+    clearTimeout(idbSaveTimer);
+    idbSaveTimer = null;
+  }
+  if (firestoreSyncTimeout) {
+    clearTimeout(firestoreSyncTimeout);
+    firestoreSyncTimeout = null;
+  }
+  if (stationPushTimeout) {
+    clearTimeout(stationPushTimeout);
+    stationPushTimeout = null;
+  }
+  if (stationDraftTimeout) {
+    clearTimeout(stationDraftTimeout);
+    stationDraftTimeout = null;
+  }
+  idbSavePending = false;
+  pendingRemoteSnapshot = null;
+  localClientWriteId = null;
+  activeStorageNamespace = namespace;
+  state.books = [];
+  state.activeBookId = null;
+  state.currentPageId = null;
+  state.buffer = '';
+  if (hydrate) hydrateAndMigrateFromIndexedDB();
+  renderAll();
 }
 
 function saveStorage(syncCloud = true, immediateDisk = false) {
@@ -2676,10 +2734,10 @@ function saveStorage(syncCloud = true, immediateDisk = false) {
     // Save lightweight UI settings and active pointers to SafeStorage immediately
     SafeStorage.setItem('typewriter_settings', state.settings);
     if (state.activeBookId) {
-      SafeStorage.setItem('typewriter_active_book_id', state.activeBookId);
+      SafeStorage.setItem(getStorageKey('typewriter_active_book_id'), state.activeBookId);
     }
     if (state.currentPageId) {
-      SafeStorage.setItem('typewriter_current_page_id', state.currentPageId);
+      SafeStorage.setItem(getStorageKey('typewriter_current_page_id'), state.currentPageId);
     }
 
     // Persist full manuscript document tree to IndexedDB
