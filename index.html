@@ -59,9 +59,7 @@
             rows="1" 
             name="draft-note"
             autocomplete="off"
-            autocorrect="off"
             autocapitalize="sentences"
-            spellcheck="false"
             autofocus
           ></textarea>
         </div>
@@ -71,17 +69,17 @@
             <span id="guest-mode-indicator" class="guest-mode-indicator hidden">Guest mode — books saved on this device only.</span>
             <a id="station-live-indicator" class="station-live-indicator hidden" href="#/station/" title="Open this live Station">● ON AIR</a>
             <span class="meta-separator">•</span>
-            <span class="page-meta-info" id="page-header-info">Page 1 of 1</span>
+            <span class="page-meta-info" id="page-header-info" aria-hidden="true">Page 1 of 1</span>
             <span class="meta-separator">•</span>
-            <span class="book-progress" id="book-progress">📖 0 / 80,000 words · write to get a projection</span>
+            <span class="book-progress" id="book-progress" aria-hidden="true">📖 0 / 80,000 words · write to get a projection</span>
             <span class="meta-separator">•</span>
-            <span class="page-word-counter" id="page-word-counter" title="Words written on current page / Target page word count">0 / 300 words</span>
+            <span class="page-word-counter" id="page-word-counter" title="Words written on current page / Target page word count" aria-hidden="true">0 / 300 words</span>
             <span class="meta-separator">•</span>
-            <span class="char-counter" id="char-counter">0 / 200</span>
+            <span class="char-counter" id="char-counter" aria-hidden="true">0 / 200</span>
             <span class="meta-separator">•</span>
             <button id="btn-toggle-timestamps" class="btn-timestamp-toggle" title="Toggle commit timestamps in left margin">⏱️ Timestamps</button>
             <span class="meta-separator">•</span>
-            <span class="best-wpm" id="best-wpm">best 0 WPM</span>
+            <span class="best-wpm" id="best-wpm" aria-hidden="true">best 0 WPM</span>
             <button id="btn-newline" class="btn-newline" type="button" title="Insert a line break" aria-label="Insert a line break">↵</button>
             <button id="btn-commit" class="btn-commit-mini" tabindex="-1" title="Commit to Ink (Enter)">
               <span class="commit-icon" aria-hidden="true">↵</span>
