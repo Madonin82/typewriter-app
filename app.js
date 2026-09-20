@@ -1625,10 +1625,12 @@ function publishActiveBook() {
     showToast('Sign in with a verified account or continue as a guest to publish a Station.');
     return;
   }
+  const previousStationUpdate = Number(book.lastStationUpdate) || 0;
+  const addedPages = getStationPagesAddedSince(book, previousStationUpdate);
   book.stationPublished = true;
   book.stationLive = false;
   book.lastStationUpdate = Date.now();
-  pushStationSnapshot(book, { isLive: false, liveDraft: '' });
+  pushStationSnapshot(book, { isLive: false, liveDraft: '', lastUpdateAddedPages: addedPages });
   saveStorage();
   updateStationControls();
   showStationShareConfirmation(book);
@@ -1644,17 +1646,28 @@ function getUnpushedCommitCount(book) {
   }).length, 0);
 }
 
+function getStationPagesAddedSince(book, sinceTimestamp) {
+  if (!book || !Array.isArray(book.pages)) return 0;
+  const since = Number(sinceTimestamp) || 0;
+  return book.pages.filter(page => (page.chunks || []).some(chunk => {
+    const timestamp = getChunkTimestamp(chunk);
+    const timestampValue = typeof timestamp === 'number' ? timestamp : Date.parse(timestamp || '');
+    return timestampValue > since;
+  })).length;
+}
+
 function updateStationSnapshot() {
   const book = getActiveBook();
   if (!book || !book.stationPublished || book.stationLive) return;
   const commitCount = getUnpushedCommitCount(book);
+  const addedPages = getStationPagesAddedSince(book, book.lastStationUpdate);
   if (!confirm(`Push ${commitCount} new commit${commitCount === 1 ? '' : 's'} to the public Station?`)) return;
-  pushStationSnapshot(book, { isLive: false, liveDraft: '' }, true).then(success => {
+  pushStationSnapshot(book, { isLive: false, liveDraft: '', lastUpdateAddedPages: addedPages }, true).then(success => {
     if (!success) return;
     book.lastStationUpdate = Date.now();
     saveStorage();
     updateStationControls();
-    showToast('Station archive updated.');
+    showToast('Station draft updated.');
   });
 }
 
@@ -1714,7 +1727,7 @@ function toggleStationLive() {
   pushStationSnapshot(book, { isLive: book.stationLive, liveDraft: book.stationLive && DOM.draftInput ? DOM.draftInput.value : '' });
   saveStorage();
   updateStationControls();
-  showToast(book.stationLive ? 'Station is ON AIR.' : 'Stream ended. Archive remains public.');
+  showToast(book.stationLive ? 'Station is ON AIR.' : 'Stream ended. Your open draft stays public.');
 }
 
 function getPublishedBooks() {
@@ -1738,7 +1751,17 @@ function hasActiveStationBroadcast() {
 function formatStationDate(value) {
   if (!value) return '';
   const date = value.toDate ? value.toDate() : new Date(value);
-  return Number.isNaN(date.getTime()) ? '' : date.toLocaleDateString();
+  if (Number.isNaN(date.getTime())) return '';
+  const datePart = date.toLocaleDateString('en-US', {
+    month: '2-digit',
+    day: '2-digit',
+    year: 'numeric'
+  });
+  const timePart = date.toLocaleTimeString('en-US', {
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+  return `${datePart} ${timePart}`;
 }
 
 function applyStationDisplaySettings(display) {
@@ -2196,7 +2219,7 @@ function renderStationHome(docs) {
     if (data.isLive) {
       cardStatus.innerHTML = '<span class="station-card-live"><span class="station-live-dot">●</span> ON AIR</span>';
     } else {
-      cardStatus.innerHTML = '<span class="station-card-label">ARCHIVE</span>';
+      cardStatus.innerHTML = '<span class="station-card-label">OPEN DRAFT</span>';
     }
     card.appendChild(cardStatus);
 
@@ -2217,7 +2240,11 @@ function renderStationHome(docs) {
     metaContainer.className = 'station-card-meta-row';
     const meta = document.createElement('span');
     meta.className = 'station-card-meta';
-    meta.textContent = `${(data.pages || []).length} page${(data.pages || []).length === 1 ? '' : 's'}${data.isLive ? ' · live now' : ` · updated ${formatStationDate(data.updatedAt)}`}`;
+    const totalPages = (data.pages || []).length;
+    const newPages = Number(data.lastUpdateAddedPages) || 0;
+    meta.textContent = data.isLive
+      ? `${totalPages} page${totalPages === 1 ? '' : 's'} · live now`
+      : `${totalPages} pages, ${newPages} new pages added ${formatStationDate(data.updatedAt)}`;
     metaContainer.appendChild(meta);
     if (data.isGuest) {
       const guestBadge = document.createElement('span');

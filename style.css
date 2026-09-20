@@ -897,12 +897,14 @@ body.theme-dark .station-guest-badge {
 .station-btn-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 6px;
   width: 100%;
 }
 
 .station-control-btn {
-  flex: 1;
+  flex: 1 1 140px;
+  min-width: 0;
   height: 28px;
   display: inline-flex;
   align-items: center;
