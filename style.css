@@ -2397,21 +2397,6 @@ body.theme-dark .replay-speed-tick.active {
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.4);
 }
 
-.confirm-modal-card {
-  max-width: 460px;
-}
-
-.confirm-modal-message {
-  white-space: pre-line;
-}
-
-.confirm-modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  margin-top: 22px;
-}
-
 .modal-header {
   display: flex;
   justify-content: space-between;
