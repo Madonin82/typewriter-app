@@ -522,7 +522,7 @@ body.station-mode > :not(#station-root) {
 .station-back:hover { color: var(--accent); }
 
 .station-live-banner {
-  color: #b42318;
+  color: #2e7d32;
   font-family: 'Inter', sans-serif;
   font-size: 11px;
   font-weight: 700;
@@ -547,6 +547,15 @@ body.station-mode > :not(#station-root) {
 
 body.theme-matrix .station-card-live {
   color: #00ff41;
+}
+
+body.theme-matrix .station-live-banner { color: #00ff41; }
+body.theme-dark .station-live-banner { color: #4ade80; }
+
+.station-update-reminder {
+  color: #a66a24;
+  font: 10px 'Inter', sans-serif;
+  white-space: nowrap;
 }
 
 body.theme-dark .station-card-live {
@@ -1692,6 +1701,21 @@ body.theme-dark .draft-footer {
   gap: 4px;
   white-space: nowrap;
   user-select: none;
+}
+
+.btn-newline {
+  display: none;
+  border: 1px solid rgba(0, 0, 0, 0.16);
+  background: transparent;
+  color: var(--ink-faded);
+  border-radius: 10px;
+  padding: 2px 6px;
+  font: 12px/1 'Inter', sans-serif;
+  cursor: pointer;
+}
+
+@media (pointer: coarse) {
+  .btn-newline { display: inline-flex; align-items: center; justify-content: center; }
 }
 
 .btn-commit-mini .commit-icon {
@@ -3467,6 +3491,8 @@ body.theme-paper .sync-toast {
     padding-left: 88px;
   }
   .commit-timestamp {
+    position: absolute;
+    display: block;
     left: -80px;
     width: 74px;
     font-size: 10px;
@@ -3478,10 +3504,10 @@ body.theme-paper .sync-toast {
   }
   #draft-overlay {
     padding: 0 10px;
-    padding-bottom: max(10px, env(safe-area-inset-bottom, 10px));
+    padding-bottom: env(safe-area-inset-bottom, 0px);
     padding-left: max(10px, env(safe-area-inset-left, 10px));
     padding-right: max(10px, env(safe-area-inset-right, 10px));
-    bottom: 10px;
+    bottom: 0;
   }
   #draft-box {
     margin: 0 auto;

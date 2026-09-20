@@ -239,6 +239,7 @@ function initDOM() {
     draftInputBackdrop: document.getElementById('draft-input-backdrop'),
     charCounter: document.getElementById('char-counter'),
     commitHint: document.getElementById('commit-hint'),
+    btnNewline: document.getElementById('btn-newline'),
     btnCommit: document.getElementById('btn-commit'),
 
     escOverlay: document.getElementById('esc-overlay'),
@@ -254,9 +255,11 @@ function initDOM() {
     btnRenameBook: document.getElementById('btn-rename-book'),
     bookWordTarget: document.getElementById('book-word-target'),
     btnPublishStation: document.getElementById('btn-publish-station'),
+    btnUpdateStation: document.getElementById('btn-update-station'),
     btnToggleLive: document.getElementById('btn-toggle-live'),
     stationName: document.getElementById('station-name'),
     stationPublishStatus: document.getElementById('station-publish-status'),
+    stationUpdateReminder: document.getElementById('station-update-reminder'),
     stationShareModal: document.getElementById('station-share-modal'),
     stationShareUrl: document.getElementById('station-share-url'),
     stationShareOpen: document.getElementById('station-share-open'),
@@ -639,11 +642,14 @@ function closeOverlay() {
 }
 
 function updateCommitHint() {
+  const isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   const isCtrl = state.settings.commitKey === 'ctrl-enter';
-  const label = isCtrl ? 'Ctrl+Enter to Commit' : 'Enter to Commit';
-  const fullTip = isCtrl
+  const label = isTouch ? 'Enter to Commit' : (isCtrl ? 'Ctrl+Enter to Commit' : 'Enter to Commit');
+  const fullTip = isTouch
+    ? 'Enter to commit — use the line-break button for a new line'
+    : (isCtrl
     ? 'Commit with Ctrl+Enter — or tap to commit'
-    : 'Commit with Enter (Shift+Enter for line break) — or tap to commit';
+    : 'Commit with Enter (Shift+Enter for line break) — or tap to commit');
 
   if (DOM.commitHint) {
     DOM.commitHint.textContent = label;
@@ -1334,11 +1340,13 @@ function stationPayloadForBook(book, overrides = {}) {
   return payload;
 }
 
-function pushStationSnapshot(book, overrides = {}) {
-  if (!db || !currentUser || !book || !book.stationPublished || (requiresEmailVerification() && !isAnonymousUser())) return;
+function pushStationSnapshot(book, overrides = {}, replace = false) {
+  if (!db || !currentUser || !book || !book.stationPublished || (requiresEmailVerification() && !isAnonymousUser())) return Promise.resolve(false);
   const payload = stationPayloadForBook(book, overrides);
-  db.collection('station').doc(book.id).set(payload, { merge: true }).catch(error => {
+  const writeOptions = replace ? undefined : { merge: true };
+  return db.collection('station').doc(book.id).set(payload, writeOptions).then(() => true).catch(error => {
     console.warn('[Station] Push failed:', error);
+    return false;
   });
 }
 
@@ -1368,6 +1376,14 @@ function updateStationControls() {
   if (DOM.btnPublishStation) {
     DOM.btnPublishStation.textContent = published ? '📡 Unpublish from Station' : '📡 Publish to Station';
     DOM.btnPublishStation.classList.toggle('published', published);
+  }
+  const unpushedCount = published ? getUnpushedCommitCount(book) : 0;
+  if (DOM.btnUpdateStation) DOM.btnUpdateStation.classList.toggle('hidden', !published);
+  if (DOM.stationUpdateReminder) {
+    DOM.stationUpdateReminder.classList.toggle('hidden', !published || unpushedCount === 0);
+    DOM.stationUpdateReminder.textContent = unpushedCount === 1
+      ? '1 commit not on the Station yet'
+      : `${unpushedCount} commits not on the Station yet`;
   }
   if (DOM.btnToggleLive) {
     DOM.btnToggleLive.classList.toggle('hidden', !published);
@@ -1611,10 +1627,35 @@ function publishActiveBook() {
   }
   book.stationPublished = true;
   book.stationLive = false;
+  book.lastStationUpdate = Date.now();
   pushStationSnapshot(book, { isLive: false, liveDraft: '' });
   saveStorage();
   updateStationControls();
   showStationShareConfirmation(book);
+}
+
+function getUnpushedCommitCount(book) {
+  if (!book || !Array.isArray(book.pages)) return 0;
+  const lastUpdate = Number(book.lastStationUpdate) || 0;
+  return book.pages.reduce((count, page) => count + (page.chunks || []).filter(chunk => {
+    const timestamp = getChunkTimestamp(chunk);
+    const timestampValue = typeof timestamp === 'number' ? timestamp : Date.parse(timestamp || '');
+    return timestampValue > lastUpdate;
+  }).length, 0);
+}
+
+function updateStationSnapshot() {
+  const book = getActiveBook();
+  if (!book || !book.stationPublished || book.stationLive) return;
+  const commitCount = getUnpushedCommitCount(book);
+  if (!confirm(`Push ${commitCount} new commit${commitCount === 1 ? '' : 's'} to the public Station?`)) return;
+  pushStationSnapshot(book, { isLive: false, liveDraft: '' }, true).then(success => {
+    if (!success) return;
+    book.lastStationUpdate = Date.now();
+    saveStorage();
+    updateStationControls();
+    showToast('Station archive updated.');
+  });
 }
 
 function getStationUrl(book) {
@@ -3088,7 +3129,7 @@ function saveStorage(syncCloud = true, immediateDisk = false) {
   }
 
   const stationBook = getActiveBook();
-  if (stationBook && stationBook.stationPublished) {
+  if (stationBook && stationBook.stationPublished && stationBook.stationLive) {
     scheduleStationPush(stationBook, {
       liveDraft: stationBook.stationLive && DOM.draftInput ? DOM.draftInput.value : ''
     }, 1200);
@@ -5359,12 +5400,12 @@ function commitDraft() {
       activePage.locked = true;
       showToast(`Target of ${state.settings.wordsPerPage} words reached! Page turned.`);
       createNewPage(true);
-      if (activeBook.stationPublished) {
+      if (activeBook.stationPublished && activeBook.stationLive) {
         scheduleStationPush(activeBook, { liveDraft: '' }, 1200);
       }
     } else {
       saveStorage(true, false);
-      if (activeBook.stationPublished) {
+      if (activeBook.stationPublished && activeBook.stationLive) {
         scheduleStationPush(activeBook, { liveDraft: '' }, 1200);
       }
       if (Boolean(state.settings.typewriterAnim)) {
@@ -5405,7 +5446,11 @@ function getActiveTextBottomElement() {
 function updateWritingSurfacePadding() {
   if (!DOM.writingSurface) return;
   const windowHeight = window.innerHeight;
-  const targetPadding = Math.max(260, windowHeight - 120);
+  const isMobile = window.innerWidth <= 600;
+  const draftBox = document.getElementById('draft-box');
+  const targetPadding = isMobile
+    ? Math.max(120, (draftBox ? draftBox.offsetHeight : 96) + 24)
+    : Math.max(260, windowHeight - 120);
   DOM.writingSurface.style.paddingBottom = `${targetPadding}px`;
 }
 
@@ -7149,9 +7194,12 @@ function setupEventListeners() {
       }
 
       const isCtrlMode = state.settings.commitKey === 'ctrl-enter';
-      const commitTriggered = isCtrlMode
-        ? (e.key === 'Enter' && (e.ctrlKey || e.metaKey))
-        : (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey);
+      const isTouch = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+      const commitTriggered = isTouch
+        ? (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey)
+        : (isCtrlMode
+          ? (e.key === 'Enter' && (e.ctrlKey || e.metaKey))
+          : (e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey));
 
       if (commitTriggered) {
         e.preventDefault();
@@ -7397,6 +7445,16 @@ function setupEventListeners() {
   });
 
   if (DOM.btnCommit) DOM.btnCommit.onclick = commitDraft;
+  if (DOM.btnNewline) DOM.btnNewline.onclick = () => {
+    if (!DOM.draftInput) return;
+    const start = DOM.draftInput.selectionStart;
+    const end = DOM.draftInput.selectionEnd;
+    const value = DOM.draftInput.value;
+    DOM.draftInput.value = value.slice(0, start) + '\n' + value.slice(end);
+    DOM.draftInput.selectionStart = DOM.draftInput.selectionEnd = start + 1;
+    DOM.draftInput.dispatchEvent(new Event('input', { bubbles: true }));
+    DOM.draftInput.focus();
+  };
 
   // Book selectors
   if (DOM.selectBookSlot) {
@@ -7421,6 +7479,7 @@ function setupEventListeners() {
     else publishActiveBook();
   };
   if (DOM.btnToggleLive) DOM.btnToggleLive.onclick = toggleStationLive;
+  if (DOM.btnUpdateStation) DOM.btnUpdateStation.onclick = updateStationSnapshot;
   if (DOM.stationName) {
     DOM.stationName.onchange = () => {
       const book = getActiveBook();
@@ -7428,7 +7487,6 @@ function setupEventListeners() {
       book.stationName = DOM.stationName.value.trim().slice(0, 40);
       DOM.stationName.value = book.stationName;
       saveStorage();
-      if (book.stationPublished) pushStationSnapshot(book, { stationName: book.stationName });
       updateStationControls();
     };
   }

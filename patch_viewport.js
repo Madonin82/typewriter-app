@@ -13,7 +13,7 @@
         const offsetTop = window.visualViewport.offsetTop;
         // On iOS Safari, the visual viewport height shrinks when keyboard appears
         const diff = layoutHeight - visualHeight - offsetTop;
-        draftOverlay.style.bottom = Math.max(24, diff + 24) + 'px';
+        draftOverlay.style.bottom = Math.max(0, diff) + 'px';
       }
     };
     window.visualViewport.addEventListener('resize', adjustForKeyboard);
