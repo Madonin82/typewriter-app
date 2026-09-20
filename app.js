@@ -264,6 +264,11 @@ function initDOM() {
     btnCloseStationShare: document.getElementById('btn-close-station-share'),
     btnCloseStationShareSecondary: document.getElementById('btn-close-station-share-secondary'),
     btnDeleteBook: document.getElementById('btn-delete-book'),
+    confirmModal: document.getElementById('confirm-modal'),
+    confirmModalTitle: document.getElementById('confirm-modal-title'),
+    confirmModalMessage: document.getElementById('confirm-modal-message'),
+    btnCancelConfirm: document.getElementById('btn-cancel-confirm'),
+    btnAcceptConfirm: document.getElementById('btn-accept-confirm'),
 
     pagesList: document.getElementById('pages-list'),
     btnNewPage: document.getElementById('btn-new-page'),
@@ -459,6 +464,60 @@ function initDOM() {
     btnSwReload: document.getElementById('btn-sw-reload'),
     btnSwDismiss: document.getElementById('btn-sw-dismiss')
   };
+}
+
+let pendingConfirmation = null;
+let confirmationReturnFocus = null;
+
+function isEmbeddedContext() {
+  try {
+    return window.self !== window.top;
+  } catch (error) {
+    return true;
+  }
+}
+
+function guardedNativeConfirm(message) {
+  if (isEmbeddedContext()) {
+    console.warn('[Confirmation] Native confirmation is unavailable in an embedded context.');
+    return false;
+  }
+  try {
+    return window.confirm(message);
+  } catch (error) {
+    console.warn('[Confirmation] Native confirmation was blocked:', error);
+    return false;
+  }
+}
+
+function resolveConfirmation(accepted) {
+  if (!pendingConfirmation) return;
+  const resolve = pendingConfirmation;
+  pendingConfirmation = null;
+  if (DOM.confirmModal) DOM.confirmModal.classList.add('hidden');
+  if (confirmationReturnFocus && typeof confirmationReturnFocus.focus === 'function') {
+    confirmationReturnFocus.focus();
+  }
+  confirmationReturnFocus = null;
+  resolve(accepted);
+}
+
+function requestConfirmation(message, title = 'Please confirm', confirmLabel = 'Confirm') {
+  if (!DOM.confirmModal || !DOM.btnCancelConfirm || !DOM.btnAcceptConfirm) {
+    return Promise.resolve(guardedNativeConfirm(message));
+  }
+
+  if (pendingConfirmation) resolveConfirmation(false);
+  confirmationReturnFocus = document.activeElement;
+  DOM.confirmModalTitle.textContent = title;
+  DOM.confirmModalMessage.textContent = message;
+  DOM.btnAcceptConfirm.textContent = confirmLabel;
+  DOM.confirmModal.classList.remove('hidden');
+  DOM.btnAcceptConfirm.focus();
+
+  return new Promise((resolve) => {
+    pendingConfirmation = resolve;
+  });
 }
 
 // ─── PWA & SERVICE WORKER LIFECYCLE ─────────────────────────
@@ -900,9 +959,9 @@ function checkEmailVerification() {
   }).catch((error) => showToast(`Could not check verification: ${error.message}`));
 }
 
-function handleSignOut() {
+async function handleSignOut() {
   if (state.books.some(book => book && (book.stationPublished || book.stationLive)) &&
-      !confirm('You have books published on Station (one is live). Logging out will leave them up. End streams / unpublish first?')) {
+  !(await requestConfirmation('You have books published on Station (one is live). Logging out will leave them up. End streams / unpublish first?'))) {
     return;
   }
   googleAccessToken = null;
@@ -916,7 +975,7 @@ function handleSignOut() {
     stationAdminUnsubscribe = null;
   }
   if (auth) {
-    if (isAnonymousUser() && !confirm('Guest identity will be discarded. Your local books will stay on this device. Continue?')) {
+    if (isAnonymousUser() && !(await requestConfirmation('Guest identity will be discarded. Your local books will stay on this device. Continue?'))) {
       return;
     }
     auth.signOut().then(() => {
@@ -1636,10 +1695,10 @@ async function copyStationLink() {
   showToast('Station link copied.');
 }
 
-function unpublishActiveBook() {
+async function unpublishActiveBook() {
   const book = getActiveBook();
   if (!book || !book.stationPublished) return;
-  if (!confirm(`Unpublish "${book.title}" from the Station? Your local book will remain untouched.`)) return;
+  if (!(await requestConfirmation(`Unpublish "${book.title}" from the Station? Your local book will remain untouched.`))) return;
   deleteStationSnapshot(book);
   book.stationPublished = false;
   book.stationLive = false;
@@ -1958,8 +2017,8 @@ function renderStationAdmin(snapshotDocs = []) {
         }
         const unpublish = document.createElement('button');
         unpublish.textContent = 'Unpublish';
-        unpublish.onclick = () => {
-          if (confirm(`Unpublish "${data.title || 'Untitled'}" from the Station?`)) {
+        unpublish.onclick = async () => {
+          if (await requestConfirmation(`Unpublish "${data.title || 'Untitled'}" from the Station?`)) {
             db.collection('station').doc(doc.id).delete();
           }
         };
@@ -2722,6 +2781,9 @@ function switchStorageNamespace(namespace, hydrate) {
   state.activeBookId = null;
   state.currentPageId = null;
   state.buffer = '';
+  if (namespace === 'guest') {
+    createNewBook("first note", false);
+  }
   if (hydrate) hydrateAndMigrateFromIndexedDB();
   renderAll();
 }
@@ -3038,7 +3100,7 @@ function renderSafetyArchiveList() {
   });
 }
 
-function restoreSafetyArchiveItem(id) {
+async function restoreSafetyArchiveItem(id) {
   const archive = getSafetyArchive();
   const item = archive.find(x => x.id === id);
   if (!item || !item.data) {
@@ -3071,7 +3133,7 @@ function restoreSafetyArchiveItem(id) {
     showToast(`Restored "${bookToRestore.title}" to active books!`);
     playCarriageReturnBell();
   } else if (item.type === 'full_reset' && migratedData.books && migratedData.books.length > 0) {
-    if (confirm(`Restore all ${migratedData.books.length} books from this snapshot? (This will add them to your studio)`)) {
+    if (await requestConfirmation(`Restore all ${migratedData.books.length} books from this snapshot? (This will add them to your studio)`)) {
       migratedData.books.forEach(b => {
         const copy = JSON.parse(JSON.stringify(b));
         copy.id = 'book_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
@@ -3102,12 +3164,12 @@ function downloadSafetyArchiveItem(id) {
   showToast(`Downloaded safety backup: ${item.title}`);
 }
 
-function deleteSafetyArchiveItem(id) {
+async function deleteSafetyArchiveItem(id) {
   let archive = getSafetyArchive();
   const item = archive.find(x => x.id === id);
   if (!item) return;
 
-  if (confirm(`Permanently delete this local safety backup for "${item.title}"?`)) {
+  if (await requestConfirmation(`Permanently delete this local safety backup for "${item.title}"?`)) {
     archive = archive.filter(x => x.id !== id);
     saveSafetyArchive(archive);
     renderSafetyArchiveList();
@@ -3115,14 +3177,14 @@ function deleteSafetyArchiveItem(id) {
   }
 }
 
-function clearSafetyArchive() {
+async function clearSafetyArchive() {
   const archive = getSafetyArchive();
   if (archive.length === 0) {
     showToast("Safety archive is already empty.");
     return;
   }
 
-  if (confirm(`Permanently remove all ${archive.length} automatic safety backups from your local storage?`)) {
+  if (await requestConfirmation(`Permanently remove all ${archive.length} automatic safety backups from your local storage?`)) {
     saveSafetyArchive([]);
     renderSafetyArchiveList();
     showToast("Safety archive cleared.");
@@ -4514,7 +4576,7 @@ function renameCurrentBook() {
   }
 }
 
-function deleteCurrentBook() {
+async function deleteCurrentBook() {
   if (state.books.length <= 1) {
     alert("You must keep at least one book open!");
     return;
@@ -4523,7 +4585,7 @@ function deleteCurrentBook() {
   const book = getActiveBook();
   if (!book) return;
 
-  if (confirm(`Delete "${book.title}"?\n\n(A safety backup will automatically be saved and downloaded to your files in case this was an accident.)`)) {
+  if (await requestConfirmation(`Delete "${book.title}"?\n\n(A safety backup will automatically be saved and downloaded to your files in case this was an accident.)`)) {
     // Automatically create safety backup
     createSafetyBackupForBook(book, 'Deleted Book');
     deleteStationSnapshot(book);
@@ -6445,7 +6507,7 @@ async function downloadDriveFile(fileId) {
 }
 
 async function deleteDriveFile(fileId, fileName) {
-  if (!confirm(`Delete "${fileName}" from your Google Drive?`)) return;
+  if (!(await requestConfirmation(`Delete "${fileName}" from your Google Drive?`))) return;
 
   try {
     const token = await getGoogleDriveToken();
@@ -6751,6 +6813,10 @@ function setupEventListeners() {
   // ESC Key Listener & Global Keyboard Shortcuts
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
+      if (DOM.confirmModal && !DOM.confirmModal.classList.contains('hidden')) {
+        resolveConfirmation(false);
+        return;
+      }
       if (DOM.pageDescModal && !DOM.pageDescModal.classList.contains('hidden')) {
         closePageDescModal();
         return;
@@ -6785,6 +6851,14 @@ function setupEventListeners() {
     }
 
     if (!overlayOpen && document.activeElement === DOM.draftInput) {
+
+  if (DOM.btnCancelConfirm) DOM.btnCancelConfirm.onclick = () => resolveConfirmation(false);
+  if (DOM.btnAcceptConfirm) DOM.btnAcceptConfirm.onclick = () => resolveConfirmation(true);
+  if (DOM.confirmModal) {
+    DOM.confirmModal.onclick = (event) => {
+      if (event.target === DOM.confirmModal) resolveConfirmation(false);
+    };
+  }
       if (e.key === 'PageUp' || e.key === 'PageDown') {
         e.preventDefault();
         const pageStep = DOM.writingSurface.clientHeight * 0.75;
@@ -7301,7 +7375,7 @@ function setupEventListeners() {
   // Clear all
   if (DOM.btnClearAll) {
     DOM.btnClearAll.onclick = async () => {
-      if (confirm("Reset all books, pages, and preferences?\n\n(An automatic safety backup of ALL your manuscripts will be created and downloaded first in case this was an accident.)")) {
+      if (await requestConfirmation("Reset all books, pages, and preferences?\n\n(An automatic safety backup of ALL your manuscripts will be created and downloaded first in case this was an accident.)")) {
         // Automatically back up all manuscripts before resetting
         createSafetyBackupForReset(state.books, state.settings, 'Full Studio Reset');
         state.books.forEach(book => deleteStationSnapshot(book));
