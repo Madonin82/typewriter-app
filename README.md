@@ -1,86 +1,66 @@
 # Note to Self
 
-A forward-only micro-drafting studio designed to cure editing paralysis. Write in short bursts, commit them to ink, and keep moving.
+A writing app for drafting books. You write in short chunks, commit them, and keep going — committed text can't be edited, so you move forward instead of re-reading what you just wrote.
 
 **Live demo:** https://madonin82.github.io/typewriter-app
 
-**Audience page:** https://madonin82.github.io/typewriter-app/#/station/
+**Station (public reading page):** https://madonin82.github.io/typewriter-app/#/station/
 
-## The Philosophy
+## Writing
 
-Traditional writing tools invite endless back-editing, which traps writers in perfectionism. Note to Self separates drafting from committing:
+- Draft in a small text buffer (200 characters max, auto-commits when full), then press Enter to commit. Committed text is permanent.
+- Typewriter keystroke sounds via Web Audio, volume adjustable, can be turned off.
+- Keystroke replay: replays your typing rhythm on commit and shows WPM, at 1x-10x speed.
+- Optional per-commit timestamps in the page margin.
+- Ghost preview of the previous page's last line above the current page.
+- Words-per-page target: pages lock and turn when the target is reached. Locked pages can't be edited.
+- Multiple books: create, rename, search, delete. Page descriptions work as chapter labels.
+- In-book search across the current book.
 
-1. **Draft** — Write your current thought in a small, focused buffer.
-2. **Commit** — Press Enter and the text is permanently pressed into the ink stream.
-3. **Move forward** — Ink can't be edited after commit. The only direction is ahead.
+## Progress
 
-## Features
+- Book word target (default 80,000) with live progress and a projected finish date based on recent activity.
+- Best-WPM badge per book, with a notification when you beat it.
+- Both can be toggled in settings.
 
-### ✍️ Writing
+## Station
 
-- **Forward-only drafting** — A character-limited draft buffer with auto-commit; once text is ink, it stays ink.
-- **Typewriter physics** — Authentic keystroke sounds (Web Audio, adjustable volume) and tactile scrolling.
-- **Keystroke replay** — Replays your exact typing rhythm on commit and calculates your WPM, at 1x–10x speed.
-- **Commit timestamps** — Optional per-commit timestamps in the page margin.
-- **Previous-page context** — A faded ghost preview of the prior page's closing line above the ink stream.
-- **Words-per-page target** — Pages automatically lock and turn when the target is reached.
-- **Locked pages** — Finished pages are protected behind a floating overlay.
+The Station is a public page where readers can read what you publish. One permanent URL, no login required to read.
 
-### 📈 Progress & Pace
+- **Publish**: writes a snapshot of the book to the public Station immediately, then shows you the link. The book appears as an open draft.
+- **Update Station**: pushes new commits to the public open draft.
+- **Go Live**: streams committed text to readers in near-real time with an ON AIR badge. End the stream from the ESC menu.
+- **Unpublish**: removes the book from the Station.
+- Readers can change paper theme, font, size, spacing, and timestamps for themselves; their settings stay on their device.
+- `#/admin` is a dashboard of live and published books (owner only).
 
-- **Finish Projection** — Set a book word target (default 80,000) and the header shows live progress plus a projected finish date computed from your recent writing activity.
-- **Race Your Ghost** — A best-WPM badge tracks your personal record per book, with a toast and sound when you set a new one.
-- Both can be toggled independently in settings.
+## Analysis
 
-### 📚 Books & Pages
+Readability stats computed in a Web Worker: Flesch Reading Ease, grade level, word/sentence/paragraph counts, unique words, average words per sentence, estimated reading and speaking time, per-page breakdown.
 
-- **Multiple books** — Create, rename, search, and delete books; page descriptions double as chapter labels.
-- **In-book search** — Find text across the current book and jump straight to the page.
+## Import, export, backup
 
-### 📡 Public Station
+- Export: TXT, Markdown, PDF, EPUB, copy to clipboard, Google Drive / Google Docs.
+- Import: .txt, .md, .epub, .json from device or Google Drive.
+- Session backups: full snapshots (.json) to device or Drive, inspect before restore.
+- Deleting a book or resetting the app keeps a restorable snapshot automatically.
 
-- **Publish a book** — Push any book to your public Station with one click; a share modal hands you the direct reader URL (`#/station/{book}`) with copy and open actions.
-- **Station names** — Give each published book a short display name (up to 40 characters) shown on its Station card and reading header.
-- **Go live** — Toggle live mode and your committed ink streams to readers in near-real-time, with an ON AIR badge and auto-scroll that keeps readers pinned to your latest words as you type.
-- **Author's view, reader's choice** — Your display settings (paper theme, font, size, spacing, timestamps) travel with the published book, so readers see it the way you see it. Readers can open the display menu (gear icon) to switch paper (light / dark / sepia), fonts, text size, and spacing, toggle timestamps independently, or reset to your view — their preferences are remembered per book, on their device only.
-- **Station home** — `#/station/` lists everything you've published, live books first. No login needed to read.
-- **Safety rails** — Closing the tab while a book is live or published prompts you first (and stops the broadcast); logging out with a book published or live asks for confirmation; the writer re-checks the Station on login so a stream can never get stranded; unpublishing is instant.
-- **Station admin** — `#/admin` (owner only) is mission control for the public Station: a realtime dashboard of everything live and published, with End stream, Unpublish, and View controls.
+## Sync
 
-### 📊 Manuscript Analysis
+- Sign in with Google or email/password. Email verification is required to sync.
+- Firestore sync across devices, owner-only security rules (each account sees only its own data). Rules are in `firestore.rules`.
+- Works fully offline. Sync is opt-in.
 
-- Real-time readability metrics computed off-thread in a Web Worker (zero UI lag): Flesch Reading Ease, grade level, word/sentence/paragraph counts, unique words, average words per sentence, estimated reading and speaking time, plus a page-by-page progress breakdown.
+## Customization
 
-### 💾 Import, Export & Backup
+- Paper: Warm Cream, Clean White, Vintage Sepia, Midnight Ink, Matrix CRT green.
+- Fonts: Courier Prime, Special Elite, system monospace.
+- Commit key: Enter or Ctrl+Enter.
+- PWA: installable on desktop and phone, works offline.
 
-- **Export** — Manuscript to TXT, Markdown, PDF, or EPUB ebook; copy to clipboard; direct export to Google Drive / Google Docs.
-- **Import** — Load manuscripts from device (.txt, .md, .epub, .json) or straight from Google Drive.
-- **Session backups** — One-click full-session snapshots (.json) to device or Drive, with inspect-before-restore.
-- **Safety archive** — Deleting a book or resetting the studio automatically preserves a restorable snapshot. Your work is never silently lost.
+## Run it locally
 
-### ☁️ Sync
-
-- **Firebase auth** — Sign in with Google or email/password; verified email is required to sync.
-- **Firestore sync** — Real-time sync across devices behind owner-only security rules (each account can read and write only its own data), plus a live sync-status indicator. Security rules live in `firestore.rules`, version-controlled in the repo.
-- Fully usable offline — local-first storage is the default, cloud is opt-in.
-
-### 🎨 Customization
-
-- **Paper tones** — Warm Cream, Clean White, Vintage Sepia, Midnight Ink, Matrix CRT green.
-- **Typewriter fonts** — Courier Prime, Special Elite, system monospace.
-- **Commit shortcut** — Enter or Ctrl+Enter (your choice for line breaks vs. committing).
-
-### 📱 Installable Anywhere
-
-- Progressive Web App — install to desktop or phone home screen, works offline via service worker with seamless background updates. Mobile layout with notch support.
-
-## Getting Started
-
-### Prerequisites
-
-- [Node.js](https://nodejs.org/)
-
-### Run it locally
+Requires [Node.js](https://nodejs.org/).
 
 ```bash
 git clone https://github.com/Madonin82/typewriter-app.git
@@ -89,44 +69,29 @@ npm install
 npm start
 ```
 
-Open http://localhost:3000 — no build step, the server serves the static app directly.
+Open http://localhost:3000. No build step.
 
 ### Cloud sync (optional)
 
-Sync features need a Firebase project. Copy `.env.example` to `.env` and add your Firebase API key. Everything else — writing, export, local backups — works with no configuration at all.
+Copy `.env.example` to `.env` and add your Firebase API key. Everything else works without it.
 
-### Deploying Firestore rules
+### Firestore rules
 
-Security rules are version-controlled in `firestore.rules` (`firebase.json` wires it up for the CLI). Deploy with:
+Rules live in `firestore.rules` (`firebase.json` points the CLI at it). Deploy with `firebase deploy --only firestore:rules`, or paste the file into the Firebase console Rules tab.
 
-```bash
-firebase deploy --only firestore:rules
-```
+## Files
 
-or paste the file's contents into the Firebase console Rules tab. Console edits and the file can drift — treat the file as the source of truth.
-
-## Project Structure
-
-| File | Purpose |
+| File | What it is |
 | --- | --- |
-| `index.html` | App shell and UI markup |
-| `app.js` | Application logic (vanilla JS, no framework) |
-| `style.css` | All styling, themes, and responsive layout |
-| `text-worker.js` | Web Worker for readability analysis |
-| `server.js` | Zero-dependency static server with smart cache headers |
-| `sw.js` / `manifest.json` | PWA service worker and install manifest |
-| `firestore.rules` | Version-controlled Firestore security rules |
-| `firebase.json` | Firebase CLI config (points at `firestore.rules`) |
-| `jspdf.umd.min.js` / `jszip.min.js` | Bundled locally — PDF and ZIP export work offline |
-
-## Built With
-
-- HTML5 / CSS3 / Vanilla JavaScript (no framework, no build step)
-- Node.js static server
-- Firebase Auth + Firestore (verified-email-gated sync)
-- Google Drive API (backup & export)
-- jsPDF, JSZip, Web Audio API, Web Workers
+| `index.html` | App markup |
+| `app.js` | All application logic (vanilla JS) |
+| `style.css` | Styling and themes |
+| `text-worker.js` | Analysis Web Worker |
+| `server.js` | Static file server |
+| `sw.js` / `manifest.json` | PWA service worker and manifest |
+| `firestore.rules` | Firestore security rules |
+| `jspdf.umd.min.js` / `jszip.min.js` | Bundled locally so PDF/ZIP export work offline |
 
 ## License
 
-Personal, non-commercial use only — see the `LICENSE` file for the full terms.
+Personal, non-commercial use only. See `LICENSE`.
