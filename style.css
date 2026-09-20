@@ -903,23 +903,25 @@ body.theme-dark .station-guest-badge {
 }
 
 .station-control-btn {
-  flex: 1 1 140px;
+  flex: 1 1 100px;
   min-width: 0;
   height: 28px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 4px;
   background: #141414;
   border: 1px solid #2e2e2e;
   border-radius: 4px;
   color: #b0aba2;
   cursor: pointer;
   font: 500 11px 'Inter', sans-serif;
-  padding: 0 8px;
+  padding: 0 6px;
   text-align: center;
   transition: all 0.15s ease;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .station-control-btn:hover {

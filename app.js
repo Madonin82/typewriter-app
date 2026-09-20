@@ -1341,8 +1341,10 @@ function stationPayloadForBook(book, overrides = {}) {
 }
 
 function pushStationSnapshot(book, overrides = {}, replace = false) {
-  if (!db || !currentUser || !book || !book.stationPublished || (requiresEmailVerification() && !isAnonymousUser())) return Promise.resolve(false);
-  const payload = stationPayloadForBook(book, overrides);
+  if (!db || !currentUser || !book || (!book.stationPublished && !overrides.publish) || (requiresEmailVerification() && !isAnonymousUser())) return Promise.resolve(false);
+  const cleanOverrides = { ...overrides };
+  delete cleanOverrides.publish;
+  const payload = stationPayloadForBook(book, cleanOverrides);
   const writeOptions = replace ? undefined : { merge: true };
   return db.collection('station').doc(book.id).set(payload, writeOptions).then(() => true).catch(error => {
     console.warn('[Station] Push failed:', error);
@@ -1618,7 +1620,7 @@ function setupStationFloatingMenu(data, displaySettings) {
   };
 }
 
-function publishActiveBook() {
+async function publishActiveBook() {
   const book = getActiveBook();
   if (!book) return;
   if (!currentUser || (requiresEmailVerification() && !isAnonymousUser())) {
@@ -1627,10 +1629,14 @@ function publishActiveBook() {
   }
   const previousStationUpdate = Number(book.lastStationUpdate) || 0;
   const addedPages = getStationPagesAddedSince(book, previousStationUpdate);
+  const success = await pushStationSnapshot(book, { isLive: false, liveDraft: '', lastUpdateAddedPages: addedPages, publish: true });
+  if (!success) {
+    showToast("Couldn't publish — check your connection and try again");
+    return;
+  }
   book.stationPublished = true;
   book.stationLive = false;
   book.lastStationUpdate = Date.now();
-  pushStationSnapshot(book, { isLive: false, liveDraft: '', lastUpdateAddedPages: addedPages });
   saveStorage();
   updateStationControls();
   showStationShareConfirmation(book);
@@ -1663,7 +1669,10 @@ function updateStationSnapshot() {
   const addedPages = getStationPagesAddedSince(book, book.lastStationUpdate);
   if (!confirm(`Push ${commitCount} new commit${commitCount === 1 ? '' : 's'} to the public Station?`)) return;
   pushStationSnapshot(book, { isLive: false, liveDraft: '', lastUpdateAddedPages: addedPages }, true).then(success => {
-    if (!success) return;
+    if (!success) {
+      showToast("Couldn't update Station — check your connection and try again");
+      return;
+    }
     book.lastStationUpdate = Date.now();
     saveStorage();
     updateStationControls();
@@ -1723,11 +1732,27 @@ function deleteStationSnapshot(book) {
 function toggleStationLive() {
   const book = getActiveBook();
   if (!book || !book.stationPublished) return;
-  book.stationLive = !book.stationLive;
-  pushStationSnapshot(book, { isLive: book.stationLive, liveDraft: book.stationLive && DOM.draftInput ? DOM.draftInput.value : '' });
-  saveStorage();
-  updateStationControls();
-  showToast(book.stationLive ? 'Station is ON AIR.' : 'Stream ended. Your open draft stays public.');
+  if (!currentUser || (requiresEmailVerification() && !isAnonymousUser())) {
+    showToast('Sign in with a verified account or continue as a guest to use Station live features.');
+    return;
+  }
+  const targetLive = !book.stationLive;
+  book.stationLive = targetLive;
+  if (!targetLive) {
+    const previousStationUpdate = Number(book.lastStationUpdate) || 0;
+    const addedPages = getStationPagesAddedSince(book, previousStationUpdate);
+    book.lastStationUpdate = Date.now();
+    pushStationSnapshot(book, { isLive: false, liveDraft: '', lastUpdateAddedPages: addedPages });
+  }
+  pushStationSnapshot(book, { isLive: book.stationLive, liveDraft: book.stationLive && DOM.draftInput ? DOM.draftInput.value : '' }).then(success => {
+    if (!success) {
+      showToast("Couldn't update live status — check your connection and try again");
+      return;
+    }
+    saveStorage();
+    updateStationControls();
+    showToast(book.stationLive ? 'Station is ON AIR.' : 'Stream ended. Your open draft stays public.');
+  });
 }
 
 function getPublishedBooks() {
