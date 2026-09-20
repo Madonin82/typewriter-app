@@ -2723,6 +2723,7 @@ function switchStorageNamespace(namespace, hydrate) {
   state.currentPageId = null;
   state.buffer = '';
   if (hydrate) hydrateAndMigrateFromIndexedDB();
+  else if (namespace === 'signed-out') loadStorage();
   renderAll();
 }
 
