@@ -1397,13 +1397,19 @@ function createStationReaderMenu(settings) {
   };
 
   const paper = document.createElement('select');
-  [['white', 'Light'], ['dark', 'Dark'], ['sepia', 'Sepia']].forEach(([value, text]) => {
+  [
+    ['cream', 'Warm Cream'],
+    ['white', 'Clean White'],
+    ['sepia', 'Vintage Sepia'],
+    ['dark', 'Midnight Ink (Dark)'],
+    ['matrix', 'The Matrix (CRT Green)']
+  ].forEach(([value, text]) => {
     const option = document.createElement('option');
     option.value = value;
     option.textContent = text;
     paper.appendChild(option);
   });
-  paper.value = ['dark', 'matrix'].includes(settings.theme) ? 'dark' : settings.theme === 'sepia' ? 'sepia' : 'white';
+  paper.value = ['cream', 'white', 'sepia', 'dark', 'matrix'].includes(settings.theme) ? settings.theme : 'cream';
   paper.onchange = () => updateStationReaderOverride('theme', paper.value);
   addField('Paper tone', paper);
 
@@ -1465,6 +1471,8 @@ function createStationReaderMenu(settings) {
 
 function setupStationFloatingMenu(data, displaySettings) {
   if (!DOM.stationRoot || !DOM.stationContent) return;
+
+  const wasOpen = Boolean(document.getElementById('station-floating-panel') && !document.getElementById('station-floating-panel').classList.contains('hidden'));
 
   if (stationFloatingMenuCleanup) stationFloatingMenuCleanup();
   if (stationPageObserver) stationPageObserver.disconnect();
@@ -1581,6 +1589,10 @@ function setupStationFloatingMenu(data, displaySettings) {
     });
   }, { root: DOM.stationRoot, threshold: 0.25 });
   pageSections.forEach((section) => stationPageObserver.observe(section));
+
+  if (wasOpen) {
+    setPanelOpen(true);
+  }
 
   stationFloatingMenuCleanup = () => {
     document.removeEventListener('click', onDocumentClick);
@@ -1707,13 +1719,302 @@ function applyStationDisplaySettings(display) {
   document.body.classList.add(`theme-${theme}`, `font-${font}`, `station-timestamps-${settings.showTimestamps ? 'on' : 'off'}`);
 }
 
-function applyStationHomeTheme() {
+const STATION_HOME_DISPLAY_KEY = 'station_home_display_settings';
+
+function getStationHomeDisplaySettings() {
+  const saved = SafeStorage.getJSON(STATION_HOME_DISPLAY_KEY, {});
+  const writerTheme = state.settings.theme || 'cream';
+  const defaultTheme = ['cream', 'white', 'sepia', 'dark', 'matrix'].includes(writerTheme) ? writerTheme : 'cream';
+  const writerFont = state.settings.font || 'courier';
+  const defaultFont = ['courier', 'special', 'mono'].includes(writerFont) ? writerFont : 'courier';
+  return {
+    theme: ['cream', 'white', 'sepia', 'dark', 'matrix'].includes(saved?.theme) ? saved.theme : defaultTheme,
+    font: ['courier', 'special', 'mono'].includes(saved?.font) ? saved.font : defaultFont,
+    fontSize: Math.min(36, Math.max(12, parseInt(saved?.fontSize, 10) || 18)),
+    lineHeight: Math.min(3, Math.max(1, parseFloat(saved?.lineHeight) || 1.8)),
+    letterSpacing: typeof saved?.letterSpacing === 'string' ? saved.letterSpacing : '0.02em'
+  };
+}
+
+function saveStationHomeDisplaySettings(settings) {
+  SafeStorage.setItem(STATION_HOME_DISPLAY_KEY, settings);
+}
+
+function updateStationHomeDisplaySetting(name, value) {
+  const current = getStationHomeDisplaySettings();
+  if (value === null) delete current[name];
+  else current[name] = value;
+  saveStationHomeDisplaySettings(current);
+  applyStationHomeDisplaySettings(current);
+}
+
+function resetStationHomeDisplaySettings() {
+  SafeStorage.removeItem(STATION_HOME_DISPLAY_KEY);
+  const defaults = getStationHomeDisplaySettings();
+  applyStationHomeDisplaySettings(defaults);
+}
+
+function applyStationHomeDisplaySettings(display) {
+  const settings = display || getStationHomeDisplaySettings();
+  const validThemes = ['cream', 'white', 'sepia', 'dark', 'matrix'];
+  const validFonts = ['courier', 'special', 'mono'];
+  const theme = validThemes.includes(settings.theme) ? settings.theme : 'cream';
+  const font = validFonts.includes(settings.font) ? settings.font : 'courier';
   const stationRoot = DOM.stationRoot || document.documentElement;
   stationRoot.classList.remove('station-reading-view');
   stationRoot.classList.add('station-home-view');
-  stationRoot.style.removeProperty('--station-font-size');
-  stationRoot.style.removeProperty('--station-line-height');
-  stationRoot.style.removeProperty('--station-letter-spacing');
+  stationRoot.style.setProperty('--station-font-size', `${settings.fontSize}px`);
+  stationRoot.style.setProperty('--station-line-height', String(settings.lineHeight));
+  stationRoot.style.setProperty('--station-letter-spacing', settings.letterSpacing || '0.02em');
+  document.body.className = document.body.className
+    .replace(/\btheme-\S+/g, '')
+    .replace(/\bfont-\S+/g, '')
+    .replace(/\bstation-timestamps-\S+/g, '');
+  document.body.classList.add(`theme-${theme}`, `font-${font}`);
+}
+
+function applyStationHomeTheme() {
+  applyStationHomeDisplaySettings();
+}
+
+function createStationHomeMenu(settings) {
+  const menu = document.createElement('div');
+  menu.className = 'station-reader-display-controls';
+
+  const addField = (labelText, control) => {
+    const field = document.createElement('label');
+    field.className = 'station-reader-field';
+    const label = document.createElement('span');
+    label.textContent = labelText;
+    field.append(label, control);
+    menu.appendChild(field);
+  };
+
+  const paper = document.createElement('select');
+  [
+    ['cream', 'Warm Cream'],
+    ['white', 'Clean White'],
+    ['sepia', 'Vintage Sepia'],
+    ['dark', 'Midnight Ink (Dark)'],
+    ['matrix', 'The Matrix (CRT Green)']
+  ].forEach(([value, text]) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    paper.appendChild(option);
+  });
+  paper.value = ['cream', 'white', 'sepia', 'dark', 'matrix'].includes(settings.theme) ? settings.theme : 'cream';
+  paper.onchange = () => updateStationHomeDisplaySetting('theme', paper.value);
+  addField('Paper tone', paper);
+
+  const font = document.createElement('select');
+  [['courier', 'Courier Prime'], ['special', 'Special Elite'], ['mono', 'Monospace']].forEach(([value, text]) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    font.appendChild(option);
+  });
+  font.value = ['courier', 'special', 'mono'].includes(settings.font) ? settings.font : 'courier';
+  font.onchange = () => updateStationHomeDisplaySetting('font', font.value);
+  addField('Font', font);
+
+  const size = document.createElement('input');
+  size.type = 'range';
+  size.min = '12';
+  size.max = '36';
+  size.step = '1';
+  size.value = settings.fontSize;
+  const sizeValue = document.createElement('output');
+  sizeValue.textContent = `${settings.fontSize}px`;
+  size.oninput = () => {
+    sizeValue.textContent = `${size.value}px`;
+    updateStationHomeDisplaySetting('fontSize', parseInt(size.value, 10));
+  };
+  const sizeField = document.createElement('label');
+  sizeField.className = 'station-reader-field station-reader-range';
+  const sizeLabel = document.createElement('span');
+  sizeLabel.textContent = 'Font size';
+  sizeField.append(sizeLabel, size, sizeValue);
+  menu.appendChild(sizeField);
+
+  const spacing = document.createElement('select');
+  [['1.45', 'Compact'], ['1.8', 'Comfortable'], ['2.2', 'Relaxed']].forEach(([value, text]) => {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = text;
+    spacing.appendChild(option);
+  });
+  spacing.value = settings.lineHeight <= 1.6 ? '1.45' : settings.lineHeight >= 2 ? '2.2' : '1.8';
+  spacing.onchange = () => updateStationHomeDisplaySetting('lineHeight', parseFloat(spacing.value));
+  addField('Line spacing', spacing);
+
+  const reset = document.createElement('button');
+  reset.type = 'button';
+  reset.className = 'station-reader-reset';
+  reset.textContent = 'Reset to default view';
+  reset.onclick = () => {
+    resetStationHomeDisplaySettings();
+    const updated = getStationHomeDisplaySettings();
+    paper.value = updated.theme;
+    font.value = updated.font;
+    size.value = updated.fontSize;
+    sizeValue.textContent = `${updated.fontSize}px`;
+    spacing.value = updated.lineHeight <= 1.6 ? '1.45' : updated.lineHeight >= 2 ? '2.2' : '1.8';
+  };
+  menu.appendChild(reset);
+  return menu;
+}
+
+function setupStationHomeFloatingMenu(docs, displaySettings) {
+  if (!DOM.stationRoot || !DOM.stationContent) return;
+
+  const wasOpen = Boolean(document.getElementById('station-floating-panel') && !document.getElementById('station-floating-panel').classList.contains('hidden'));
+
+  if (stationFloatingMenuCleanup) stationFloatingMenuCleanup();
+  if (stationPageObserver) stationPageObserver.disconnect();
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'station-floating-toggle';
+  toggle.textContent = '☰';
+  toggle.title = 'Open Station navigation and display options';
+  toggle.setAttribute('aria-label', 'Open Station navigation and display options');
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-controls', 'station-floating-panel');
+
+  const panel = document.createElement('aside');
+  panel.id = 'station-floating-panel';
+  panel.className = 'station-floating-panel hidden';
+  panel.setAttribute('aria-label', 'Station navigation and display options');
+
+  const panelHeader = document.createElement('div');
+  panelHeader.className = 'station-floating-panel-header';
+  const panelTitle = document.createElement('h2');
+  panelTitle.textContent = 'Station menu';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'station-floating-close';
+  close.textContent = '×';
+  close.title = 'Close Station menu';
+  close.setAttribute('aria-label', 'Close Station menu');
+  panelHeader.append(panelTitle, close);
+  panel.appendChild(panelHeader);
+
+  const navigation = document.createElement('section');
+  navigation.className = 'station-floating-section';
+  const navigationTitle = document.createElement('h3');
+  navigationTitle.textContent = 'Navigation';
+  navigation.appendChild(navigationTitle);
+
+  const backToTop = document.createElement('button');
+  backToTop.type = 'button';
+  backToTop.className = 'station-floating-action';
+  backToTop.textContent = 'Back to top';
+  backToTop.onclick = () => {
+    DOM.stationRoot.scrollTo({ top: 0, behavior: 'smooth' });
+    closePanel();
+  };
+  navigation.appendChild(backToTop);
+
+  const startWriting = document.createElement('a');
+  startWriting.href = '#/';
+  startWriting.className = 'station-floating-action station-floating-link';
+  startWriting.textContent = '← Return to Writer';
+  startWriting.onclick = () => closePanel();
+  navigation.appendChild(startWriting);
+
+  const cards = Array.from(DOM.stationContent.querySelectorAll('.station-card'));
+  const stationButtons = [];
+  if (cards.length > 0 && docs && docs.length > 0) {
+    const shelfTitle = document.createElement('div');
+    shelfTitle.className = 'station-jump-subheading';
+    shelfTitle.textContent = 'Jump to station';
+    navigation.appendChild(shelfTitle);
+
+    const stationList = document.createElement('div');
+    stationList.className = 'station-page-jump-list';
+    stationList.setAttribute('role', 'listbox');
+    stationList.setAttribute('aria-label', 'Jump to station');
+
+    docs.forEach((doc, index) => {
+      const data = doc.data();
+      const stationButton = document.createElement('button');
+      stationButton.type = 'button';
+      stationButton.className = 'station-page-jump';
+      stationButton.setAttribute('role', 'option');
+      const stationName = typeof data.stationName === 'string' ? data.stationName.trim() : '';
+      const displayTitle = stationName ? `${stationName} — ${data.title || 'Untitled'}` : (data.title || 'Untitled');
+      stationButton.textContent = (data.isLive ? '● ' : '') + displayTitle;
+      stationButton.onclick = () => {
+        const target = cards[index];
+        if (!target) return;
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        closePanel();
+      };
+      stationList.appendChild(stationButton);
+      stationButtons.push(stationButton);
+    });
+    navigation.appendChild(stationList);
+  }
+  panel.appendChild(navigation);
+
+  const displaySection = document.createElement('section');
+  displaySection.className = 'station-floating-section station-floating-display';
+  const displayTitle = document.createElement('h3');
+  displayTitle.textContent = 'Display options';
+  displaySection.append(displayTitle, createStationHomeMenu(displaySettings));
+  panel.appendChild(displaySection);
+
+  const setPanelOpen = (open) => {
+    panel.classList.toggle('hidden', !open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close Station navigation and display options' : 'Open Station navigation and display options');
+    if (open) close.focus();
+  };
+  const closePanel = () => setPanelOpen(false);
+  toggle.onclick = () => setPanelOpen(panel.classList.contains('hidden'));
+  close.onclick = closePanel;
+
+  const onDocumentClick = (event) => {
+    if (!panel.classList.contains('hidden') && !panel.contains(event.target) && event.target !== toggle) closePanel();
+  };
+  const onKeydown = (event) => {
+    if (event.key === 'Escape' && !panel.classList.contains('hidden')) {
+      event.preventDefault();
+      closePanel();
+      toggle.focus();
+    }
+  };
+  document.addEventListener('click', onDocumentClick);
+  document.addEventListener('keydown', onKeydown);
+
+  DOM.stationRoot.append(toggle, panel);
+
+  if (cards.length > 0) {
+    stationPageObserver = new IntersectionObserver((entries) => {
+      entries.forEach((entry) => {
+        if (!entry.isIntersecting) return;
+        const index = cards.indexOf(entry.target);
+        stationButtons.forEach((button, buttonIndex) => {
+          const active = buttonIndex === index;
+          button.classList.toggle('active', active);
+          button.setAttribute('aria-selected', String(active));
+        });
+      });
+    }, { root: DOM.stationRoot, threshold: 0.25 });
+    cards.forEach((card) => stationPageObserver.observe(card));
+  }
+
+  if (wasOpen) {
+    setPanelOpen(true);
+  }
+
+  stationFloatingMenuCleanup = () => {
+    document.removeEventListener('click', onDocumentClick);
+    document.removeEventListener('keydown', onKeydown);
+    toggle.remove();
+    panel.remove();
+  };
 }
 
 function renderStationDocument(data, bookId = null) {
@@ -1836,8 +2137,11 @@ function scrollStationToBottom(smooth = false) {
 
 function renderStationHome(docs) {
   if (!DOM.stationContent) return;
-  applyStationHomeTheme();
-  DOM.stationContent.innerHTML = '<header class="station-home-header"><div class="station-kicker">NOTE TO SELF</div><h1>Station</h1><p>Published pages, live when they are being written.</p><p class="station-hint">Click a station below to start reading.</p><a class="station-writer-link" href="#/">Start writing</a></header>';
+  if (stationFloatingMenuCleanup) stationFloatingMenuCleanup();
+  if (stationPageObserver) stationPageObserver.disconnect();
+  const displaySettings = getStationHomeDisplaySettings();
+  applyStationHomeDisplaySettings(displaySettings);
+  DOM.stationContent.innerHTML = '<header class="station-home-header"><div class="station-kicker">NOTE TO SELF</div><h1>Station</h1><p class="station-subtitle">Published pages, live when they are being written.</p><div class="station-header-actions"><a class="station-writer-link" href="#/">← Return to Writer</a><span class="station-hint">Select a station below to read</span></div></header>';
   const shelf = document.createElement('div');
   shelf.className = 'station-shelf';
   docs.forEach(doc => {
@@ -1845,7 +2149,16 @@ function renderStationHome(docs) {
     const card = document.createElement('a');
     card.href = `#/station/${encodeURIComponent(doc.id)}`;
     card.className = `station-card${data.isLive ? ' is-live' : ''}`;
-    card.innerHTML = data.isLive ? '<span class="station-card-live">● ON AIR</span>' : '<span class="station-card-label">ARCHIVE</span>';
+    
+    const cardStatus = document.createElement('div');
+    cardStatus.className = 'station-card-status';
+    if (data.isLive) {
+      cardStatus.innerHTML = '<span class="station-card-live"><span class="station-live-dot">●</span> ON AIR</span>';
+    } else {
+      cardStatus.innerHTML = '<span class="station-card-label">ARCHIVE</span>';
+    }
+    card.appendChild(cardStatus);
+
     const cardInfo = document.createElement('div');
     cardInfo.className = 'station-card-info';
     const stationName = typeof data.stationName === 'string' ? data.stationName.trim().slice(0, 40) : '';
@@ -1858,28 +2171,39 @@ function renderStationHome(docs) {
     const title = document.createElement('h2');
     title.textContent = data.title || 'Untitled';
     cardInfo.appendChild(title);
+    
+    const metaContainer = document.createElement('div');
+    metaContainer.className = 'station-card-meta-row';
     const meta = document.createElement('span');
     meta.className = 'station-card-meta';
     meta.textContent = `${(data.pages || []).length} page${(data.pages || []).length === 1 ? '' : 's'}${data.isLive ? ' · live now' : ` · updated ${formatStationDate(data.updatedAt)}`}`;
-    cardInfo.appendChild(meta);
+    metaContainer.appendChild(meta);
     if (data.isGuest) {
       const guestBadge = document.createElement('span');
       guestBadge.className = 'station-guest-badge';
       guestBadge.textContent = 'GUEST STREAM';
-      cardInfo.appendChild(guestBadge);
+      metaContainer.appendChild(guestBadge);
     }
+    cardInfo.appendChild(metaContainer);
     card.appendChild(cardInfo);
-    const cta = document.createElement('span');cta.className = 'station-card-cta';cta.textContent = 'Click to view →';card.appendChild(cta);
+    
+    const cta = document.createElement('span');
+    cta.className = 'station-card-cta';
+    cta.innerHTML = 'Read <span class="station-card-arrow" aria-hidden="true">→</span>';
+    card.appendChild(cta);
     shelf.appendChild(card);
   });
   if (docs.length === 0) {
     shelf.innerHTML = '<div class="station-off-air"><h2>No published stations yet.</h2><p>Check back when a writer takes the air.</p></div>';
   }
   DOM.stationContent.appendChild(shelf);
+  setupStationHomeFloatingMenu(docs, displaySettings);
 }
 
 function renderStationAdmin(snapshotDocs = []) {
   if (!DOM.stationContent || !getAdminRoute()) return;
+  if (stationFloatingMenuCleanup) stationFloatingMenuCleanup();
+  if (stationPageObserver) stationPageObserver.disconnect();
   applyStationHomeTheme();
   DOM.stationContent.innerHTML = '';
   if (!currentUser) {
@@ -2034,6 +2358,14 @@ function handleHashRouteChange() {
   if (!writerRouteInitialized) {
     window.location.reload();
     return;
+  }
+  if (stationFloatingMenuCleanup) {
+    stationFloatingMenuCleanup();
+    stationFloatingMenuCleanup = null;
+  }
+  if (stationPageObserver) {
+    stationPageObserver.disconnect();
+    stationPageObserver = null;
   }
   if (stationUnsubscribe) {
     stationUnsubscribe();
