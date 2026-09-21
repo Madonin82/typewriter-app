@@ -1081,6 +1081,7 @@ function executeFirestoreSync() {
     settings: state.settings,
     activeBookId: state.activeBookId,
     currentPageId: state.currentPageId,
+    stationReadPositions: typeof getStationReadPositions === 'function' ? getStationReadPositions() : {},
     lastWriteId: writeId,
     lastSynced: firebase.firestore.FieldValue.serverTimestamp()
   };
@@ -1128,6 +1129,23 @@ function applyRemoteSnapshot(data) {
     if (JSON.stringify(state.settings) !== JSON.stringify({ ...state.settings, ...migrated.settings })) {
       state.settings = { ...state.settings, ...migrated.settings };
       changed = true;
+    }
+  }
+
+  if (migrated.stationReadPositions && typeof migrated.stationReadPositions === 'object' && typeof getStationReadPositions === 'function') {
+    const local = getStationReadPositions();
+    let mergedChanged = false;
+    const merged = { ...local };
+    for (const [bId, remotePos] of Object.entries(migrated.stationReadPositions)) {
+      if (!remotePos || typeof remotePos !== 'object') continue;
+      const localPos = local[bId];
+      if (!localPos || (remotePos.updatedAt || 0) >= (localPos.updatedAt || 0)) {
+        merged[bId] = remotePos;
+        mergedChanged = true;
+      }
+    }
+    if (mergedChanged) {
+      SafeStorage.setItem('station_read_positions', merged);
     }
   }
 
@@ -1239,26 +1257,34 @@ function getStationRoute() {
   const match = hash.match(/^#\/station\/?(.*)$/);
   if (!match) return null;
   const raw = match[1] ? match[1].trim() : '';
-  if (!raw) return { bookId: null, page: null };
+  if (!raw) return { bookId: null, page: null, jumpToUnread: false };
 
   let bookId = raw;
   let page = null;
+  let jumpToUnread = false;
+
   if (bookId.includes('?')) {
     const parts = bookId.split('?');
     bookId = parts[0];
     const params = new URLSearchParams(parts[1]);
     page = params.get('page');
+    if (params.has('unread')) jumpToUnread = true;
   }
   if (bookId.includes('/')) {
     const parts = bookId.split('/').filter(Boolean);
     bookId = parts[0];
-    if (!page && parts[1]) {
-      page = parts[1].replace(/^page-?/i, '');
+    if (parts[1]) {
+      if (parts[1].toLowerCase() === 'unread') {
+        jumpToUnread = true;
+      } else if (!page) {
+        page = parts[1].replace(/^page-?/i, '');
+      }
     }
   }
   return {
     bookId: bookId ? decodeURIComponent(bookId) : null,
-    page: page ? decodeURIComponent(page) : null
+    page: page ? decodeURIComponent(page) : null,
+    jumpToUnread
   };
 }
 
@@ -1364,6 +1390,114 @@ function resetStationReaderView() {
   if (!stationReaderBookId) return;
   saveStationReaderOverrides(stationReaderBookId, {});
   renderStationDocument(stationReaderData, stationReaderBookId);
+}
+
+// ─── STATION UNREAD TRACKING ────────────────────────────────
+const STATION_READ_STORAGE_KEY = 'station_read_positions';
+
+function getStationReadPositions() {
+  return SafeStorage.getJSON(STATION_READ_STORAGE_KEY, {}) || {};
+}
+
+function saveStationReadPositions(positions) {
+  SafeStorage.setItem(STATION_READ_STORAGE_KEY, positions);
+  if (db && currentUser && !isAnonymousUser()) {
+    db.collection("users").doc(currentUser.uid).set({
+      stationReadPositions: positions
+    }, { merge: true }).catch(err => {
+      console.warn('[Station] Could not sync read position to Firestore:', err);
+    });
+  }
+}
+
+function getStationBookEntries(bookData) {
+  if (!bookData || !Array.isArray(bookData.pages)) return [];
+  const entries = [];
+  let totalChunks = 0;
+  bookData.pages.forEach(p => {
+    if (Array.isArray(p.chunks)) totalChunks += p.chunks.length;
+  });
+
+  if (totalChunks > 0) {
+    bookData.pages.forEach((page, pIdx) => {
+      const pageNum = page.number != null ? page.number : (pIdx + 1);
+      if (Array.isArray(page.chunks) && page.chunks.length > 0) {
+        page.chunks.forEach((chunk, cIdx) => {
+          entries.push({
+            type: 'chunk',
+            pageNumber: pageNum,
+            pageIndex: pIdx,
+            chunkIndex: cIdx,
+            timestamp: chunk.timestamp || null,
+            text: chunk.text || ''
+          });
+        });
+      } else {
+        entries.push({
+          type: 'page',
+          pageNumber: pageNum,
+          pageIndex: pIdx,
+          chunkIndex: 0,
+          timestamp: page.createdAt || null,
+          text: ''
+        });
+      }
+    });
+  } else {
+    bookData.pages.forEach((page, pIdx) => {
+      const pageNum = page.number != null ? page.number : (pIdx + 1);
+      entries.push({
+        type: 'page',
+        pageNumber: pageNum,
+        pageIndex: pIdx,
+        chunkIndex: 0,
+        timestamp: page.createdAt || null,
+        text: ''
+      });
+    });
+  }
+  return entries;
+}
+
+function getStationUnreadInfo(bookId, bookData) {
+  const entries = getStationBookEntries(bookData);
+  const total = entries.length;
+  if (!bookId || total === 0) {
+    return { unreadCount: 0, firstUnreadIndex: -1, firstUnreadEntry: null, hasReadBefore: false };
+  }
+  const positions = getStationReadPositions();
+  const pos = positions[bookId];
+  if (!pos || typeof pos.lastSeenCount !== 'number') {
+    return {
+      unreadCount: total,
+      firstUnreadIndex: 0,
+      firstUnreadEntry: entries[0] || null,
+      hasReadBefore: false
+    };
+  }
+  const lastSeen = Math.max(0, pos.lastSeenCount);
+  const unreadCount = Math.max(0, total - lastSeen);
+  const firstUnreadIndex = unreadCount > 0 ? Math.min(lastSeen, total - 1) : -1;
+  const firstUnreadEntry = firstUnreadIndex >= 0 ? entries[firstUnreadIndex] : null;
+
+  return {
+    unreadCount,
+    firstUnreadIndex,
+    firstUnreadEntry,
+    hasReadBefore: true
+  };
+}
+
+function recordStationBookSeen(bookId, totalEntries) {
+  if (!bookId) return;
+  const positions = getStationReadPositions();
+  const existing = positions[bookId];
+  if (existing && existing.lastSeenCount === totalEntries) return;
+  positions[bookId] = {
+    lastSeenCount: totalEntries,
+    updatedAt: Date.now()
+  };
+  saveStationReadPositions(positions);
 }
 
 function stationPayloadForBook(book, overrides = {}) {
@@ -1548,7 +1682,7 @@ function createStationReaderMenu(settings) {
   return menu;
 }
 
-function setupStationFloatingMenu(data, displaySettings) {
+function setupStationFloatingMenu(data, displaySettings, unreadInfo = null) {
   if (!DOM.stationRoot || !DOM.stationContent) return;
 
   const wasOpen = Boolean(document.getElementById('station-floating-panel') && !document.getElementById('station-floating-panel').classList.contains('hidden'));
@@ -1588,6 +1722,21 @@ function setupStationFloatingMenu(data, displaySettings) {
   const navigationTitle = document.createElement('h3');
   navigationTitle.textContent = 'Navigation';
   navigation.appendChild(navigationTitle);
+
+  if (unreadInfo && unreadInfo.unreadCount > 0 && unreadInfo.firstUnreadEntry) {
+    const jumpUnreadBtn = document.createElement('button');
+    jumpUnreadBtn.type = 'button';
+    jumpUnreadBtn.className = 'station-floating-action station-floating-unread-action';
+    jumpUnreadBtn.innerHTML = `Jump to first unread <span class="station-unread-pill">${unreadInfo.unreadCount} unread</span>`;
+    jumpUnreadBtn.onclick = () => {
+      const unreadEl = document.getElementById('station-first-unread') || document.getElementById(`station-page-${unreadInfo.firstUnreadEntry.pageNumber}`);
+      if (unreadEl) {
+        unreadEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+      closePanel();
+    };
+    navigation.appendChild(jumpUnreadBtn);
+  }
 
   const backToTop = document.createElement('button');
   backToTop.type = 'button';
@@ -1630,7 +1779,18 @@ function setupStationFloatingMenu(data, displaySettings) {
     pageButton.setAttribute('role', 'option');
     pageButton.dataset.pageIndex = String(index);
     const pageName = typeof page.description === 'string' ? page.description.trim() : '';
-    pageButton.textContent = pageName || `Page ${page.number}`;
+    if (pageName) {
+      pageButton.classList.add('has-title');
+      pageButton.innerHTML = `<span class="station-page-jump-title">${escapeHtml(pageName)}</span><span class="station-page-jump-sub">Page ${page.number}</span>`;
+    } else {
+      pageButton.textContent = `Page ${page.number}`;
+    }
+    if (unreadInfo && unreadInfo.unreadCount > 0 && unreadInfo.firstUnreadEntry && unreadInfo.firstUnreadEntry.pageNumber === page.number) {
+      const pill = document.createElement('span');
+      pill.className = 'station-page-unread-pill';
+      pill.textContent = 'unread';
+      pageButton.appendChild(pill);
+    }
     pageButton.onclick = () => {
       const target = pageSections[index];
       if (!target) return;
@@ -2129,6 +2289,13 @@ function setupStationHomeFloatingMenu(docs, displaySettings) {
       const stationName = typeof data.stationName === 'string' ? data.stationName.trim() : '';
       const displayTitle = stationName ? `${stationName} — ${data.title || 'Untitled'}` : (data.title || 'Untitled');
       stationButton.textContent = (data.isLive ? '● ' : '') + displayTitle;
+      const unreadInfo = getStationUnreadInfo(doc.id, data);
+      if (unreadInfo && unreadInfo.unreadCount > 0) {
+        const unreadPill = document.createElement('span');
+        unreadPill.className = 'station-jump-unread';
+        unreadPill.textContent = `${unreadInfo.unreadCount} unread`;
+        stationButton.appendChild(unreadPill);
+      }
       stationButton.onclick = () => {
         const target = cards[index];
         if (!target) return;
@@ -2212,6 +2379,12 @@ function renderStationDocument(data, bookId = null) {
   if (stationPageObserver) stationPageObserver.disconnect();
   stationReaderData = data;
   stationReaderBookId = bookId;
+
+  const unreadInfo = getStationUnreadInfo(bookId, data);
+  const totalEntries = getStationBookEntries(data).length;
+  // Opening the book marks it as read
+  recordStationBookSeen(bookId, totalEntries);
+
   const shouldFollowStation = Boolean(data && data.isLive && isStationNearBottom());
   const displaySettings = data ? getStationReaderDisplaySettings(data.display, bookId) : null;
   applyStationDisplaySettings(displaySettings);
@@ -2255,42 +2428,83 @@ function renderStationDocument(data, bookId = null) {
   const manuscript = document.createElement('article');
   manuscript.className = `station-manuscript timestamp-layout${displaySettings.showTimestamps ? ' has-timestamps' : ''}`;
   let lastInk = null;
+  let entryRunningIndex = 0;
+
   (data.pages || []).forEach(page => {
     const pageSection = document.createElement('section');
     pageSection.className = 'station-page';
     pageSection.id = `station-page-${page.number}`;
-    const pageLabel = document.createElement('div');
-    pageLabel.className = 'station-page-label';
-    pageLabel.textContent = `Page ${page.number}`;
-    pageSection.appendChild(pageLabel);
+
+    const desc = typeof page.description === 'string' ? page.description.trim() : '';
+    const pageLabelWrap = document.createElement('div');
+    pageLabelWrap.className = 'station-page-label-wrap';
+    if (desc) {
+      const pageTitleEl = document.createElement('h2');
+      pageTitleEl.className = 'station-page-title';
+      pageTitleEl.textContent = desc;
+      const pageSubEl = document.createElement('div');
+      pageSubEl.className = 'station-page-label station-page-subtitle';
+      pageSubEl.textContent = `Page ${page.number}`;
+      pageLabelWrap.append(pageTitleEl, pageSubEl);
+    } else {
+      const pageLabel = document.createElement('div');
+      pageLabel.className = 'station-page-label';
+      pageLabel.textContent = `Page ${page.number}`;
+      pageLabelWrap.appendChild(pageLabel);
+    }
+    pageSection.appendChild(pageLabelWrap);
+
     const ink = document.createElement('div');
     ink.className = `station-ink timestamp-layout${displaySettings.showTimestamps ? ' has-timestamps' : ''}`;
     lastInk = ink;
-    (page.chunks || []).forEach(chunk => {
-      const timestamp = chunk.timestamp;
-      if (displaySettings.showTimestamps) {
-        const row = document.createElement('div');
-        row.className = 'ink-chunk-row';
 
-        const timestampSpan = document.createElement('span');
-        const timeStr = formatChunkTime(timestamp);
-        timestampSpan.className = timeStr ? 'commit-timestamp' : 'commit-timestamp muted';
-        timestampSpan.textContent = timeStr || '—';
-        if (timestamp) timestampSpan.title = `Committed at ${new Date(timestamp).toLocaleString()}`;
-        row.appendChild(timestampSpan);
-
-        const textSpan = document.createElement('span');
-        textSpan.className = 'ink-chunk';
-        textSpan.textContent = chunk.text || '';
-        row.appendChild(textSpan);
-        ink.appendChild(row);
-        return;
+    const chunks = page.chunks || [];
+    if (chunks.length === 0) {
+      if (unreadInfo && unreadInfo.unreadCount > 0 && entryRunningIndex === unreadInfo.firstUnreadIndex) {
+        const divider = document.createElement('div');
+        divider.id = 'station-first-unread';
+        divider.className = 'station-unread-divider';
+        divider.innerHTML = `<span>New since your last visit (${unreadInfo.unreadCount} unread)</span>`;
+        pageSection.insertBefore(divider, ink);
       }
-      const span = document.createElement('span');
-      span.className = 'ink-chunk';
-      span.textContent = chunk.text || '';
-      ink.appendChild(span);
-    });
+      entryRunningIndex++;
+    } else {
+      chunks.forEach(chunk => {
+        if (unreadInfo && unreadInfo.unreadCount > 0 && entryRunningIndex === unreadInfo.firstUnreadIndex) {
+          const divider = document.createElement('div');
+          divider.id = 'station-first-unread';
+          divider.className = 'station-unread-divider';
+          divider.innerHTML = `<span>New since your last visit (${unreadInfo.unreadCount} unread)</span>`;
+          ink.appendChild(divider);
+        }
+        entryRunningIndex++;
+
+        const timestamp = chunk.timestamp;
+        if (displaySettings.showTimestamps) {
+          const row = document.createElement('div');
+          row.className = 'ink-chunk-row';
+
+          const timestampSpan = document.createElement('span');
+          const timeStr = formatChunkTime(timestamp);
+          timestampSpan.className = timeStr ? 'commit-timestamp' : 'commit-timestamp muted';
+          timestampSpan.textContent = timeStr || '—';
+          if (timestamp) timestampSpan.title = `Committed at ${new Date(timestamp).toLocaleString()}`;
+          row.appendChild(timestampSpan);
+
+          const textSpan = document.createElement('span');
+          textSpan.className = 'ink-chunk';
+          textSpan.textContent = chunk.text || '';
+          row.appendChild(textSpan);
+          ink.appendChild(row);
+          return;
+        }
+        const span = document.createElement('span');
+        span.className = 'ink-chunk';
+        span.textContent = chunk.text || '';
+        ink.appendChild(span);
+      });
+    }
+
     pageSection.appendChild(ink);
     manuscript.appendChild(pageSection);
   });
@@ -2305,22 +2519,36 @@ function renderStationDocument(data, bookId = null) {
     else manuscript.appendChild(ghost);
   }
   DOM.stationContent.appendChild(manuscript);
-  setupStationFloatingMenu(data, displaySettings);
+  setupStationFloatingMenu(data, displaySettings, unreadInfo);
+
   const route = getStationRoute();
-  const targetPageNum = route && route.page ? parseInt(route.page, 10) : null;
-  if (targetPageNum) {
-    const scrollToTarget = () => {
-      const targetEl = document.getElementById(`station-page-${targetPageNum}`);
-      if (targetEl) {
-        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  if (route && route.jumpToUnread) {
+    const scrollToUnread = () => {
+      const unreadEl = document.getElementById('station-first-unread') || (unreadInfo.firstUnreadEntry ? document.getElementById(`station-page-${unreadInfo.firstUnreadEntry.pageNumber}`) : null);
+      if (unreadEl) {
+        unreadEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     };
     requestAnimationFrame(() => {
-      scrollToTarget();
-      setTimeout(scrollToTarget, 80);
+      scrollToUnread();
+      setTimeout(scrollToUnread, 100);
     });
-  } else if (shouldFollowStation) {
-    requestAnimationFrame(() => scrollStationToBottom(true));
+  } else {
+    const targetPageNum = route && route.page ? parseInt(route.page, 10) : null;
+    if (targetPageNum) {
+      const scrollToTarget = () => {
+        const targetEl = document.getElementById(`station-page-${targetPageNum}`);
+        if (targetEl) {
+          targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      };
+      requestAnimationFrame(() => {
+        scrollToTarget();
+        setTimeout(scrollToTarget, 80);
+      });
+    } else if (shouldFollowStation) {
+      requestAnimationFrame(() => scrollStationToBottom(true));
+    }
   }
   if (bookId) document.title = `${data.title || 'Station'} · Note to Self`;
 }
@@ -2349,6 +2577,7 @@ function renderStationHome(docs) {
   shelf.className = 'station-shelf';
   docs.forEach(doc => {
     const data = doc.data();
+    const unreadInfo = getStationUnreadInfo(doc.id, data);
     const card = document.createElement('div');
     card.className = `station-card${data.isLive ? ' is-live' : ''}`;
     card.id = `station-card-${doc.id}`;
@@ -2392,6 +2621,17 @@ function renderStationHome(docs) {
       ? `${totalPages} page${totalPages === 1 ? '' : 's'} · live now`
       : `${totalPages} pages, ${newPages} new pages added ${formatStationDate(data.updatedAt)}`;
     metaContainer.appendChild(meta);
+    if (unreadInfo && unreadInfo.unreadCount > 0) {
+      const unreadBadge = document.createElement('a');
+      unreadBadge.href = `#/station/${encodeURIComponent(doc.id)}/unread`;
+      unreadBadge.className = 'station-unread-badge';
+      unreadBadge.textContent = `${unreadInfo.unreadCount} unread`;
+      unreadBadge.title = `Jump to first unread entry (${unreadInfo.unreadCount} unread)`;
+      unreadBadge.onclick = (e) => {
+        e.stopPropagation();
+      };
+      metaContainer.appendChild(unreadBadge);
+    }
     if (data.isGuest) {
       const guestBadge = document.createElement('span');
       guestBadge.className = 'station-guest-badge';
@@ -2426,6 +2666,14 @@ function renderStationHome(docs) {
 
     const detailActions = document.createElement('div');
     detailActions.className = 'station-detail-actions';
+
+    if (unreadInfo && unreadInfo.unreadCount > 0) {
+      const jumpUnreadBtn = document.createElement('a');
+      jumpUnreadBtn.href = `#/station/${encodeURIComponent(doc.id)}/unread`;
+      jumpUnreadBtn.className = 'station-jump-unread-btn';
+      jumpUnreadBtn.innerHTML = `Jump to first unread <span class="station-unread-pill">${unreadInfo.unreadCount} unread</span>`;
+      detailActions.appendChild(jumpUnreadBtn);
+    }
 
     const startReadingBtn = document.createElement('a');
     startReadingBtn.href = `#/station/${encodeURIComponent(doc.id)}`;
@@ -2485,6 +2733,13 @@ function renderStationHome(docs) {
         const desc = typeof page.description === 'string' ? page.description.trim() : '';
         pageTitleSpan.textContent = desc || `Page ${pageNum}`;
         rowMain.append(pageNumSpan, pageTitleSpan);
+
+        if (unreadInfo && unreadInfo.unreadCount > 0 && unreadInfo.firstUnreadEntry && unreadInfo.firstUnreadEntry.pageNumber === pageNum) {
+          const unreadRowPill = document.createElement('span');
+          unreadRowPill.className = 'station-row-unread-tag';
+          unreadRowPill.textContent = 'unread';
+          rowMain.appendChild(unreadRowPill);
+        }
 
         const rowMeta = document.createElement('div');
         rowMeta.className = 'station-content-row-meta';
@@ -2563,6 +2818,109 @@ function renderStationHome(docs) {
   }
   DOM.stationContent.appendChild(shelf);
   setupStationHomeFloatingMenu(docs, displaySettings);
+}
+
+function setupStationAdminFloatingMenu() {
+  if (!DOM.stationRoot || !DOM.stationContent) return;
+  if (stationFloatingMenuCleanup) stationFloatingMenuCleanup();
+
+  const toggle = document.createElement('button');
+  toggle.type = 'button';
+  toggle.className = 'station-floating-toggle';
+  toggle.textContent = '☰';
+  toggle.title = 'Open Admin navigation';
+  toggle.setAttribute('aria-label', 'Open Admin navigation');
+  toggle.setAttribute('aria-expanded', 'false');
+  toggle.setAttribute('aria-controls', 'station-floating-panel');
+
+  const panel = document.createElement('aside');
+  panel.id = 'station-floating-panel';
+  panel.className = 'station-floating-panel hidden';
+  panel.setAttribute('aria-label', 'Admin navigation');
+
+  const panelHeader = document.createElement('div');
+  panelHeader.className = 'station-floating-panel-header';
+  const panelTitle = document.createElement('h2');
+  panelTitle.textContent = 'Admin menu';
+  const close = document.createElement('button');
+  close.type = 'button';
+  close.className = 'station-floating-close';
+  close.textContent = '×';
+  close.title = 'Close Admin menu';
+  close.setAttribute('aria-label', 'Close Admin menu');
+  panelHeader.append(panelTitle, close);
+  panel.appendChild(panelHeader);
+
+  const navigation = document.createElement('section');
+  navigation.className = 'station-floating-section';
+  const navigationTitle = document.createElement('h3');
+  navigationTitle.textContent = 'Navigation';
+  navigation.appendChild(navigationTitle);
+
+  const backToTop = document.createElement('button');
+  backToTop.type = 'button';
+  backToTop.className = 'station-floating-action';
+  backToTop.textContent = 'Back to top';
+  backToTop.onclick = () => {
+    DOM.stationRoot.scrollTo({ top: 0, behavior: 'smooth' });
+    closePanel();
+  };
+  navigation.appendChild(backToTop);
+
+  const stationSelect = document.createElement('button');
+  stationSelect.type = 'button';
+  stationSelect.className = 'station-floating-action';
+  stationSelect.textContent = 'Station select';
+  stationSelect.onclick = () => {
+    window.location.hash = '#/station/';
+  };
+  navigation.appendChild(stationSelect);
+
+  const writerBtn = document.createElement('button');
+  writerBtn.type = 'button';
+  writerBtn.className = 'station-floating-action';
+  writerBtn.textContent = 'Writer';
+  writerBtn.onclick = () => {
+    window.location.hash = '#/';
+  };
+  navigation.appendChild(writerBtn);
+  panel.appendChild(navigation);
+
+  const setPanelOpen = (open) => {
+    panel.classList.toggle('hidden', !open);
+    toggle.setAttribute('aria-expanded', String(open));
+    toggle.setAttribute('aria-label', open ? 'Close Admin navigation' : 'Open Admin navigation');
+    if (open) close.focus();
+  };
+  const closePanel = () => setPanelOpen(false);
+  toggle.onclick = () => setPanelOpen(panel.classList.contains('hidden'));
+  close.onclick = closePanel;
+
+  const onDocumentClick = (event) => {
+    if (!panel.classList.contains('hidden') && !panel.contains(event.target) && event.target !== toggle) closePanel();
+  };
+  const onKeydown = (event) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      if (panel.classList.contains('hidden')) {
+        setPanelOpen(true);
+      } else {
+        closePanel();
+        toggle.focus();
+      }
+    }
+  };
+  document.addEventListener('click', onDocumentClick);
+  document.addEventListener('keydown', onKeydown);
+
+  DOM.stationRoot.append(toggle, panel);
+  stationFloatingMenuCleanup = () => {
+    document.removeEventListener('click', onDocumentClick);
+    document.removeEventListener('keydown', onKeydown);
+    toggle.remove();
+    panel.remove();
+  };
 }
 
 function renderStationAdmin(snapshotDocs = []) {
@@ -2664,6 +3022,7 @@ function renderStationAdmin(snapshotDocs = []) {
   };
   appendSection('Live now', liveDocs, true);
   appendSection('Published', publishedDocs, false);
+  setupStationAdminFloatingMenu();
 }
 
 function subscribeToStationAdmin() {
@@ -5921,19 +6280,34 @@ function renderSidebarPages() {
     const words = getPageWordCount(page);
     const descText = (page.description && page.description.trim()) ? page.description.trim() : '';
 
-    li.innerHTML = `
-      <div class="page-item-main">
-        <div class="page-item-header">
-          <span>${page.locked ? '🔒' : '✍️'}</span>
-          <span class="page-item-title">Page ${page.number}</span>
+    if (descText) {
+      li.innerHTML = `
+        <div class="page-item-main has-title">
+          <div class="page-item-header">
+            <span>${page.locked ? '🔒' : '✍️'}</span>
+            <span class="page-item-title page-item-dominant-title" title="${escapeHtml(descText)}">${escapeHtml(descText)}</span>
+          </div>
+          <span class="page-item-subtitle">Page ${page.number}</span>
         </div>
-        ${descText ? `<span class="page-item-desc" title="${escapeHtml(descText)}">${escapeHtml(descText)}</span>` : ''}
-      </div>
-      <div class="page-item-actions">
-        <button class="btn-edit-page-desc" title="Edit description / chapter label" aria-label="Edit description for page ${page.number}">✏️</button>
-        <span class="page-badge">${words}w</span>
-      </div>
-    `;
+        <div class="page-item-actions">
+          <button class="btn-edit-page-desc" title="Edit description / chapter label" aria-label="Edit description for page ${page.number}">✏️</button>
+          <span class="page-badge">${words}w</span>
+        </div>
+      `;
+    } else {
+      li.innerHTML = `
+        <div class="page-item-main">
+          <div class="page-item-header">
+            <span>${page.locked ? '🔒' : '✍️'}</span>
+            <span class="page-item-title">Page ${page.number}</span>
+          </div>
+        </div>
+        <div class="page-item-actions">
+          <button class="btn-edit-page-desc" title="Edit description / chapter label" aria-label="Edit description for page ${page.number}">✏️</button>
+          <span class="page-badge">${words}w</span>
+        </div>
+      `;
+    }
 
     // Click on page item selects page and resumes drafting
     li.onclick = (e) => {
@@ -6182,11 +6556,12 @@ function openSearchResultsModal(query, results) {
           snippetHtml = `<div class="search-result-snippet" style="font-style:italic; color:#88bbff;">Matched in page description: "${escapeHtml(res.pageDescription)}"</div>`;
         }
 
+        const pageDesc = res.pageDescription ? res.pageDescription.trim() : '';
         li.innerHTML = `
           <div class="search-result-item-header">
             <span class="search-result-page-label">
-              <span>📄</span> Page ${res.pageNumber}
-              ${res.pageDescription ? `<span class="search-result-page-desc">"${escapeHtml(res.pageDescription)}"</span>` : ''}
+              <span>📄</span>
+              ${pageDesc ? `<strong class="search-result-page-title">${escapeHtml(pageDesc)}</strong><span class="search-result-page-sub">Page ${res.pageNumber}</span>` : `Page ${res.pageNumber}`}
             </span>
             <span class="search-result-matches-count">Jump to Page →</span>
           </div>
@@ -6373,9 +6748,29 @@ function renderActivePage(lastChunkIsNew = false) {
   lastRenderedPageId = page.id;
 
   const totalPages = book.pages.length;
-  const descLabel = (page.description && page.description.trim()) ? ` • "${page.description.trim()}"` : '';
+  const desc = (page.description && page.description.trim()) ? page.description.trim() : '';
   if (DOM.pageHeaderInfo) {
-    DOM.pageHeaderInfo.textContent = `Page ${page.number}/${totalPages}${descLabel} • ${book.title}${page.locked ? ' (Locked)' : ''}`;
+    if (desc) {
+      DOM.pageHeaderInfo.innerHTML = `<span class="page-meta-dominant-title" title="${escapeHtml(desc)}">${escapeHtml(desc)}</span> <span class="page-meta-sub">Page ${page.number}/${totalPages}</span> • ${escapeHtml(book.title)}${page.locked ? ' (Locked)' : ''}`;
+    } else {
+      DOM.pageHeaderInfo.textContent = `Page ${page.number}/${totalPages} • ${book.title}${page.locked ? ' (Locked)' : ''}`;
+    }
+  }
+
+  let pageSheetHeader = document.getElementById('page-sheet-header');
+  if (!pageSheetHeader && DOM.pageSheet) {
+    pageSheetHeader = document.createElement('div');
+    pageSheetHeader.id = 'page-sheet-header';
+    DOM.pageSheet.insertBefore(pageSheetHeader, DOM.pageSheet.firstChild);
+  }
+  if (pageSheetHeader) {
+    if (desc) {
+      pageSheetHeader.className = 'page-sheet-header has-title';
+      pageSheetHeader.innerHTML = `<h2 class="page-sheet-title">${escapeHtml(desc)}</h2><div class="page-sheet-subtitle">Page ${page.number}</div>`;
+    } else {
+      pageSheetHeader.className = 'page-sheet-header';
+      pageSheetHeader.innerHTML = `<div class="page-sheet-subtitle">Page ${page.number}</div>`;
+    }
   }
 
   const showTS = Boolean(state.settings.showTimestamps);
@@ -6594,7 +6989,11 @@ function renderActivePage(lastChunkIsNew = false) {
     if (lockedOverlay) {
       lockedOverlay.classList.remove('hidden');
       if (DOM.lockedStatusText) {
-        DOM.lockedStatusText.textContent = `🔒 Page ${page.number} (Locked)`;
+        if (desc) {
+          DOM.lockedStatusText.innerHTML = `🔒 <strong class="locked-page-title">${escapeHtml(desc)}</strong> <span class="locked-page-sub">(Page ${page.number})</span>`;
+        } else {
+          DOM.lockedStatusText.textContent = `🔒 Page ${page.number} (Locked)`;
+        }
       }
     }
   } else {

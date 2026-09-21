@@ -1061,6 +1061,286 @@ body.theme-dark .station-card.is-expanded {
   }
 }
 
+/* Station Page Title & Subtitle */
+.station-page-label-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.station-page-title {
+  font-family: var(--font-family);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--ink);
+  margin: 0 0 4px;
+}
+
+.station-page-subtitle {
+  font-size: 10px;
+  opacity: 0.9;
+}
+
+/* Station Unread Badges & Dividers */
+.station-unread-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #d97706;
+  background: color-mix(in srgb, #d97706 14%, transparent);
+  border: 1px solid color-mix(in srgb, #d97706 35%, transparent);
+  border-radius: 10px;
+  padding: 1px 7px;
+  font: 600 10px 'Inter', sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+body.theme-matrix .station-unread-badge {
+  color: #00ff41;
+  background: rgba(0, 255, 65, 0.12);
+  border-color: rgba(0, 255, 65, 0.35);
+}
+
+body.theme-dark .station-unread-badge {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
+.station-jump-unread-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  color: #d97706;
+  border: 1px solid color-mix(in srgb, #d97706 40%, transparent);
+  border-radius: 4px;
+  padding: 8px 14px;
+  font: 600 11px 'Inter', sans-serif;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: all 0.18s ease;
+}
+
+.station-jump-unread-btn:hover {
+  background: color-mix(in srgb, #d97706 12%, transparent);
+  border-color: #d97706;
+  color: #d97706;
+  transform: translateY(-1px);
+}
+
+body.theme-matrix .station-jump-unread-btn {
+  color: #00ff41;
+  border-color: rgba(0, 255, 65, 0.4);
+}
+
+body.theme-matrix .station-jump-unread-btn:hover {
+  background: rgba(0, 255, 65, 0.12);
+  border-color: #00ff41;
+  color: #57ff80;
+}
+
+body.theme-dark .station-jump-unread-btn {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+body.theme-dark .station-jump-unread-btn:hover {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: #f59e0b;
+}
+
+.station-row-unread-tag {
+  font: 600 9px 'Inter', sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #d97706;
+  background: color-mix(in srgb, #d97706 14%, transparent);
+  border: 1px solid color-mix(in srgb, #d97706 30%, transparent);
+  border-radius: 3px;
+  padding: 1px 4px;
+}
+
+body.theme-matrix .station-row-unread-tag {
+  color: #00ff41;
+  background: rgba(0, 255, 65, 0.12);
+  border-color: rgba(0, 255, 65, 0.3);
+}
+
+body.theme-dark .station-row-unread-tag {
+  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.15);
+  border-color: rgba(245, 158, 11, 0.3);
+}
+
+.station-unread-pill {
+  font: 600 9px 'Inter', sans-serif;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #d97706;
+  background: color-mix(in srgb, #d97706 14%, transparent);
+  border-radius: 3px;
+  padding: 1px 4px;
+  margin-left: auto;
+}
+
+.station-floating-unread-action {
+  color: #d97706;
+  border-color: color-mix(in srgb, #d97706 40%, transparent);
+  font-weight: 600;
+}
+
+.station-floating-unread-action:hover {
+  border-color: #d97706;
+  color: #d97706;
+  background: color-mix(in srgb, #d97706 10%, transparent);
+}
+
+body.theme-matrix .station-floating-unread-action {
+  color: #00ff41;
+  border-color: rgba(0, 255, 65, 0.4);
+}
+
+body.theme-dark .station-floating-unread-action {
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+.station-unread-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 32px 0 24px;
+  color: #d97706;
+  font: 600 11px 'Inter', sans-serif;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.station-unread-divider::before,
+.station-unread-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: color-mix(in srgb, #d97706 35%, transparent);
+}
+
+body.theme-matrix .station-unread-divider {
+  color: #00ff41;
+}
+
+body.theme-matrix .station-unread-divider::before,
+body.theme-matrix .station-unread-divider::after {
+  background: rgba(0, 255, 65, 0.35);
+}
+
+body.theme-dark .station-unread-divider {
+  color: #f59e0b;
+}
+
+body.theme-dark .station-unread-divider::before,
+body.theme-dark .station-unread-divider::after {
+  background: rgba(245, 158, 11, 0.35);
+}
+
+.station-page-jump.has-title {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.station-page-jump-title {
+  font-weight: 600;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.station-page-jump-sub {
+  font-size: 10px;
+  opacity: 0.75;
+}
+
+/* Writer UI dominant page titles */
+.page-item-dominant-title {
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.page-item-subtitle {
+  font-size: 10px;
+  color: #888888;
+  font-family: 'Inter', sans-serif;
+  letter-spacing: 0.04em;
+  padding-left: 20px;
+}
+
+.page-sheet-header {
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+.page-sheet-header:not(.has-title) {
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+}
+
+.page-sheet-title {
+  font-family: var(--font-family);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--ink);
+  margin: 0 0 4px;
+}
+
+.page-sheet-subtitle {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.locked-page-title {
+  font-weight: 600;
+}
+
+.locked-page-sub {
+  opacity: 0.85;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+.page-meta-dominant-title {
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.page-meta-sub {
+  opacity: 0.8;
+  font-size: 10px;
+}
+
+.search-result-page-title {
+  font-weight: 700;
+  color: #ffc247;
+}
+
+.search-result-page-sub {
+  font-size: 10px;
+  opacity: 0.85;
+  font-weight: 400;
+  margin-left: 5px;
+}
+
 .station-manuscript {
   font-size: var(--station-font-size, 18px);
   line-height: var(--station-line-height, 1.8);
