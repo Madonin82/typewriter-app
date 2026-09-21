@@ -1410,94 +1410,82 @@ function saveStationReadPositions(positions) {
   }
 }
 
-function getStationBookEntries(bookData) {
-  if (!bookData || !Array.isArray(bookData.pages)) return [];
-  const entries = [];
-  let totalChunks = 0;
-  bookData.pages.forEach(p => {
-    if (Array.isArray(p.chunks)) totalChunks += p.chunks.length;
-  });
-
-  if (totalChunks > 0) {
-    bookData.pages.forEach((page, pIdx) => {
-      const pageNum = page.number != null ? page.number : (pIdx + 1);
-      if (Array.isArray(page.chunks) && page.chunks.length > 0) {
-        page.chunks.forEach((chunk, cIdx) => {
-          entries.push({
-            type: 'chunk',
-            pageNumber: pageNum,
-            pageIndex: pIdx,
-            chunkIndex: cIdx,
-            timestamp: chunk.timestamp || null,
-            text: chunk.text || ''
-          });
-        });
-      } else {
-        entries.push({
-          type: 'page',
-          pageNumber: pageNum,
-          pageIndex: pIdx,
-          chunkIndex: 0,
-          timestamp: page.createdAt || null,
-          text: ''
-        });
-      }
-    });
-  } else {
-    bookData.pages.forEach((page, pIdx) => {
-      const pageNum = page.number != null ? page.number : (pIdx + 1);
-      entries.push({
-        type: 'page',
-        pageNumber: pageNum,
-        pageIndex: pIdx,
-        chunkIndex: 0,
-        timestamp: page.createdAt || null,
-        text: ''
-      });
-    });
-  }
-  return entries;
-}
-
 function getStationUnreadInfo(bookId, bookData) {
-  const entries = getStationBookEntries(bookData);
-  const total = entries.length;
-  if (!bookId || total === 0) {
-    return { unreadCount: 0, firstUnreadIndex: -1, firstUnreadEntry: null, hasReadBefore: false };
-  }
-  const positions = getStationReadPositions();
-  const pos = positions[bookId];
-  if (!pos || typeof pos.lastSeenCount !== 'number') {
+  const pages = (bookData && Array.isArray(bookData.pages)) ? bookData.pages : [];
+  const totalPages = pages.length;
+  if (!bookId || totalPages === 0) {
     return {
-      unreadCount: total,
-      firstUnreadIndex: 0,
-      firstUnreadEntry: entries[0] || null,
-      hasReadBefore: false
+      unreadCount: 0,
+      firstUnreadPageIndex: -1,
+      hasReadBefore: false,
+      lastSeenPageIndex: -1,
+      isPageUnread: () => false
     };
   }
-  const lastSeen = Math.max(0, pos.lastSeenCount);
-  const unreadCount = Math.max(0, total - lastSeen);
-  const firstUnreadIndex = unreadCount > 0 ? Math.min(lastSeen, total - 1) : -1;
-  const firstUnreadEntry = firstUnreadIndex >= 0 ? entries[firstUnreadIndex] : null;
+
+  const positions = getStationReadPositions();
+  const pos = positions[bookId];
+  const hasStoredPosition = Boolean(pos && typeof pos.lastSeenPageIndex === 'number');
+
+  if (!hasStoredPosition) {
+    // A first-time reader (no stored position) sees all pages as unread
+    return {
+      unreadCount: totalPages,
+      firstUnreadPageIndex: 0,
+      hasReadBefore: false,
+      lastSeenPageIndex: -1,
+      isPageUnread: (pageIndex) => typeof pageIndex === 'number' && pageIndex >= 0 && pageIndex < totalPages
+    };
+  }
+
+  // Stored position exists. Clamp the stored index if pages were deleted:
+  let lastSeenPageIndex = pos.lastSeenPageIndex;
+  if (lastSeenPageIndex >= totalPages) {
+    lastSeenPageIndex = totalPages - 1;
+    positions[bookId] = {
+      ...pos,
+      lastSeenPageIndex,
+      updatedAt: Date.now()
+    };
+    saveStationReadPositions(positions);
+  }
+  if (lastSeenPageIndex < -1) {
+    lastSeenPageIndex = -1;
+  }
+
+  // Unread = pages in the published Station document with index greater than lastSeenPageIndex
+  const firstUnreadPageIndex = lastSeenPageIndex + 1;
+  const unreadCount = firstUnreadPageIndex < totalPages ? (totalPages - firstUnreadPageIndex) : 0;
 
   return {
     unreadCount,
-    firstUnreadIndex,
-    firstUnreadEntry,
-    hasReadBefore: true
+    firstUnreadPageIndex: unreadCount > 0 ? firstUnreadPageIndex : -1,
+    hasReadBefore: true,
+    lastSeenPageIndex,
+    isPageUnread: (pageIndex) => typeof pageIndex === 'number' && pageIndex > lastSeenPageIndex && pageIndex < totalPages
   };
 }
 
-function recordStationBookSeen(bookId, totalEntries) {
-  if (!bookId) return;
+function recordStationPageSeen(bookId, pageIndex, totalPages = null) {
+  if (!bookId || typeof pageIndex !== 'number' || pageIndex < 0) return;
   const positions = getStationReadPositions();
   const existing = positions[bookId];
-  if (existing && existing.lastSeenCount === totalEntries) return;
-  positions[bookId] = {
-    lastSeenCount: totalEntries,
-    updatedAt: Date.now()
-  };
-  saveStationReadPositions(positions);
+  let currentHighest = (existing && typeof existing.lastSeenPageIndex === 'number')
+    ? existing.lastSeenPageIndex
+    : -1;
+  if (typeof totalPages === 'number' && totalPages > 0 && currentHighest >= totalPages) {
+    currentHighest = totalPages - 1;
+  }
+  const targetIndex = (typeof totalPages === 'number' && totalPages > 0)
+    ? Math.min(pageIndex, totalPages - 1)
+    : pageIndex;
+  if (targetIndex > currentHighest) {
+    positions[bookId] = {
+      lastSeenPageIndex: targetIndex,
+      updatedAt: Date.now()
+    };
+    saveStationReadPositions(positions);
+  }
 }
 
 function stationPayloadForBook(book, overrides = {}) {
@@ -1723,13 +1711,16 @@ function setupStationFloatingMenu(data, displaySettings, unreadInfo = null) {
   navigationTitle.textContent = 'Navigation';
   navigation.appendChild(navigationTitle);
 
-  if (unreadInfo && unreadInfo.unreadCount > 0 && unreadInfo.firstUnreadEntry) {
+  if (unreadInfo && unreadInfo.unreadCount > 0 && unreadInfo.firstUnreadPageIndex >= 0) {
     const jumpUnreadBtn = document.createElement('button');
     jumpUnreadBtn.type = 'button';
     jumpUnreadBtn.className = 'station-floating-action station-floating-unread-action';
-    jumpUnreadBtn.innerHTML = `Jump to first unread <span class="station-unread-pill">${unreadInfo.unreadCount} unread</span>`;
+    const unreadPillText = unreadInfo.unreadCount === 1 ? '1 unread' : `${unreadInfo.unreadCount} unread`;
+    jumpUnreadBtn.innerHTML = `Jump to first unread <span class="station-unread-pill">${unreadPillText}</span>`;
     jumpUnreadBtn.onclick = () => {
-      const unreadEl = document.getElementById('station-first-unread') || document.getElementById(`station-page-${unreadInfo.firstUnreadEntry.pageNumber}`);
+      const targetPage = data.pages && data.pages[unreadInfo.firstUnreadPageIndex];
+      const pageNum = (targetPage && targetPage.number != null) ? targetPage.number : (unreadInfo.firstUnreadPageIndex + 1);
+      const unreadEl = document.getElementById('station-first-unread') || document.getElementById(`station-page-${pageNum}`);
       if (unreadEl) {
         unreadEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
@@ -1785,7 +1776,7 @@ function setupStationFloatingMenu(data, displaySettings, unreadInfo = null) {
     } else {
       pageButton.textContent = `Page ${page.number}`;
     }
-    if (unreadInfo && unreadInfo.unreadCount > 0 && unreadInfo.firstUnreadEntry && unreadInfo.firstUnreadEntry.pageNumber === page.number) {
+    if (unreadInfo && unreadInfo.isPageUnread(index)) {
       const pill = document.createElement('span');
       pill.className = 'station-page-unread-pill';
       pill.textContent = 'unread';
@@ -1839,18 +1830,45 @@ function setupStationFloatingMenu(data, displaySettings, unreadInfo = null) {
   document.addEventListener('keydown', onKeydown);
 
   DOM.stationRoot.append(toggle, panel);
+
+  const totalPagesInDoc = (data.pages || []).length;
+  const updateVisiblePages = () => {
+    if (!stationReaderBookId || !DOM.stationRoot || pageSections.length === 0) return;
+    const rootRect = DOM.stationRoot.getBoundingClientRect();
+    let maxVisibleIdx = -1;
+    pageSections.forEach((sec, idx) => {
+      const rect = sec.getBoundingClientRect();
+      if (rect.bottom > rootRect.top && rect.top < rootRect.bottom) {
+        if (idx > maxVisibleIdx) maxVisibleIdx = idx;
+      }
+    });
+    if (maxVisibleIdx >= 0) {
+      recordStationPageSeen(stationReaderBookId, maxVisibleIdx, totalPagesInDoc);
+    }
+  };
+
   stationPageObserver = new IntersectionObserver((entries) => {
+    let maxDisplayedIdx = -1;
     entries.forEach((entry) => {
       if (!entry.isIntersecting) return;
       const index = pageSections.indexOf(entry.target);
-      pageButtons.forEach((button, buttonIndex) => {
-        const active = buttonIndex === index;
-        button.classList.toggle('active', active);
-        button.setAttribute('aria-selected', String(active));
-      });
+      if (index >= 0) {
+        if (index > maxDisplayedIdx) maxDisplayedIdx = index;
+        pageButtons.forEach((button, buttonIndex) => {
+          const active = buttonIndex === index;
+          button.classList.toggle('active', active);
+          button.setAttribute('aria-selected', String(active));
+        });
+      }
     });
-  }, { root: DOM.stationRoot, threshold: 0.25 });
+    if (maxDisplayedIdx >= 0 && stationReaderBookId) {
+      recordStationPageSeen(stationReaderBookId, maxDisplayedIdx, totalPagesInDoc);
+    }
+  }, { root: DOM.stationRoot, threshold: 0.05 });
   pageSections.forEach((section) => stationPageObserver.observe(section));
+
+  DOM.stationRoot.addEventListener('scroll', updateVisiblePages, { passive: true });
+  updateVisiblePages();
 
   if (wasOpen) {
     setPanelOpen(true);
@@ -1859,6 +1877,7 @@ function setupStationFloatingMenu(data, displaySettings, unreadInfo = null) {
   stationFloatingMenuCleanup = () => {
     document.removeEventListener('click', onDocumentClick);
     document.removeEventListener('keydown', onKeydown);
+    if (DOM.stationRoot) DOM.stationRoot.removeEventListener('scroll', updateVisiblePages);
     toggle.remove();
     panel.remove();
   };
@@ -2381,9 +2400,6 @@ function renderStationDocument(data, bookId = null) {
   stationReaderBookId = bookId;
 
   const unreadInfo = getStationUnreadInfo(bookId, data);
-  const totalEntries = getStationBookEntries(data).length;
-  // Opening the book marks it as read
-  recordStationBookSeen(bookId, totalEntries);
 
   const shouldFollowStation = Boolean(data && data.isLive && isStationNearBottom());
   const displaySettings = data ? getStationReaderDisplaySettings(data.display, bookId) : null;
@@ -2428,12 +2444,25 @@ function renderStationDocument(data, bookId = null) {
   const manuscript = document.createElement('article');
   manuscript.className = `station-manuscript timestamp-layout${displaySettings.showTimestamps ? ' has-timestamps' : ''}`;
   let lastInk = null;
-  let entryRunningIndex = 0;
 
-  (data.pages || []).forEach(page => {
+  (data.pages || []).forEach((page, pIdx) => {
     const pageSection = document.createElement('section');
     pageSection.className = 'station-page';
     pageSection.id = `station-page-${page.number}`;
+
+    const isUnread = unreadInfo && unreadInfo.isPageUnread(pIdx);
+    if (isUnread) {
+      pageSection.classList.add('is-unread-page');
+    }
+
+    if (unreadInfo && unreadInfo.unreadCount > 0 && pIdx === unreadInfo.firstUnreadPageIndex) {
+      const divider = document.createElement('div');
+      divider.id = 'station-first-unread';
+      divider.className = 'station-unread-divider';
+      const pageText = unreadInfo.unreadCount === 1 ? '1 unread page' : `${unreadInfo.unreadCount} unread pages`;
+      divider.innerHTML = `<span>New since your last visit (${pageText})</span>`;
+      pageSection.appendChild(divider);
+    }
 
     const desc = typeof page.description === 'string' ? page.description.trim() : '';
     const pageLabelWrap = document.createElement('div');
@@ -2445,11 +2474,25 @@ function renderStationDocument(data, bookId = null) {
       const pageSubEl = document.createElement('div');
       pageSubEl.className = 'station-page-label station-page-subtitle';
       pageSubEl.textContent = `Page ${page.number}`;
+      if (isUnread) {
+        const unreadTag = document.createElement('span');
+        unreadTag.className = 'station-row-unread-tag';
+        unreadTag.textContent = 'unread';
+        unreadTag.style.marginLeft = '8px';
+        pageSubEl.appendChild(unreadTag);
+      }
       pageLabelWrap.append(pageTitleEl, pageSubEl);
     } else {
       const pageLabel = document.createElement('div');
       pageLabel.className = 'station-page-label';
       pageLabel.textContent = `Page ${page.number}`;
+      if (isUnread) {
+        const unreadTag = document.createElement('span');
+        unreadTag.className = 'station-row-unread-tag';
+        unreadTag.textContent = 'unread';
+        unreadTag.style.marginLeft = '8px';
+        pageLabel.appendChild(unreadTag);
+      }
       pageLabelWrap.appendChild(pageLabel);
     }
     pageSection.appendChild(pageLabelWrap);
@@ -2459,51 +2502,31 @@ function renderStationDocument(data, bookId = null) {
     lastInk = ink;
 
     const chunks = page.chunks || [];
-    if (chunks.length === 0) {
-      if (unreadInfo && unreadInfo.unreadCount > 0 && entryRunningIndex === unreadInfo.firstUnreadIndex) {
-        const divider = document.createElement('div');
-        divider.id = 'station-first-unread';
-        divider.className = 'station-unread-divider';
-        divider.innerHTML = `<span>New since your last visit (${unreadInfo.unreadCount} unread)</span>`;
-        pageSection.insertBefore(divider, ink);
+    chunks.forEach(chunk => {
+      const timestamp = chunk.timestamp;
+      if (displaySettings.showTimestamps) {
+        const row = document.createElement('div');
+        row.className = 'ink-chunk-row';
+
+        const timestampSpan = document.createElement('span');
+        const timeStr = formatChunkTime(timestamp);
+        timestampSpan.className = timeStr ? 'commit-timestamp' : 'commit-timestamp muted';
+        timestampSpan.textContent = timeStr || '—';
+        if (timestamp) timestampSpan.title = `Committed at ${new Date(timestamp).toLocaleString()}`;
+        row.appendChild(timestampSpan);
+
+        const textSpan = document.createElement('span');
+        textSpan.className = 'ink-chunk';
+        textSpan.textContent = chunk.text || '';
+        row.appendChild(textSpan);
+        ink.appendChild(row);
+        return;
       }
-      entryRunningIndex++;
-    } else {
-      chunks.forEach(chunk => {
-        if (unreadInfo && unreadInfo.unreadCount > 0 && entryRunningIndex === unreadInfo.firstUnreadIndex) {
-          const divider = document.createElement('div');
-          divider.id = 'station-first-unread';
-          divider.className = 'station-unread-divider';
-          divider.innerHTML = `<span>New since your last visit (${unreadInfo.unreadCount} unread)</span>`;
-          ink.appendChild(divider);
-        }
-        entryRunningIndex++;
-
-        const timestamp = chunk.timestamp;
-        if (displaySettings.showTimestamps) {
-          const row = document.createElement('div');
-          row.className = 'ink-chunk-row';
-
-          const timestampSpan = document.createElement('span');
-          const timeStr = formatChunkTime(timestamp);
-          timestampSpan.className = timeStr ? 'commit-timestamp' : 'commit-timestamp muted';
-          timestampSpan.textContent = timeStr || '—';
-          if (timestamp) timestampSpan.title = `Committed at ${new Date(timestamp).toLocaleString()}`;
-          row.appendChild(timestampSpan);
-
-          const textSpan = document.createElement('span');
-          textSpan.className = 'ink-chunk';
-          textSpan.textContent = chunk.text || '';
-          row.appendChild(textSpan);
-          ink.appendChild(row);
-          return;
-        }
-        const span = document.createElement('span');
-        span.className = 'ink-chunk';
-        span.textContent = chunk.text || '';
-        ink.appendChild(span);
-      });
-    }
+      const span = document.createElement('span');
+      span.className = 'ink-chunk';
+      span.textContent = chunk.text || '';
+      ink.appendChild(span);
+    });
 
     pageSection.appendChild(ink);
     manuscript.appendChild(pageSection);
@@ -2524,14 +2547,20 @@ function renderStationDocument(data, bookId = null) {
   const route = getStationRoute();
   if (route && route.jumpToUnread) {
     const scrollToUnread = () => {
-      const unreadEl = document.getElementById('station-first-unread') || (unreadInfo.firstUnreadEntry ? document.getElementById(`station-page-${unreadInfo.firstUnreadEntry.pageNumber}`) : null);
+      const targetPage = (data.pages && unreadInfo && unreadInfo.firstUnreadPageIndex >= 0)
+        ? data.pages[unreadInfo.firstUnreadPageIndex]
+        : null;
+      const targetNum = (targetPage && targetPage.number != null)
+        ? targetPage.number
+        : (unreadInfo && unreadInfo.firstUnreadPageIndex >= 0 ? unreadInfo.firstUnreadPageIndex + 1 : 1);
+      const unreadEl = document.getElementById('station-first-unread') || document.getElementById(`station-page-${targetNum}`);
       if (unreadEl) {
         unreadEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }
     };
     requestAnimationFrame(() => {
       scrollToUnread();
-      setTimeout(scrollToUnread, 100);
+      setTimeout(scrollToUnread, 120);
     });
   } else {
     const targetPageNum = route && route.page ? parseInt(route.page, 10) : null;
@@ -2544,7 +2573,7 @@ function renderStationDocument(data, bookId = null) {
       };
       requestAnimationFrame(() => {
         scrollToTarget();
-        setTimeout(scrollToTarget, 80);
+        setTimeout(scrollToTarget, 100);
       });
     } else if (shouldFollowStation) {
       requestAnimationFrame(() => scrollStationToBottom(true));
@@ -2626,7 +2655,7 @@ function renderStationHome(docs) {
       unreadBadge.href = `#/station/${encodeURIComponent(doc.id)}/unread`;
       unreadBadge.className = 'station-unread-badge';
       unreadBadge.textContent = `${unreadInfo.unreadCount} unread`;
-      unreadBadge.title = `Jump to first unread entry (${unreadInfo.unreadCount} unread)`;
+      unreadBadge.title = `Jump to first unread page (${unreadInfo.unreadCount} unread)`;
       unreadBadge.onclick = (e) => {
         e.stopPropagation();
       };
@@ -2671,7 +2700,8 @@ function renderStationHome(docs) {
       const jumpUnreadBtn = document.createElement('a');
       jumpUnreadBtn.href = `#/station/${encodeURIComponent(doc.id)}/unread`;
       jumpUnreadBtn.className = 'station-jump-unread-btn';
-      jumpUnreadBtn.innerHTML = `Jump to first unread <span class="station-unread-pill">${unreadInfo.unreadCount} unread</span>`;
+      const unreadPillText = unreadInfo.unreadCount === 1 ? '1 unread' : `${unreadInfo.unreadCount} unread`;
+      jumpUnreadBtn.innerHTML = `Jump to first unread <span class="station-unread-pill">${unreadPillText}</span>`;
       detailActions.appendChild(jumpUnreadBtn);
     }
 
@@ -2734,7 +2764,7 @@ function renderStationHome(docs) {
         pageTitleSpan.textContent = desc || `Page ${pageNum}`;
         rowMain.append(pageNumSpan, pageTitleSpan);
 
-        if (unreadInfo && unreadInfo.unreadCount > 0 && unreadInfo.firstUnreadEntry && unreadInfo.firstUnreadEntry.pageNumber === pageNum) {
+        if (unreadInfo && unreadInfo.isPageUnread(pIdx)) {
           const unreadRowPill = document.createElement('span');
           unreadRowPill.className = 'station-row-unread-tag';
           unreadRowPill.textContent = 'unread';
