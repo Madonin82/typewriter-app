@@ -1022,6 +1022,7 @@ function sanitizeBooksForCloudSync(books) {
       bestWpm: book.bestWpm || 0,
       createdAt: book.createdAt || Date.now(),
       updatedAt: book.updatedAt || Date.now(),
+      lastStationUpdate: book.lastStationUpdate || 0,
       pages: (book.pages || []).map(page => ({
         id: page.id,
         number: page.number,
