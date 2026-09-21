@@ -179,6 +179,7 @@ body.station-mode > :not(#station-root) {
   position: fixed;
   inset: 0;
   overflow-y: auto;
+  overflow-x: clip;
   background: var(--paper);
   color: var(--ink);
   color-scheme: light dark;
@@ -3494,7 +3495,7 @@ body.theme-paper .sync-toast {
   .page.has-timestamps {
     padding-left: 88px;
   }
-  .commit-timestamp {
+  .page.has-timestamps .commit-timestamp {
     position: absolute;
     display: block;
     left: -80px;

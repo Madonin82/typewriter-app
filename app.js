@@ -1554,6 +1554,24 @@ function setupStationFloatingMenu(data, displaySettings) {
   };
   navigation.appendChild(backToTop);
 
+  const stationSelect = document.createElement('button');
+  stationSelect.type = 'button';
+  stationSelect.className = 'station-floating-action';
+  stationSelect.textContent = 'Station select';
+  stationSelect.onclick = () => {
+    window.location.hash = '#/station/';
+  };
+  navigation.appendChild(stationSelect);
+
+  const writerBtn = document.createElement('button');
+  writerBtn.type = 'button';
+  writerBtn.className = 'station-floating-action';
+  writerBtn.textContent = 'Writer';
+  writerBtn.onclick = () => {
+    window.location.hash = '#/';
+  };
+  navigation.appendChild(writerBtn);
+
   const pageList = document.createElement('div');
   pageList.className = 'station-page-jump-list';
   pageList.setAttribute('role', 'listbox');
@@ -1601,10 +1619,15 @@ function setupStationFloatingMenu(data, displaySettings) {
     if (!panel.classList.contains('hidden') && !panel.contains(event.target) && event.target !== toggle) closePanel();
   };
   const onKeydown = (event) => {
-    if (event.key === 'Escape' && !panel.classList.contains('hidden')) {
+    if (event.key === 'Escape') {
       event.preventDefault();
-      closePanel();
-      toggle.focus();
+      event.stopPropagation();
+      if (panel.classList.contains('hidden')) {
+        setPanelOpen(true);
+      } else {
+        closePanel();
+        toggle.focus();
+      }
     }
   };
   document.addEventListener('click', onDocumentClick);
@@ -2021,12 +2044,23 @@ function setupStationHomeFloatingMenu(docs, displaySettings) {
   };
   navigation.appendChild(backToTop);
 
-  const startWriting = document.createElement('a');
-  startWriting.href = '#/';
-  startWriting.className = 'station-floating-action station-floating-link';
-  startWriting.textContent = '← Return to Writer';
-  startWriting.onclick = () => closePanel();
-  navigation.appendChild(startWriting);
+  const stationSelect = document.createElement('button');
+  stationSelect.type = 'button';
+  stationSelect.className = 'station-floating-action';
+  stationSelect.textContent = 'Station select';
+  stationSelect.onclick = () => {
+    window.location.hash = '#/station/';
+  };
+  navigation.appendChild(stationSelect);
+
+  const writerBtn = document.createElement('button');
+  writerBtn.type = 'button';
+  writerBtn.className = 'station-floating-action';
+  writerBtn.textContent = 'Writer';
+  writerBtn.onclick = () => {
+    window.location.hash = '#/';
+  };
+  navigation.appendChild(writerBtn);
 
   const cards = Array.from(DOM.stationContent.querySelectorAll('.station-card'));
   const stationButtons = [];
@@ -2084,10 +2118,15 @@ function setupStationHomeFloatingMenu(docs, displaySettings) {
     if (!panel.classList.contains('hidden') && !panel.contains(event.target) && event.target !== toggle) closePanel();
   };
   const onKeydown = (event) => {
-    if (event.key === 'Escape' && !panel.classList.contains('hidden')) {
+    if (event.key === 'Escape') {
       event.preventDefault();
-      closePanel();
-      toggle.focus();
+      event.stopPropagation();
+      if (panel.classList.contains('hidden')) {
+        setPanelOpen(true);
+      } else {
+        closePanel();
+        toggle.focus();
+      }
     }
   };
   document.addEventListener('click', onDocumentClick);
