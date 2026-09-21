@@ -1346,10 +1346,26 @@ function pushStationSnapshot(book, overrides = {}, replace = false) {
   delete cleanOverrides.publish;
   const payload = stationPayloadForBook(book, cleanOverrides);
   const writeOptions = replace ? undefined : { merge: true };
-  return db.collection('station').doc(book.id).set(payload, writeOptions).then(() => true).catch(error => {
+  return db.collection('station').doc(book.id).set(payload, writeOptions).then(() => {
+    lastStationError = null;
+    return true;
+  }).catch(error => {
     console.warn('[Station] Push failed:', error);
+    lastStationError = error;
     return false;
   });
+}
+
+let lastStationError = null;
+
+function stationWriteErrorMessage() {
+  const code = lastStationError && lastStationError.code;
+  if (code === 'permission-denied') return 'rejected by the Station security rules';
+  if (code === 'unauthenticated') return 'you are not signed in';
+  if (code === 'unavailable' || code === 'deadline-exceeded') return 'could not reach the Station — check your connection and try again';
+  if (code === 'resource-exhausted') return 'the Station quota was exceeded';
+  if (code) return `failed (${code})`;
+  return 'failed for an unknown reason';
 }
 
 function scheduleStationPush(book, overrides = {}, delay = 1200) {
@@ -1631,7 +1647,7 @@ async function publishActiveBook() {
   const addedPages = getStationPagesAddedSince(book, previousStationUpdate);
   const success = await pushStationSnapshot(book, { isLive: false, liveDraft: '', lastUpdateAddedPages: addedPages, publish: true });
   if (!success) {
-    showToast("Couldn't publish — check your connection and try again");
+    showToast(`Couldn't publish — ${stationWriteErrorMessage()}`);
     return;
   }
   book.stationPublished = true;
@@ -1670,7 +1686,7 @@ function updateStationSnapshot() {
   if (!confirm(`Push ${commitCount} new commit${commitCount === 1 ? '' : 's'} to the public Station?`)) return;
   pushStationSnapshot(book, { isLive: false, liveDraft: '', lastUpdateAddedPages: addedPages }, true).then(success => {
     if (!success) {
-      showToast("Couldn't update Station — check your connection and try again");
+      showToast(`Couldn't update Station — ${stationWriteErrorMessage()}`);
       return;
     }
     book.lastStationUpdate = Date.now();
@@ -1746,7 +1762,7 @@ function toggleStationLive() {
   }
   pushStationSnapshot(book, { isLive: book.stationLive, liveDraft: book.stationLive && DOM.draftInput ? DOM.draftInput.value : '' }).then(success => {
     if (!success) {
-      showToast("Couldn't update live status — check your connection and try again");
+      showToast(`Couldn't update live status — ${stationWriteErrorMessage()}`);
       return;
     }
     saveStorage();

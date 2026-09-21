@@ -36,11 +36,6 @@ service cloud.firestore {
         && request.resource.data.lastUpdateAddedPages is number;
     }
 
-    function stationWriteIsNotTooSoon() {
-      return !resource.data.keys().hasAll(['lastWrite'])
-        || request.time >= resource.data.lastWrite + duration.value(5, 's');
-    }
-
     function existingStationIsGuest() {
       return resource.data.keys().hasAll(['isGuest']) && resource.data.isGuest == true;
     }
@@ -68,7 +63,6 @@ service cloud.firestore {
       allow update: if request.auth != null
                     && stationKeysAreValid()
                     && stationContentIsValid()
-                    && stationWriteIsNotTooSoon()
                     && request.resource.data.ownerUid == resource.data.ownerUid
                     && request.resource.data.isGuest == existingStationIsGuest()
                     && (
