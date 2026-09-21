@@ -1238,7 +1238,51 @@ function getStationRoute() {
   const hash = window.location.hash || '';
   const match = hash.match(/^#\/station\/?(.*)$/);
   if (!match) return null;
-  return { bookId: match[1] ? decodeURIComponent(match[1].split('/')[0]) : null };
+  const raw = match[1] ? match[1].trim() : '';
+  if (!raw) return { bookId: null, page: null };
+
+  let bookId = raw;
+  let page = null;
+  if (bookId.includes('?')) {
+    const parts = bookId.split('?');
+    bookId = parts[0];
+    const params = new URLSearchParams(parts[1]);
+    page = params.get('page');
+  }
+  if (bookId.includes('/')) {
+    const parts = bookId.split('/').filter(Boolean);
+    bookId = parts[0];
+    if (!page && parts[1]) {
+      page = parts[1].replace(/^page-?/i, '');
+    }
+  }
+  return {
+    bookId: bookId ? decodeURIComponent(bookId) : null,
+    page: page ? decodeURIComponent(page) : null
+  };
+}
+
+function formatStationPageDate(page, bookData) {
+  let timeVal = page && page.createdAt;
+  if (!timeVal && page && Array.isArray(page.chunks)) {
+    for (const chunk of page.chunks) {
+      if (chunk && chunk.timestamp) {
+        timeVal = chunk.timestamp;
+        break;
+      }
+    }
+  }
+  if (!timeVal && bookData) {
+    timeVal = bookData.createdAt || bookData.updatedAt;
+  }
+  if (!timeVal) return '—';
+  const date = timeVal.toDate ? timeVal.toDate() : new Date(timeVal);
+  if (Number.isNaN(date.getTime())) return '—';
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric'
+  });
 }
 
 function getAdminRoute() {
@@ -2214,6 +2258,7 @@ function renderStationDocument(data, bookId = null) {
   (data.pages || []).forEach(page => {
     const pageSection = document.createElement('section');
     pageSection.className = 'station-page';
+    pageSection.id = `station-page-${page.number}`;
     const pageLabel = document.createElement('div');
     pageLabel.className = 'station-page-label';
     pageLabel.textContent = `Page ${page.number}`;
@@ -2261,7 +2306,20 @@ function renderStationDocument(data, bookId = null) {
   }
   DOM.stationContent.appendChild(manuscript);
   setupStationFloatingMenu(data, displaySettings);
-  if (shouldFollowStation) {
+  const route = getStationRoute();
+  const targetPageNum = route && route.page ? parseInt(route.page, 10) : null;
+  if (targetPageNum) {
+    const scrollToTarget = () => {
+      const targetEl = document.getElementById(`station-page-${targetPageNum}`);
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }
+    };
+    requestAnimationFrame(() => {
+      scrollToTarget();
+      setTimeout(scrollToTarget, 80);
+    });
+  } else if (shouldFollowStation) {
     requestAnimationFrame(() => scrollStationToBottom(true));
   }
   if (bookId) document.title = `${data.title || 'Station'} · Note to Self`;
@@ -2291,10 +2349,17 @@ function renderStationHome(docs) {
   shelf.className = 'station-shelf';
   docs.forEach(doc => {
     const data = doc.data();
-    const card = document.createElement('a');
-    card.href = `#/station/${encodeURIComponent(doc.id)}`;
+    const card = document.createElement('div');
     card.className = `station-card${data.isLive ? ' is-live' : ''}`;
+    card.id = `station-card-${doc.id}`;
     
+    const cardHeader = document.createElement('div');
+    cardHeader.className = 'station-card-header';
+    cardHeader.setAttribute('role', 'button');
+    cardHeader.setAttribute('tabindex', '0');
+    cardHeader.setAttribute('aria-expanded', 'false');
+    cardHeader.setAttribute('aria-controls', `station-detail-${doc.id}`);
+
     const cardStatus = document.createElement('div');
     cardStatus.className = 'station-card-status';
     if (data.isLive) {
@@ -2302,7 +2367,7 @@ function renderStationHome(docs) {
     } else {
       cardStatus.innerHTML = '<span class="station-card-label">OPEN DRAFT</span>';
     }
-    card.appendChild(cardStatus);
+    cardHeader.appendChild(cardStatus);
 
     const cardInfo = document.createElement('div');
     cardInfo.className = 'station-card-info';
@@ -2334,12 +2399,163 @@ function renderStationHome(docs) {
       metaContainer.appendChild(guestBadge);
     }
     cardInfo.appendChild(metaContainer);
-    card.appendChild(cardInfo);
+    cardHeader.appendChild(cardInfo);
     
     const cta = document.createElement('span');
     cta.className = 'station-card-cta';
     cta.innerHTML = 'Read <span class="station-card-arrow" aria-hidden="true">→</span>';
-    card.appendChild(cta);
+    cardHeader.appendChild(cta);
+    card.appendChild(cardHeader);
+
+    const cardDetail = document.createElement('div');
+    cardDetail.className = 'station-card-detail hidden';
+    cardDetail.id = `station-detail-${doc.id}`;
+
+    const detailHeader = document.createElement('div');
+    detailHeader.className = 'station-detail-header';
+
+    const detailStation = document.createElement('div');
+    detailStation.className = 'station-detail-station';
+    const detailStationLabel = document.createElement('span');
+    detailStationLabel.className = 'station-detail-station-label';
+    detailStationLabel.textContent = 'Station';
+    const detailStationName = document.createElement('span');
+    detailStationName.className = 'station-detail-station-name';
+    detailStationName.textContent = stationName || data.title || 'Station';
+    detailStation.append(detailStationLabel, detailStationName);
+
+    const detailActions = document.createElement('div');
+    detailActions.className = 'station-detail-actions';
+
+    const startReadingBtn = document.createElement('a');
+    startReadingBtn.href = `#/station/${encodeURIComponent(doc.id)}`;
+    startReadingBtn.className = 'station-start-reading-btn';
+    startReadingBtn.innerHTML = 'Start reading <span class="station-card-arrow" aria-hidden="true">→</span>';
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'station-detail-close-btn';
+    closeBtn.setAttribute('aria-label', 'Close details');
+    closeBtn.title = 'Collapse';
+    closeBtn.innerHTML = '<span aria-hidden="true">✕</span>';
+
+    detailActions.append(startReadingBtn, closeBtn);
+    detailHeader.append(detailStation, detailActions);
+    cardDetail.appendChild(detailHeader);
+
+    const contentsSection = document.createElement('div');
+    contentsSection.className = 'station-contents-section';
+
+    const contentsHeader = document.createElement('div');
+    contentsHeader.className = 'station-contents-header';
+    const contentsTitle = document.createElement('span');
+    contentsTitle.className = 'station-contents-title';
+    contentsTitle.textContent = 'Contents';
+    const contentsCount = document.createElement('span');
+    contentsCount.className = 'station-contents-count';
+    contentsCount.textContent = `${totalPages} page${totalPages === 1 ? '' : 's'}`;
+    contentsHeader.append(contentsTitle, contentsCount);
+    contentsSection.appendChild(contentsHeader);
+
+    const contentsList = document.createElement('div');
+    contentsList.className = 'station-contents-list';
+    contentsList.setAttribute('role', 'list');
+
+    const pages = data.pages || [];
+    if (pages.length === 0) {
+      const emptyRow = document.createElement('div');
+      emptyRow.className = 'station-contents-empty';
+      emptyRow.textContent = 'No pages published yet.';
+      contentsList.appendChild(emptyRow);
+    } else {
+      pages.forEach((page, pIdx) => {
+        const pageRow = document.createElement('a');
+        const pageNum = page.number != null ? page.number : (pIdx + 1);
+        pageRow.href = `#/station/${encodeURIComponent(doc.id)}/page-${pageNum}`;
+        pageRow.className = 'station-content-row';
+        pageRow.setAttribute('role', 'listitem');
+
+        const rowMain = document.createElement('div');
+        rowMain.className = 'station-content-row-main';
+        const pageNumSpan = document.createElement('span');
+        pageNumSpan.className = 'station-content-row-num';
+        pageNumSpan.textContent = `${pageNum}.`;
+        const pageTitleSpan = document.createElement('span');
+        pageTitleSpan.className = 'station-content-row-title';
+        const desc = typeof page.description === 'string' ? page.description.trim() : '';
+        pageTitleSpan.textContent = desc || `Page ${pageNum}`;
+        rowMain.append(pageNumSpan, pageTitleSpan);
+
+        const rowMeta = document.createElement('div');
+        rowMeta.className = 'station-content-row-meta';
+        const dateSpan = document.createElement('span');
+        dateSpan.className = 'station-content-row-date';
+        dateSpan.textContent = formatStationPageDate(page, data);
+
+        const sepSpan = document.createElement('span');
+        sepSpan.className = 'station-content-row-sep';
+        sepSpan.textContent = '·';
+
+        const wordsSpan = document.createElement('span');
+        wordsSpan.className = 'station-content-row-words';
+        const wordCount = PageWordCountCache.get(page);
+        wordsSpan.textContent = `${wordCount.toLocaleString()} word${wordCount === 1 ? '' : 's'}`;
+
+        const arrowSpan = document.createElement('span');
+        arrowSpan.className = 'station-content-row-arrow';
+        arrowSpan.setAttribute('aria-hidden', 'true');
+        arrowSpan.textContent = '→';
+
+        rowMeta.append(dateSpan, sepSpan, wordsSpan, arrowSpan);
+        pageRow.append(rowMain, rowMeta);
+        contentsList.appendChild(pageRow);
+      });
+    }
+
+    contentsSection.appendChild(contentsList);
+    cardDetail.appendChild(contentsSection);
+    card.appendChild(cardDetail);
+
+    const setExpanded = (expanded) => {
+      if (expanded) {
+        shelf.querySelectorAll('.station-card.is-expanded').forEach(other => {
+          if (other !== card) {
+            other.classList.remove('is-expanded');
+            const otherHeader = other.querySelector('.station-card-header');
+            if (otherHeader) otherHeader.setAttribute('aria-expanded', 'false');
+            const otherDetail = other.querySelector('.station-card-detail');
+            if (otherDetail) otherDetail.classList.add('hidden');
+            const otherCta = other.querySelector('.station-card-cta');
+            if (otherCta) otherCta.innerHTML = 'Read <span class="station-card-arrow" aria-hidden="true">→</span>';
+          }
+        });
+        card.classList.add('is-expanded');
+        cardHeader.setAttribute('aria-expanded', 'true');
+        cardDetail.classList.remove('hidden');
+        cta.innerHTML = 'Close <span class="station-card-close-icon" aria-hidden="true">✕</span>';
+      } else {
+        card.classList.remove('is-expanded');
+        cardHeader.setAttribute('aria-expanded', 'false');
+        cardDetail.classList.add('hidden');
+        cta.innerHTML = 'Read <span class="station-card-arrow" aria-hidden="true">→</span>';
+      }
+    };
+
+    cardHeader.onclick = () => {
+      setExpanded(!card.classList.contains('is-expanded'));
+    };
+    cardHeader.onkeydown = (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        setExpanded(!card.classList.contains('is-expanded'));
+      }
+    };
+    closeBtn.onclick = (e) => {
+      e.stopPropagation();
+      setExpanded(false);
+      cardHeader.focus();
+    };
+
     shelf.appendChild(card);
   });
   if (docs.length === 0) {
