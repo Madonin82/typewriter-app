@@ -328,6 +328,7 @@ function initDOM() {
     settingShowFinishProjection: document.getElementById('setting-show-finish-projection'),
     settingShowGhostRace: document.getElementById('setting-show-ghost-race'),
     settingOfflineMode: document.getElementById('setting-offline-mode'),
+    settingFocusMode: document.getElementById('setting-focus-mode'),
     btnMenuSave: document.getElementById('btn-menu-save'),
     btnMenuLoad: document.getElementById('btn-menu-load'),
     offlineModeIndicator: document.getElementById('offline-mode-indicator'),
@@ -3745,6 +3746,8 @@ function migrateSettingsSchema(savedSettings) {
     replaySpeed: 1,
     autoAddSpace: false,
     offlineMode: false,
+    focusMode: false,
+    focusModeHintShown: false,
     activeTagFilter: null,
     activeFolderFilter: null,
     settingsVersion: 2,
@@ -7834,10 +7837,7 @@ function updateDraftInputCursorAlignment() {
   // Measure X position of inkCursor relative to draft box text inner padding (20px)
   const cursorX = cursorRect.left - (draftBoxRect.left + 20);
 
-  const draftBoxWidth = draftBoxRect.width || 700;
-  // Keep at least 140px of typing room in draft input before line wrapping
-  const maxIndent = Math.max(0, draftBoxWidth - 180);
-  const indentPx = Math.max(0, Math.min(cursorX, maxIndent));
+  const indentPx = Math.max(0, cursorX);
 
   DOM.draftInput.style.textIndent = `${indentPx}px`;
   DOM.draftInput.style.paddingLeft = '0px';
@@ -7907,6 +7907,8 @@ function applySettingsUI() {
   if (DOM.settingPrevPageGhost) DOM.settingPrevPageGhost.checked = Boolean(state.settings.prevPageGhost);
   if (DOM.settingShowFinishProjection) DOM.settingShowFinishProjection.checked = Boolean(state.settings.showFinishProjection);
   if (DOM.settingShowGhostRace) DOM.settingShowGhostRace.checked = Boolean(state.settings.showGhostRace);
+  if (DOM.settingFocusMode) DOM.settingFocusMode.checked = Boolean(state.settings.focusMode);
+  document.body.classList.toggle('focus-mode', Boolean(state.settings.focusMode));
   updateCommitHint();
   updateOfflineModeUI();
 }
@@ -8662,7 +8664,83 @@ function renderDriveFilesList(files) {
 
 // ─── EVENT LISTENERS ────────────────────────────────────────
 
+function handleFocusModeOutsideTap(e) {
+  if (!state.settings.focusMode) return;
+
+  if (DOM.escOverlay && !DOM.escOverlay.classList.contains('hidden')) return;
+  if (DOM.exportModal && !DOM.exportModal.classList.contains('hidden')) return;
+  if (DOM.backupInspectModal && !DOM.backupInspectModal.classList.contains('hidden')) return;
+  if (DOM.pageDescModal && !DOM.pageDescModal.classList.contains('hidden')) return;
+  if (DOM.searchModal && !DOM.searchModal.classList.contains('hidden')) return;
+
+  const target = e.target;
+  if (target.closest('#draft-box')) return;
+  if (target.closest('button') || target.closest('input') || target.closest('select') || target.closest('a') || target.closest('.modal') || target.closest('#panel-left') || target.closest('#panel-right') || target.closest('.book-dropdown-wrap')) return;
+
+  const isDraftFocused = DOM.draftInput && (document.activeElement === DOM.draftInput);
+  if (isDraftFocused) {
+    DOM.draftInput.blur();
+    e.preventDefault();
+    e.stopPropagation();
+    return;
+  }
+
+  if (DOM.escOverlay && DOM.escOverlay.classList.contains('hidden')) {
+    openOverlay();
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}
+
 function setupEventListeners() {
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let touchMoved = false;
+
+  document.addEventListener('touchstart', (e) => {
+    if (!state.settings.focusMode) return;
+    if (e.touches && e.touches.length > 0) {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      touchMoved = false;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!state.settings.focusMode) return;
+    if (e.touches && e.touches.length > 0) {
+      const dx = e.touches[0].clientX - touchStartX;
+      const dy = e.touches[0].clientY - touchStartY;
+      if (Math.hypot(dx, dy) > 10) {
+        touchMoved = true;
+      }
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (!state.settings.focusMode) return;
+    if (touchMoved) return;
+    handleFocusModeOutsideTap(e);
+  });
+
+  let mouseDownX = 0;
+  let mouseDownY = 0;
+
+  document.addEventListener('mousedown', (e) => {
+    if (!state.settings.focusMode) return;
+    mouseDownX = e.clientX;
+    mouseDownY = e.clientY;
+  });
+
+  document.addEventListener('mouseup', (e) => {
+    if (!state.settings.focusMode) return;
+    const dx = e.clientX - mouseDownX;
+    const dy = e.clientY - mouseDownY;
+    if (Math.hypot(dx, dy) > 5) return;
+    if (window.getSelection && window.getSelection().toString().trim().length > 0) return;
+    handleFocusModeOutsideTap(e);
+  });
+
   // ESC Key Listener & Global Keyboard Shortcuts
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') {
@@ -9273,6 +9351,8 @@ function setupEventListeners() {
           typewriterAnim: false,
           replaySpeed: 1,
           autoAddSpace: false,
+          focusMode: false,
+          focusModeHintShown: false,
           settingsVersion: CURRENT_SETTINGS_VERSION,
           schemaVersion: CURRENT_SCHEMA_VERSION
         };
@@ -9511,6 +9591,21 @@ function setupEventListeners() {
       state.settings.showGhostRace = e.target.checked;
       saveStorage();
       updateBookProgressUI();
+    };
+  }
+
+  if (DOM.settingFocusMode) {
+    DOM.settingFocusMode.onchange = (e) => {
+      state.settings.focusMode = e.target.checked;
+      saveStorage();
+      applySettingsUI();
+      if (state.settings.focusMode && !state.settings.focusModeHintShown) {
+        state.settings.focusModeHintShown = true;
+        saveStorage();
+        showToast("Focus mode on — tap outside the draft box to open the menu.");
+      } else {
+        showToast(state.settings.focusMode ? "Focus mode enabled" : "Focus mode disabled");
+      }
     };
   }
 

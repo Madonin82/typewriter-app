@@ -55,7 +55,6 @@
           <div id="draft-input-backdrop"></div>
           <textarea 
             id="draft-input" 
-            placeholder="note to self..." 
             rows="1" 
             name="draft-note"
             autocomplete="new-password"
@@ -63,6 +62,10 @@
             autofocus
           ></textarea>
         </div>
+        <button id="btn-commit" class="btn-commit-mini" tabindex="-1" title="Commit to Ink (Enter)">
+          <span class="commit-icon" aria-hidden="true">↵</span>
+          <span id="commit-hint">Enter to Commit</span>
+        </button>
         <div class="draft-footer">
           <div class="draft-footer-left">
             <button id="esc-hint" class="esc-btn btn-esc-menu" title="Click or press ESC to open studio menu">ESC — menu</button>
@@ -82,10 +85,6 @@
             <span class="meta-separator">•</span>
             <span class="best-wpm" id="best-wpm" aria-hidden="true">best 0 WPM</span>
             <button id="btn-newline" class="btn-newline" type="button" title="Insert a line break" aria-label="Insert a line break">↵</button>
-            <button id="btn-commit" class="btn-commit-mini" tabindex="-1" title="Commit to Ink (Enter)">
-              <span class="commit-icon" aria-hidden="true">↵</span>
-              <span id="commit-hint">Enter to Commit</span>
-            </button>
           </div>
         </div>
       </div>
@@ -493,6 +492,17 @@
           </label>
         </div>
         <small class="setting-help">Displays the time each commit was made in the left margin of the page.</small>
+      </div>
+
+      <div>
+        <div class="setting-label-row">
+          <span class="setting-label">Focus Mode</span>
+          <label class="toggle-switch" title="Hides footer elements and metadata for distraction-free writing">
+            <input type="checkbox" id="setting-focus-mode">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <small class="setting-help">Hides footer elements and metadata for a distraction-free writing environment.</small>
       </div>
 
       <div>
