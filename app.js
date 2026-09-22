@@ -293,6 +293,7 @@ function initDOM() {
     emailAuthForm: document.getElementById('email-auth-form'),
     authEmail: document.getElementById('auth-email'),
     authPassword: document.getElementById('auth-password'),
+    authPasswordConfirm: document.getElementById('auth-password-confirm'),
     btnEmailSignIn: document.getElementById('btn-email-signin'),
     btnEmailSignUp: document.getElementById('btn-email-signup'),
     userProfile: document.getElementById('user-profile'),
@@ -785,6 +786,7 @@ function showGuestUpgradeForm() {
   if (!currentUser || !isAnonymousUser()) return;
   clearAuthForm();
   if (DOM.emailAuthForm) DOM.emailAuthForm.classList.remove('hidden');
+  if (DOM.authPasswordConfirm) DOM.authPasswordConfirm.classList.remove('hidden');
   if (DOM.btnEmailSignUp) DOM.btnEmailSignUp.textContent = 'Create account';
   if (DOM.authEmail) DOM.authEmail.focus();
 }
@@ -801,6 +803,26 @@ function handleEmailAuth(mode) {
   if (!email || !password) {
     showToast("Enter an email address and password.");
     return;
+  }
+
+  if (mode === 'signup') {
+    if (DOM.authPasswordConfirm && DOM.authPasswordConfirm.classList.contains('hidden')) {
+      DOM.authPasswordConfirm.classList.remove('hidden');
+      DOM.authPasswordConfirm.focus();
+      showToast("Please confirm your password.");
+      return;
+    }
+    const confirmPassword = DOM.authPasswordConfirm ? DOM.authPasswordConfirm.value : '';
+    if (!confirmPassword) {
+      showToast("Please confirm your password.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      showToast("Passwords do not match.");
+      return;
+    }
+  } else {
+    if (DOM.authPasswordConfirm) DOM.authPasswordConfirm.classList.add('hidden');
   }
 
   const authRequest = mode === 'signup' && isAnonymousUser()
@@ -845,6 +867,10 @@ function handleEmailAuth(mode) {
 function clearAuthForm() {
   if (DOM.authEmail) DOM.authEmail.value = '';
   if (DOM.authPassword) DOM.authPassword.value = '';
+  if (DOM.authPasswordConfirm) {
+    DOM.authPasswordConfirm.value = '';
+    DOM.authPasswordConfirm.classList.add('hidden');
+  }
 }
 
 function resetPasswordForCurrentUser() {
