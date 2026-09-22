@@ -2118,7 +2118,7 @@ input:checked + .toggle-slider:before {
   border: 1px solid var(--draft-border);
   border-radius: 6px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.06);
-  padding: 16px calc(var(--writer-inset-x) + 90px) 40px calc(var(--writer-inset-x) - 1px);
+  padding: 16px calc(var(--writer-inset-x) - 1px) 14px;
   backdrop-filter: blur(8px);
   transition: transform 0.2s ease, opacity 0.2s ease;
   box-sizing: border-box;
@@ -2194,15 +2194,10 @@ input:checked + .toggle-slider:before {
   flex-wrap: wrap;
   min-width: 0;
   width: 100%;
-  padding-right: 90px;
 }
 
-body.focus-mode .draft-footer {
-  display: none !important;
-}
-
-body.focus-mode #draft-box {
-  padding-bottom: 44px;
+body.focus-mode .draft-footer-left > :not(#btn-commit) {
+  display: none;
 }
 
 body.theme-dark .draft-footer {
@@ -2278,10 +2273,7 @@ body.theme-dark .draft-footer {
 }
 
 .btn-commit-mini {
-  position: absolute;
-  right: 12px;
-  bottom: 12px;
-  z-index: 5;
+  margin-left: auto;
   background: var(--accent);
   color: #ffffff;
   border: 1px solid var(--accent);
