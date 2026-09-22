@@ -765,7 +765,7 @@
         <button id="btn-clear-safety-archive" class="drive-pill-btn" style="color: #ff6b6b; border-color: rgba(255, 107, 107, 0.3);">🗑️ Clear Local Archive</button>
       </div>
 
-      <div class="drive-files-container" style="max-height: 380px;">
+      <div class="drive-files-container" style="max-height: 240px; margin-bottom: 20px;">
         <div id="archive-empty-message" class="drive-state-message">
           <span>🛡️</span><br><br>
           No deleted books or reset snapshots in your safety archive.<br>
@@ -774,6 +774,34 @@
         <ul id="archive-files-list" class="drive-files-list hidden">
           <!-- Populated dynamically -->
         </ul>
+      </div>
+
+      <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <h4 style="font-size: 13px; font-weight: 600; color: #e0e0e0; margin: 0;">☁️ Cloud Backups (Automatic Daily & Safety Snapshots)</h4>
+        </div>
+        <div class="drive-files-container" style="max-height: 200px;">
+          <div id="cloud-archive-empty-message" class="drive-state-message" style="padding: 16px;">
+            <span style="font-size:11px; color:#888;">No cloud backups found or signed out.</span>
+          </div>
+          <ul id="cloud-archive-files-list" class="drive-files-list hidden">
+            <!-- Populated dynamically -->
+          </ul>
+        </div>
+      </div>
+
+      <div style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px; margin-top: 16px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <h4 style="font-size: 13px; font-weight: 600; color: #e0e0e0; margin: 0;">📡 Restore from Station (Published Streams)</h4>
+        </div>
+        <div class="drive-files-container" style="max-height: 200px;">
+          <div id="station-archive-empty-message" class="drive-state-message" style="padding: 16px;">
+            <span style="font-size:11px; color:#888;">No published Station streams found or signed out.</span>
+          </div>
+          <ul id="station-archive-files-list" class="drive-files-list hidden">
+            <!-- Populated dynamically -->
+          </ul>
+        </div>
       </div>
     </div>
   </div>

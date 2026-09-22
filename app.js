@@ -283,6 +283,10 @@ function initDOM() {
     archiveStatusSummary: document.getElementById('archive-status-summary'),
     archiveEmptyMessage: document.getElementById('archive-empty-message'),
     archiveFilesList: document.getElementById('archive-files-list'),
+    cloudArchiveFilesList: document.getElementById('cloud-archive-files-list'),
+    cloudArchiveEmptyMessage: document.getElementById('cloud-archive-empty-message'),
+    stationArchiveFilesList: document.getElementById('station-archive-files-list'),
+    stationArchiveEmptyMessage: document.getElementById('station-archive-empty-message'),
 
     btnGoogleSignIn: document.getElementById('btn-google-signin'),
     btnGuestSignIn: document.getElementById('btn-guest-signin'),
@@ -913,6 +917,10 @@ function handleSignOut() {
   }
   googleAccessToken = null;
   setSafeSessionItem('google_drive_access_token', null);
+  initialSnapshotReceived = false;
+  hasDeferredPushBeforeInitialSnapshot = false;
+  lastKnownCloudData = null;
+  localClientWriteId = null;
   if (firestoreUnsubscribe) {
     firestoreUnsubscribe();
     firestoreUnsubscribe = null;
@@ -1000,6 +1008,31 @@ function renderUserUI() {
 let localClientWriteId = null;
 let pendingRemoteSnapshot = null;
 let firestoreSyncTimeout = null;
+let initialSnapshotReceived = false;
+let hasDeferredPushBeforeInitialSnapshot = false;
+let lastKnownCloudData = null;
+
+// Returns true if the books array is empty or contains only the auto-created default empty note with no user text
+function isOnlyDefaultFirstNote(books) {
+  if (!books || !Array.isArray(books) || books.length === 0) return true;
+  if (books.length === 1) {
+    const b = books[0];
+    const isDefaultTitle = !b.title || b.title === 'first note' || b.title === 'My First Book';
+    if (!isDefaultTitle) return false;
+    const pages = Array.isArray(b.pages) ? b.pages : [];
+    const hasUserContent = pages.some(p => {
+      if (p.description && p.description.trim()) return true;
+      if (Array.isArray(p.chunks) && p.chunks.some(c => c && c.text && c.text.trim())) return true;
+      return false;
+    });
+    return !hasUserContent;
+  }
+  return false;
+}
+
+function isLocalEmptyOrDefault(books = state.books) {
+  return !books || !Array.isArray(books) || books.length === 0 || isOnlyDefaultFirstNote(books);
+}
 
 // Estimate UTF-8 byte size of JSON stringified object
 function estimatePayloadByteSize(obj) {
@@ -1046,11 +1079,26 @@ function sanitizeBooksForCloudSync(books) {
   });
 }
 
-function syncToFirestore() {
+function syncToFirestore(userIntentReset = false) {
   if (!db || !currentUser || isAnonymousUser()) return;
   if (requiresEmailVerification()) {
     showVerificationRequiredNotice();
     return;
+  }
+
+  // Pull-before-push guard: don't push until initial remote snapshot has arrived
+  if (!initialSnapshotReceived && !userIntentReset) {
+    console.log("[FirestoreSync] Pull-before-push: deferring push until initial snapshot is received.");
+    hasDeferredPushBeforeInitialSnapshot = true;
+    return;
+  }
+
+  if (userIntentReset) {
+    if (firestoreSyncTimeout) {
+      clearTimeout(firestoreSyncTimeout);
+      firestoreSyncTimeout = null;
+    }
+    return executeFirestoreSync(true);
   }
 
   // Debounce rapid typing sync calls so Firestore writes aren't hammered on every keystroke
@@ -1060,22 +1108,94 @@ function syncToFirestore() {
 
   firestoreSyncTimeout = setTimeout(() => {
     firestoreSyncTimeout = null;
-    executeFirestoreSync();
+    executeFirestoreSync(false);
   }, 1200);
 }
 
-function executeFirestoreSync() {
+async function executeFirestoreSync(userIntentReset = false) {
   if (!db || !currentUser || isAnonymousUser()) return;
   if (requiresEmailVerification()) {
     showVerificationRequiredNotice();
     return;
   }
+
+  // Pull-before-push guard on boot/sign-in
+  if (!initialSnapshotReceived && !userIntentReset) {
+    console.log("[FirestoreSync] Pull-before-push: execution deferred until initial snapshot is received.");
+    hasDeferredPushBeforeInitialSnapshot = true;
+    return;
+  }
+
+  // Read the current cloud doc (or use the last snapshot)
+  let cloudData = lastKnownCloudData;
+  if (!cloudData && typeof navigator !== 'undefined' && navigator.onLine) {
+    try {
+      const remoteDoc = await db.collection("users").doc(currentUser.uid).get();
+      if (remoteDoc && remoteDoc.exists) {
+        cloudData = remoteDoc.data();
+        lastKnownCloudData = cloudData;
+      }
+    } catch (fetchErr) {
+      console.warn("[FirestoreSync] Could not read remote user doc before push:", fetchErr);
+    }
+  }
+
+  const cloudBooks = (cloudData && Array.isArray(cloudData.books)) ? cloudData.books : [];
+  const hasCloudBooks = cloudBooks.length > 0;
+
+  // Gate every cloud push: if cloud doc has non-empty books and local books are empty or default first note,
+  // SKIP the push and apply the cloud snapshot locally instead. Never overwrite non-empty cloud books with empty local state.
+  if (!userIntentReset) {
+    const localEmptyOrDefault = isLocalEmptyOrDefault(state.books);
+
+    if (hasCloudBooks && localEmptyOrDefault) {
+      console.warn(`[FirestoreSync] Cloud has ${cloudBooks.length} books, but local state is empty or default first note. Skipping cloud push and restoring from cloud backup.`);
+      if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Restored from Cloud";
+      applyRemoteSnapshot(cloudData);
+      showToast("Restored your manuscripts from cloud backup.");
+      return;
+    }
+
+    if (localEmptyOrDefault) {
+      // Auto-created default book must never trigger a cloud write on its own
+      console.log("[FirestoreSync] Local books contain only auto-created default note. Skipping cloud write.");
+      if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Up to date";
+      return;
+    }
+  }
+
+  const sanitizedBooks = sanitizeBooksForCloudSync(state.books);
+  const outgoingCount = Array.isArray(sanitizedBooks) ? sanitizedBooks.length : 0;
+  const cloudBooksCount = cloudBooks.length;
+
+  // Safety net: before any push that would put fewer books in the cloud than are already there,
+  // stash the outgoing cloud payload somewhere recoverable (a separate Firestore field or a local backup key).
+  let backupField = null;
+  if (cloudBooksCount > 0 && outgoingCount < cloudBooksCount) {
+    console.warn(`[FirestoreSync] Safety net: Outgoing payload has ${outgoingCount} books vs ${cloudBooksCount} in cloud. Stashing safety backup.`);
+    backupField = {
+      books: cloudBooks,
+      stashedAt: Date.now(),
+      reason: userIntentReset ? 'user_reset' : 'fewer_books_guard'
+    };
+
+    SafeStorage.setItem('typewriter_safety_cloud_backup', {
+      books: cloudBooks,
+      outgoingBooks: sanitizedBooks,
+      timestamp: Date.now(),
+      reason: userIntentReset ? 'user_reset' : 'fewer_books_guard'
+    });
+
+    if (typeof createSafetyBackupForReset === 'function') {
+      createSafetyBackupForReset(cloudBooks, state.settings, 'Cloud Pre-Overwrite Safety Backup');
+    }
+  }
+
   if (DOM.syncStatus) DOM.syncStatus.textContent = "🔄 Syncing...";
 
   const writeId = 'w_' + Date.now() + '_' + Math.random().toString(36).substr(2, 7);
   localClientWriteId = writeId;
 
-  const sanitizedBooks = sanitizeBooksForCloudSync(state.books);
   const payload = {
     books: sanitizedBooks,
     settings: state.settings,
@@ -1085,6 +1205,10 @@ function executeFirestoreSync() {
     lastWriteId: writeId,
     lastSynced: firebase.firestore.FieldValue.serverTimestamp()
   };
+
+  if (backupField) {
+    payload.previousCloudBooksBackup = backupField;
+  }
 
   const payloadSize = estimatePayloadByteSize(payload);
   const MAX_FIRESTORE_SIZE = 950 * 1024; // 950 KB threshold (below Firestore 1,048,576 bytes limit)
@@ -1100,17 +1224,22 @@ function executeFirestoreSync() {
     return;
   }
 
-  db.collection("users").doc(currentUser.uid).set(payload, { merge: true }).then(() => {
-    if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Firestore Synced";
-    showTopSyncNotification("☁️ Synced with Firestore");
-  }).catch((e) => {
+  try {
+    await db.collection("users").doc(currentUser.uid).set(payload, { merge: true });
+    lastKnownCloudData = { ...payload, books: sanitizedBooks };
+    if (DOM.syncStatus) DOM.syncStatus.textContent = userIntentReset ? "☁️ Studio Reset Synced" : "☁️ Firestore Synced";
+    if (!userIntentReset) {
+      showTopSyncNotification("☁️ Synced with Firestore");
+      checkAndPerformDailyCloudBackup();
+    }
+  } catch (e) {
     console.warn("Firestore sync error:", e);
     if (e.code === 'permission-denied' && isEmailPasswordUser()) {
       showVerificationRequiredNotice();
       return;
     }
     if (DOM.syncStatus) DOM.syncStatus.textContent = "☁️ Local (Sync paused)";
-  });
+  }
 }
 
 function applyRemoteSnapshot(data) {
@@ -1210,9 +1339,21 @@ function subscribeToFirestore(uid) {
   if (!db) return;
   if (firestoreUnsubscribe) firestoreUnsubscribe();
 
+  initialSnapshotReceived = false;
+  hasDeferredPushBeforeInitialSnapshot = false;
+
   firestoreUnsubscribe = db.collection("users").doc(uid).onSnapshot((doc) => {
+    const isFirstSnapshot = !initialSnapshotReceived;
+    initialSnapshotReceived = true;
+
     if (!doc.exists) {
-      syncToFirestore();
+      lastKnownCloudData = null;
+      if (hasDeferredPushBeforeInitialSnapshot) {
+        hasDeferredPushBeforeInitialSnapshot = false;
+        if (!isLocalEmptyOrDefault(state.books)) {
+          syncToFirestore();
+        }
+      }
       return;
     }
 
@@ -1223,6 +1364,7 @@ function subscribeToFirestore(uid) {
 
     const data = doc.data();
     if (!data) return;
+    lastKnownCloudData = data;
 
     // If this snapshot was produced by this client's own write, do not re-render or interrupt playback
     if (data.lastWriteId && data.lastWriteId === localClientWriteId) {
@@ -1238,6 +1380,13 @@ function subscribeToFirestore(uid) {
 
     applyRemoteSnapshot(data);
     reconcileStationPublishState();
+
+    if (isFirstSnapshot && hasDeferredPushBeforeInitialSnapshot) {
+      hasDeferredPushBeforeInitialSnapshot = false;
+      if (!isLocalEmptyOrDefault(state.books)) {
+        syncToFirestore();
+      }
+    }
   }, (e) => {
     console.warn("Firestore snapshot error:", e);
     if (e.code === 'permission-denied' && isEmailPasswordUser()) {
@@ -3686,7 +3835,7 @@ function loadStorage() {
   }
 
   if (!state.books || state.books.length === 0) {
-    createNewBook("first note", false);
+    createNewBook("first note", false, false);
   }
 
   // 5. Asynchronously hydrate from IndexedDB & migrate legacy localStorage to IndexedDB
@@ -3803,6 +3952,9 @@ function switchStorageNamespace(namespace, hydrate) {
   idbSavePending = false;
   pendingRemoteSnapshot = null;
   localClientWriteId = null;
+  initialSnapshotReceived = false;
+  hasDeferredPushBeforeInitialSnapshot = false;
+  lastKnownCloudData = null;
   activeStorageNamespace = namespace;
   state.books = [];
   state.activeBookId = null;
@@ -3813,7 +3965,7 @@ function switchStorageNamespace(namespace, hydrate) {
   renderAll();
 }
 
-function saveStorage(syncCloud = true, immediateDisk = false) {
+function saveStorage(syncCloud = true, immediateDisk = false, userIntentReset = false) {
   try {
     state.settings.settingsVersion = CURRENT_SETTINGS_VERSION;
     state.settings.schemaVersion = CURRENT_SCHEMA_VERSION;
@@ -3838,7 +3990,7 @@ function saveStorage(syncCloud = true, immediateDisk = false) {
   }
 
   if (syncCloud && currentUser) {
-    syncToFirestore();
+    syncToFirestore(userIntentReset);
   }
 
   const stationBook = getActiveBook();
@@ -4047,8 +4199,154 @@ function createSafetyBackupForReset(books, settings, reason = 'Full Studio Reset
       books: migratedBooks,
       version: CURRENT_SCHEMA_VERSION,
       schemaVersion: CURRENT_SCHEMA_VERSION,
+      clientTimestamp: Date.now(),
       createdAt: firebase.firestore.FieldValue.serverTimestamp()
     }).catch(e => console.warn("Firestore reset safety backup error:", e));
+  }
+}
+
+async function checkAndPerformDailyCloudBackup() {
+  if (!db || !currentUser || isAnonymousUser() || requiresEmailVerification()) return;
+  if (isLocalEmptyOrDefault(state.books)) return;
+
+  const LAST_BACKUP_KEY = 'typewriter_last_cloud_backup_time';
+  const lastBackupTime = Number(SafeStorage.getItem(LAST_BACKUP_KEY) || 0);
+  const now = Date.now();
+  const ONE_DAY = 24 * 60 * 60 * 1000;
+
+  if (now - lastBackupTime < ONE_DAY) {
+    return;
+  }
+
+  try {
+    const { books: migratedBooks } = migrateBooksSchema(state.books);
+    const migratedSettings = migrateSettingsSchema(state.settings);
+
+    let totalWords = 0;
+    let totalPages = 0;
+    migratedBooks.forEach(b => {
+      const s = calculateBookStats(b);
+      totalWords += s.words;
+      totalPages += s.pages;
+    });
+
+    const nowIso = new Date().toISOString();
+    const backupDoc = {
+      type: 'auto_daily',
+      reason: 'Automatic daily backup',
+      backupDate: nowIso,
+      totalBooks: migratedBooks.length,
+      stats: { words: totalWords, pages: totalPages, books: migratedBooks.length },
+      books: JSON.parse(JSON.stringify(migratedBooks)),
+      settings: { ...migratedSettings },
+      version: CURRENT_SCHEMA_VERSION,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      clientTimestamp: Date.now(),
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    const payloadSize = estimatePayloadByteSize(backupDoc);
+    const MAX_FIRESTORE_SIZE = 900 * 1024; // 900 KB threshold
+
+    if (payloadSize > MAX_FIRESTORE_SIZE) {
+      console.warn(`[CloudBackup] Automatic daily backup size (${Math.round(payloadSize / 1024)} KB) exceeds Firestore limit. Skipping Firestore backup and using Drive sync.`);
+      if (googleAccessToken) {
+        saveBackupToDrive().catch(() => {});
+      }
+      SafeStorage.setItem(LAST_BACKUP_KEY, now.toString());
+      return;
+    }
+
+    const backupsRef = db.collection("users").doc(currentUser.uid).collection("safety_backups");
+    await backupsRef.add(backupDoc);
+    SafeStorage.setItem(LAST_BACKUP_KEY, now.toString());
+
+    // Retention: keep 10 most recent safety_backups docs per user; delete older ones
+    const snapshot = await backupsRef.orderBy("clientTimestamp", "desc").get();
+    if (snapshot.docs.length > 10) {
+      const batch = db.batch();
+      for (let i = 10; i < snapshot.docs.length; i++) {
+        batch.delete(snapshot.docs[i].ref);
+      }
+      await batch.commit();
+    }
+    console.log("[CloudBackup] Automatic daily cloud safety backup successfully created.");
+  } catch (err) {
+    console.warn("[CloudBackup] Error creating automatic daily cloud safety backup:", err);
+  }
+}
+
+async function fetchAndRenderCloudSafetyBackups() {
+  const cloudListEl = DOM.cloudArchiveFilesList;
+  const cloudEmptyEl = DOM.cloudArchiveEmptyMessage;
+  if (!cloudListEl || !cloudEmptyEl) return;
+
+  if (!db || !currentUser || isAnonymousUser() || requiresEmailVerification()) {
+    cloudEmptyEl.classList.remove('hidden');
+    cloudListEl.classList.add('hidden');
+    cloudListEl.innerHTML = '';
+    return;
+  }
+
+  try {
+    const snapshot = await db.collection("users").doc(currentUser.uid).collection("safety_backups").orderBy("clientTimestamp", "desc").limit(10).get();
+    if (snapshot.empty) {
+      cloudEmptyEl.classList.remove('hidden');
+      cloudListEl.classList.add('hidden');
+      cloudListEl.innerHTML = '';
+      return;
+    }
+
+    cloudEmptyEl.classList.add('hidden');
+    cloudListEl.classList.remove('hidden');
+    cloudListEl.innerHTML = '';
+
+    snapshot.docs.forEach(docSnap => {
+      const data = docSnap.data();
+      const docId = docSnap.id;
+      const books = data.books || [];
+      let words = data.stats?.words || 0;
+      let pages = data.stats?.pages || 0;
+      if (!words && books.length > 0) {
+        books.forEach(b => {
+          const s = calculateBookStats(b);
+          words += s.words;
+          pages += s.pages;
+        });
+      }
+      const dateObj = data.clientTimestamp ? new Date(data.clientTimestamp) : (data.backupDate ? new Date(data.backupDate) : new Date());
+      const dateFormatted = isNaN(dateObj.getTime()) ? 'Recent' : dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      const reason = data.reason || 'Automatic daily backup';
+      const booksCount = books.length;
+      const subtext = `${dateFormatted} • ${reason} • ${booksCount} book${booksCount === 1 ? '' : 's'} • ${words.toLocaleString()} words`;
+
+      const li = document.createElement('li');
+      li.className = 'drive-file-item';
+      li.innerHTML = `
+        <div class="drive-file-main">
+          <span class="drive-file-icon">☁️</span>
+          <div class="drive-file-details">
+            <span class="drive-file-name" title="${reason}">Cloud Backup (${booksCount} Books)</span>
+            <span class="drive-file-subtext">${subtext}</span>
+          </div>
+        </div>
+        <div class="drive-file-actions">
+          <button class="drive-pill-btn btn-inspect-cloud" data-id="${docId}" title="Inspect & Restore Cloud Backup" style="background:#1b3d22; border-color:#2a7238; color:#7ee896;">
+            📂 Inspect & Restore
+          </button>
+        </div>
+      `;
+
+      li.querySelector('.btn-inspect-cloud').onclick = () => {
+        openBackupInspectModal(data, `Cloud Backup (${dateFormatted})`);
+      };
+
+      cloudListEl.appendChild(li);
+    });
+  } catch (err) {
+    console.warn("[CloudBackups] Could not fetch cloud safety backups:", err);
+    cloudEmptyEl.classList.remove('hidden');
+    cloudListEl.classList.add('hidden');
   }
 }
 
@@ -4065,13 +4363,175 @@ function closeSafetyArchiveModal() {
   }
 }
 
+async function fetchAndRenderStationBackups() {
+  const listEl = DOM.stationArchiveFilesList;
+  const emptyEl = DOM.stationArchiveEmptyMessage;
+  if (!listEl || !emptyEl) return;
+
+  if (!db || !currentUser || isAnonymousUser() || requiresEmailVerification()) {
+    emptyEl.classList.remove('hidden');
+    listEl.classList.add('hidden');
+    listEl.innerHTML = '';
+    return;
+  }
+
+  try {
+    const snapshot = await db.collection('station').where('ownerUid', '==', currentUser.uid).get();
+    if (snapshot.empty) {
+      emptyEl.classList.remove('hidden');
+      listEl.classList.add('hidden');
+      listEl.innerHTML = '';
+      return;
+    }
+
+    emptyEl.classList.add('hidden');
+    listEl.classList.remove('hidden');
+    listEl.innerHTML = '';
+
+    snapshot.docs.forEach(docSnap => {
+      const data = docSnap.data();
+      const bookId = docSnap.id;
+      const title = data.title || 'Untitled Manuscript';
+      const stationName = data.stationName || '';
+      const pages = data.pages || [];
+      const isLive = data.isLive === true;
+      let totalWords = 0;
+      pages.forEach(p => {
+        if (Array.isArray(p.chunks)) {
+          p.chunks.forEach(c => {
+            if (c.text) totalWords += c.text.trim().split(/\s+/).filter(Boolean).length;
+          });
+        }
+      });
+      const updatedAt = data.updatedAt || data.createdAt || Date.now();
+      const dateObj = typeof updatedAt === 'number' ? new Date(updatedAt) : (updatedAt.toDate ? updatedAt.toDate() : new Date());
+      const dateFormatted = isNaN(dateObj.getTime()) ? 'Recent' : dateObj.toLocaleDateString() + ' ' + dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      const li = document.createElement('li');
+      li.className = 'drive-file-item';
+      li.innerHTML = `
+        <div class="drive-file-main">
+          <span class="drive-file-icon">📡</span>
+          <div class="drive-file-details">
+            <span class="drive-file-name" title="${escapeHtml(title)}">${escapeHtml(title)} ${stationName ? `(${escapeHtml(stationName)})` : ''}</span>
+            <span class="drive-file-subtext">${dateFormatted} • ${pages.length} page${pages.length === 1 ? '' : 's'} • ${totalWords.toLocaleString()} words ${isLive ? '• <span style="color:#7ee896">● LIVE</span>' : ''}</span>
+          </div>
+        </div>
+        <div class="drive-file-actions">
+          <button class="drive-pill-btn btn-restore-station" data-id="${bookId}" title="Restore this book from Station" style="background:#1b3d22; border-color:#2a7238; color:#7ee896;">
+            📥 Restore
+          </button>
+        </div>
+      `;
+
+      li.querySelector('.btn-restore-station').onclick = () => {
+        restoreBookFromStation(bookId, data);
+      };
+
+      listEl.appendChild(li);
+    });
+  } catch (err) {
+    console.warn("[StationRestore] Could not fetch station docs:", err);
+    emptyEl.classList.remove('hidden');
+    listEl.classList.add('hidden');
+  }
+}
+
+function restoreBookFromStation(bookId, stationData) {
+  const title = stationData.title || 'Restored Station Book';
+  const stationName = stationData.stationName || '';
+  const rawPages = stationData.pages || [];
+
+  const rebuiltPages = rawPages.map((sp, idx) => ({
+    id: 'page_' + (sp.number || (idx + 1)) + '_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+    number: sp.number || (idx + 1),
+    description: '',
+    tags: [],
+    chunks: Array.isArray(sp.chunks) ? sp.chunks.map(c => ({
+      id: 'chunk_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+      text: c.text || '',
+      timestamp: c.timestamp || new Date().toISOString()
+    })) : [],
+    locked: true,
+    targetWordCount: 300,
+    version: CURRENT_SCHEMA_VERSION,
+    schemaVersion: CURRENT_SCHEMA_VERSION
+  }));
+
+  const rebuiltBook = migrateSingleBook({
+    id: bookId,
+    title: title,
+    stationName: stationName,
+    synopsis: '',
+    tags: [],
+    folderId: null,
+    category: '',
+    starred: false,
+    archived: false,
+    wordTarget: 80000,
+    bestWpm: 0,
+    stationPublished: true,
+    stationLive: stationData.isLive === true,
+    pages: rebuiltPages,
+    createdAt: stationData.createdAt || Date.now(),
+    updatedAt: Date.now(),
+    lastAccessedAt: Date.now(),
+    version: CURRENT_SCHEMA_VERSION,
+    schemaVersion: CURRENT_SCHEMA_VERSION
+  });
+
+  const existingIndex = state.books.findIndex(b => b.id === bookId);
+  if (existingIndex !== -1) {
+    const action = prompt(`A book with title "${rebuiltBook.title}" already exists locally.\n\nType 'replace' to overwrite, 'merge' to append missing pages, or cancel.`, "merge");
+    if (!action) return;
+    const lower = action.trim().toLowerCase();
+    if (lower === 'replace') {
+      state.books[existingIndex] = rebuiltBook;
+    } else if (lower === 'merge') {
+      const existingBook = state.books[existingIndex];
+      rebuiltBook.pages.forEach(newP => {
+        const found = existingBook.pages.find(p => p.number === newP.number);
+        if (!found) {
+          existingBook.pages.push(newP);
+        } else {
+          newP.chunks.forEach(nc => {
+            if (!existingBook.pages.some(p => p.chunks.some(c => c.text === nc.text))) {
+              found.chunks.push(nc);
+            }
+          });
+        }
+      });
+      existingBook.updatedAt = Date.now();
+    } else {
+      return;
+    }
+  } else {
+    state.books.push(rebuiltBook);
+  }
+
+  state.activeBookId = rebuiltBook.id;
+  if (rebuiltBook.pages && rebuiltBook.pages.length > 0) {
+    state.currentPageId = rebuiltBook.pages[rebuiltBook.pages.length - 1].id;
+  }
+
+  saveStorage(true, false, true /* userIntentReset */);
+  closeSafetyArchiveModal();
+  renderAll();
+  showToast(`Successfully restored "${rebuiltBook.title}" from Station stream!`);
+  playCarriageReturnBell();
+}
+
 function renderSafetyArchiveList() {
   const archive = getSafetyArchive();
   updateSafetyArchiveBadge();
 
   if (DOM.archiveStatusSummary) {
-    DOM.archiveStatusSummary.textContent = `${archive.length} safety backup${archive.length === 1 ? '' : 's'} stored locally`;
+    DOM.archiveStatusSummary.textContent = `${archive.length} local safety backup${archive.length === 1 ? '' : 's'} stored`;
   }
+
+  // Fetch and render cloud backups and station backups as well
+  fetchAndRenderCloudSafetyBackups();
+  fetchAndRenderStationBackups();
 
   if (!DOM.archiveFilesList || !DOM.archiveEmptyMessage) return;
 
@@ -4401,6 +4861,13 @@ function executeBackupRestore(replaceMode = true) {
     closeOverlay();
     showToast(`Appended ${addedCount} book${addedCount === 1 ? '' : 's'} to your current session!`);
     playCarriageReturnBell();
+  }
+
+  // Restoring is explicit user intent: bypass empty-push guard via userIntentReset, then push restored books to cloud
+  if (db && currentUser && !isAnonymousUser()) {
+    executeFirestoreSync(true /* userIntentReset */).catch(err => {
+      console.warn("[Restore] Cloud sync after restore failed:", err);
+    });
   }
 }
 
@@ -5533,7 +6000,7 @@ function handleFileLoadedFromDevice(file) {
 
 // ─── BOOK & PAGE MANAGEMENT ─────────────────────────────────
 
-function createNewBook(titlePrompt = null, showNotification = true) {
+function createNewBook(titlePrompt = null, showNotification = true, syncCloud = true) {
   const title = titlePrompt || prompt("Enter a name for your new book slot:", `Book ${state.books.length + 1}`);
   if (!title || !title.trim()) return;
 
@@ -5575,7 +6042,7 @@ function createNewBook(titlePrompt = null, showNotification = true) {
   state.activeBookId = newBook.id;
   state.currentPageId = firstPage.id;
 
-  saveStorage();
+  saveStorage(syncCloud);
   renderAll();
 
   if (showNotification) {
@@ -5626,7 +6093,11 @@ function deleteCurrentBook() {
 }
 
 function createNewPage(showNotification = true) {
-  const book = getActiveBook();
+  let book = getActiveBook();
+  if (!book) {
+    createNewBook("first note", false, false);
+    book = getActiveBook();
+  }
   if (!book) return;
 
   const newNum = book.pages.length + 1;
@@ -6075,6 +6546,10 @@ function commitDraft() {
   };
 
   currentKeystrokeSession = { snapshots: [], startTime: null, lastTime: null };
+
+  if (!state.books || state.books.length === 0) {
+    createNewBook("first note", false, false);
+  }
 
   const page = getCurrentPage();
   if (!page || page.locked) {
@@ -6772,7 +7247,13 @@ function renderActivePage(lastChunkIsNew = false) {
   cancelTypewriterAnimation();
   const book = getActiveBook();
   const page = getCurrentPage();
-  if (!page || !book) return;
+  if (!page || !book) {
+    if (DOM.inkStream) DOM.inkStream.innerHTML = '';
+    if (DOM.pageHeaderInfo) DOM.pageHeaderInfo.textContent = '';
+    const pageSheetHeader = document.getElementById('page-sheet-header');
+    if (pageSheetHeader) pageSheetHeader.remove();
+    return;
+  }
 
   const pageChanged = lastRenderedPageId !== page.id;
   lastRenderedPageId = page.id;
@@ -8454,7 +8935,20 @@ function setupEventListeners() {
         const preservedArchive = [...memorySafetyArchive];
         SafeStorage.clear();
 
+        if (firestoreSyncTimeout) {
+          clearTimeout(firestoreSyncTimeout);
+          firestoreSyncTimeout = null;
+        }
+        if (idbSaveTimer) {
+          clearTimeout(idbSaveTimer);
+          idbSaveTimer = null;
+        }
+        idbSavePending = false;
+
         state.books = [];
+        state.activeBookId = null;
+        state.currentPageId = null;
+        state.buffer = '';
         state.settings = {
           maxChars: 200,
           wordsPerPage: 300,
@@ -8476,9 +8970,26 @@ function setupEventListeners() {
         applyTheme();
         applyFont();
         applySettingsUI();
-        createNewBook("first note", false);
         saveSafetyArchive(preservedArchive);
-        saveStorage(false);
+
+        // Clear local storage and IndexedDB
+        SafeStorage.setItem(getStorageKey('typewriter_books'), []);
+        try {
+          await idbSet(getStorageKey('typewriter_books'), []);
+        } catch (e) {
+          console.warn("[Reset] IndexedDB clear failed:", e);
+        }
+
+        // Explicitly clear cloud books via userIntentReset flag (bypasses empty guard)
+        if (db && currentUser && !isAnonymousUser()) {
+          try {
+            await executeFirestoreSync(true /* userIntentReset */);
+          } catch (e) {
+            console.warn("[Reset] Cloud reset sync failed:", e);
+          }
+        }
+
+        renderAll();
         closeSafetyArchiveModal();
         closeOverlay();
         showToast("Studio data reset. Safety backup of all books was saved & downloaded.");
