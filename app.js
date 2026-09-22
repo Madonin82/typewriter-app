@@ -7040,6 +7040,7 @@ function renderAll(lastChunkIsNew = false) {
   updateStationControls();
   renderUserUI();
   updateOfflineModeUI();
+  syncWriterScrollbarWidth();
 }
 
 function renderBookSlotsDropdown() {
@@ -7793,6 +7794,13 @@ function renderActivePage(lastChunkIsNew = false) {
     if (draftOverlay) draftOverlay.classList.remove('hidden');
     if (lockedOverlay) lockedOverlay.classList.add('hidden');
   }
+}
+
+function syncWriterScrollbarWidth() {
+  const ws = DOM.writingSurface || document.getElementById('writing-surface');
+  if (!ws) return;
+  const sbw = ws.offsetWidth - ws.clientWidth;
+  document.documentElement.style.setProperty('--ws-scrollbar-w', `${sbw}px`);
 }
 
 function updateDraftInputCursorAlignment() {
@@ -8766,8 +8774,14 @@ function setupEventListeners() {
 
   // Window Resize & Cursor Alignment
   window.addEventListener('resize', () => {
+    syncWriterScrollbarWidth();
     updateDraftInputCursorAlignment();
   });
+  if (window.ResizeObserver && DOM.writingSurface) {
+    new ResizeObserver(() => {
+      syncWriterScrollbarWidth();
+    }).observe(DOM.writingSurface);
+  }
 
   // Mobile Visual Viewport Adjustment for Keyboard
   if (window.visualViewport) {
@@ -9637,6 +9651,7 @@ function init() {
   applySettingsUI();
   initFirebase();
   renderAll();
+  syncWriterScrollbarWidth();
   updateSafetyArchiveBadge();
   checkPwaInstallState();
   updateNetworkStatus(navigator.onLine);
