@@ -1875,6 +1875,10 @@ function setupStationFloatingMenu(data, displaySettings, unreadInfo = null) {
   panel.className = 'station-floating-panel hidden';
   panel.setAttribute('aria-label', 'Station navigation and display options');
 
+  const scrim = document.createElement('div');
+  scrim.className = 'station-floating-scrim';
+  scrim.setAttribute('aria-hidden', 'true');
+
   const panelHeader = document.createElement('div');
   panelHeader.className = 'station-floating-panel-header';
   const panelTitle = document.createElement('h2');
@@ -1893,6 +1897,13 @@ function setupStationFloatingMenu(data, displaySettings, unreadInfo = null) {
   const navigationTitle = document.createElement('h3');
   navigationTitle.textContent = 'Navigation';
   navigation.appendChild(navigationTitle);
+
+  const visitInfo = document.createElement('div');
+  visitInfo.className = 'station-visit-info';
+  const totalPageCount = (data.pages || []).length;
+  const newPageCount = unreadInfo ? unreadInfo.unreadCount : 0;
+  visitInfo.textContent = `${totalPageCount} page${totalPageCount === 1 ? '' : 's'} · ${newPageCount} new since your last visit`;
+  navigation.appendChild(visitInfo);
 
   if (unreadInfo && unreadInfo.unreadCount > 0 && unreadInfo.firstUnreadPageIndex >= 0) {
     const jumpUnreadBtn = document.createElement('button');
@@ -1953,11 +1964,12 @@ function setupStationFloatingMenu(data, displaySettings, unreadInfo = null) {
     pageButton.setAttribute('role', 'option');
     pageButton.dataset.pageIndex = String(index);
     const pageName = typeof page.description === 'string' ? page.description.trim() : '';
-    if (pageName) {
+    const pageLabel = `Page ${page.number}`;
+    if (pageName && pageName.toLowerCase() !== pageLabel.toLowerCase()) {
       pageButton.classList.add('has-title');
-      pageButton.innerHTML = `<span class="station-page-jump-title">${escapeHtml(pageName)}</span><span class="station-page-jump-sub">Page ${page.number}</span>`;
+      pageButton.innerHTML = `<span class="station-page-jump-title">${escapeHtml(pageName)}</span><span class="station-page-jump-sub">${escapeHtml(pageLabel)}</span>`;
     } else {
-      pageButton.textContent = `Page ${page.number}`;
+      pageButton.textContent = pageName || pageLabel;
     }
     if (unreadInfo && unreadInfo.isPageUnread(index)) {
       const pill = document.createElement('span');
@@ -1978,14 +1990,25 @@ function setupStationFloatingMenu(data, displaySettings, unreadInfo = null) {
   panel.appendChild(navigation);
 
   const displaySection = document.createElement('section');
-  displaySection.className = 'station-floating-section station-floating-display';
-  const displayTitle = document.createElement('h3');
-  displayTitle.textContent = 'Display options';
-  displaySection.append(displayTitle, createStationReaderMenu(displaySettings));
+  displaySection.className = 'station-floating-section station-floating-display is-collapsed';
+  const displayTitle = document.createElement('button');
+  displayTitle.type = 'button';
+  displayTitle.className = 'station-display-toggle';
+  displayTitle.setAttribute('aria-expanded', 'false');
+  displayTitle.innerHTML = '<span>Display options</span><span class="station-display-chevron" aria-hidden="true">▸</span>';
+  const displayBody = document.createElement('div');
+  displayBody.className = 'station-display-body';
+  displayBody.appendChild(createStationReaderMenu(displaySettings));
+  displayTitle.onclick = () => {
+    const collapsed = displaySection.classList.toggle('is-collapsed');
+    displayTitle.setAttribute('aria-expanded', String(!collapsed));
+  };
+  displaySection.append(displayTitle, displayBody);
   panel.appendChild(displaySection);
 
   const setPanelOpen = (open) => {
     panel.classList.toggle('hidden', !open);
+    scrim.classList.toggle('visible', open);
     toggle.setAttribute('aria-expanded', String(open));
     toggle.setAttribute('aria-label', open ? 'Close Station navigation and display options' : 'Open Station navigation and display options');
     if (open) close.focus();
@@ -1993,6 +2016,7 @@ function setupStationFloatingMenu(data, displaySettings, unreadInfo = null) {
   const closePanel = () => setPanelOpen(false);
   toggle.onclick = () => setPanelOpen(panel.classList.contains('hidden'));
   close.onclick = closePanel;
+  scrim.onclick = closePanel;
 
   const onDocumentClick = (event) => {
     if (!panel.classList.contains('hidden') && !panel.contains(event.target) && event.target !== toggle) closePanel();
@@ -2012,7 +2036,7 @@ function setupStationFloatingMenu(data, displaySettings, unreadInfo = null) {
   document.addEventListener('click', onDocumentClick);
   document.addEventListener('keydown', onKeydown);
 
-  DOM.stationRoot.append(toggle, panel);
+  DOM.stationRoot.append(scrim, toggle, panel);
 
   const totalPagesInDoc = (data.pages || []).length;
   const updateVisiblePages = () => {
@@ -2063,6 +2087,7 @@ function setupStationFloatingMenu(data, displaySettings, unreadInfo = null) {
     if (DOM.stationRoot) DOM.stationRoot.removeEventListener('scroll', updateVisiblePages);
     toggle.remove();
     panel.remove();
+    scrim.remove();
   };
 }
 
