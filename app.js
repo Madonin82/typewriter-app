@@ -8989,6 +8989,9 @@ function setupEventListeners() {
           }
         }
 
+        // Create and load a fresh default book immediately after reset
+        createNewBook("first note", false, false);
+
         renderAll();
         closeSafetyArchiveModal();
         closeOverlay();
