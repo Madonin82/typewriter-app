@@ -24,6 +24,13 @@
   --draft-border: #c8bfaf;
   --draft-text: #1a1a1a;
   --font-family: 'Courier Prime', 'Courier New', monospace;
+  --writer-inset-x: 20px;
+}
+
+@media (max-width: 600px) {
+  :root {
+    --writer-inset-x: 14px;
+  }
 }
 
 /* ─── THEME PALETTES ───────────────────────────────────────── */
@@ -1689,7 +1696,7 @@ body.theme-dark .station-unread-divider::after {
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 20px 20px 50px;
+  padding: 20px var(--writer-inset-x) 50px;
   box-sizing: border-box;
   flex-shrink: 0;
   transition: background-color 0.25s ease;
@@ -2111,7 +2118,7 @@ input:checked + .toggle-slider:before {
   border: 1px solid var(--draft-border);
   border-radius: 6px;
   box-shadow: 0 10px 40px rgba(0, 0, 0, 0.16), 0 2px 8px rgba(0, 0, 0, 0.06);
-  padding: 16px 20px 14px;
+  padding: 16px var(--writer-inset-x) 14px;
   backdrop-filter: blur(8px);
   transition: transform 0.2s ease, opacity 0.2s ease;
   box-sizing: border-box;
@@ -4061,15 +4068,15 @@ body.theme-paper .sync-toast {
     padding: 24px 12px 220px;
   }
   .page {
-    padding: 16px 14px 40px;
+    padding: 16px var(--writer-inset-x) 40px;
   }
   .page.has-timestamps {
-    padding-left: 88px;
+    padding-left: calc(var(--writer-inset-x) + 74px);
   }
   .page.has-timestamps .commit-timestamp {
     position: absolute;
     display: block;
-    left: -80px;
+    left: calc(var(--writer-inset-x) - 6px);
     width: 74px;
     font-size: 10px;
     line-height: 1.25;
@@ -4088,7 +4095,7 @@ body.theme-paper .sync-toast {
   #draft-box {
     margin: 0 auto;
     width: 100%;
-    padding: 10px 12px 8px;
+    padding: 10px var(--writer-inset-x) 8px;
   }
   .draft-footer {
     margin-top: 6px;
