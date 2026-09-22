@@ -100,6 +100,7 @@ let state = {
     typewriterAnim: false,
     replaySpeed: 1, // 1 to 10 (whole number multiplier)
     autoAddSpace: false,
+    offlineMode: false,
     settingsVersion: 2
   }
 };
@@ -326,6 +327,10 @@ function initDOM() {
     settingPrevPageGhost: document.getElementById('setting-prev-page-ghost'),
     settingShowFinishProjection: document.getElementById('setting-show-finish-projection'),
     settingShowGhostRace: document.getElementById('setting-show-ghost-race'),
+    settingOfflineMode: document.getElementById('setting-offline-mode'),
+    btnMenuSave: document.getElementById('btn-menu-save'),
+    btnMenuLoad: document.getElementById('btn-menu-load'),
+    offlineModeIndicator: document.getElementById('offline-mode-indicator'),
 
     statTotalWords: document.getElementById('stat-total-words'),
     statTotalPages: document.getElementById('stat-total-pages'),
@@ -338,6 +343,7 @@ function initDOM() {
     btnExportMd: document.getElementById('btn-export-md'),
     btnExportPdf: document.getElementById('btn-export-pdf'),
     btnExportEpub: document.getElementById('btn-export-epub'),
+    btnExportDocx: document.getElementById('btn-export-docx'),
     btnExportJson: document.getElementById('btn-export-json'),
     btnExportZip: document.getElementById('btn-export-zip'),
     btnCopyAll: document.getElementById('btn-copy-all'),
@@ -1106,6 +1112,7 @@ function sanitizeBooksForCloudSync(books) {
 }
 
 function syncToFirestore(userIntentReset = false) {
+  if (state.settings && state.settings.offlineMode) return;
   if (!db || !currentUser || isAnonymousUser()) return;
   if (requiresEmailVerification()) {
     showVerificationRequiredNotice();
@@ -3737,6 +3744,7 @@ function migrateSettingsSchema(savedSettings) {
     typewriterAnim: false,
     replaySpeed: 1,
     autoAddSpace: false,
+    offlineMode: false,
     activeTagFilter: null,
     activeFolderFilter: null,
     settingsVersion: 2,
@@ -5326,6 +5334,247 @@ async function parseEpubFile(arrayBuffer, filename) {
   };
 }
 
+function updateOfflineModeUI() {
+  const isOffline = Boolean(state.settings && state.settings.offlineMode);
+  const authBlock = document.querySelector('.auth-center-block');
+  const stationControls = document.querySelector('.station-controls');
+  const offlineIndicator = DOM.offlineModeIndicator || document.getElementById('offline-mode-indicator');
+  const offlineBadge = document.getElementById('offline-badge');
+
+  if (authBlock) authBlock.classList.toggle('hidden', isOffline);
+  if (stationControls) stationControls.classList.toggle('hidden', isOffline);
+
+  document.querySelectorAll('.panel-section-label').forEach(lbl => {
+    if (lbl.textContent.includes('Station Broadcast')) {
+      lbl.classList.toggle('hidden', isOffline);
+    }
+  });
+
+  if (offlineIndicator) {
+    offlineIndicator.classList.toggle('hidden', !isOffline);
+  }
+  if (offlineBadge) {
+    offlineBadge.classList.toggle('visible', isOffline);
+    const spanText = offlineBadge.querySelector('span:last-child');
+    if (spanText) {
+      spanText.textContent = isOffline ? "Offline mode — writing stays on this device." : "Offline — Local storage active";
+    }
+  }
+  if (DOM.settingOfflineMode) {
+    DOM.settingOfflineMode.checked = isOffline;
+  }
+}
+
+function saveActiveBookJSON() {
+  const book = getActiveBook();
+  if (!book) {
+    showToast("No active book to save.");
+    return;
+  }
+  const payload = {
+    version: CURRENT_SCHEMA_VERSION,
+    exportDate: new Date().toISOString(),
+    book: book
+  };
+  const jsonStr = JSON.stringify(payload, null, 2);
+  const blob = new Blob([jsonStr], { type: 'application/json' });
+  const cleanTitle = (book.title || 'book').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+  const filename = `${cleanTitle}_backup.json`;
+
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast(`Saved "${book.title}" to device as JSON backup.`);
+  playCarriageReturnBell();
+}
+
+async function exportBookDOCX() {
+  const book = getActiveBook();
+  if (!book) {
+    showToast("No active book to export.");
+    return;
+  }
+  if (!window.docx) {
+    showToast("Word engine is initializing, please try again in a moment.");
+    return;
+  }
+
+  if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
+  if (DOM.saveDeviceModal) DOM.saveDeviceModal.classList.add('hidden');
+
+  try {
+    const { Document, Packer, Paragraph, TextRun, HeadingLevel } = window.docx;
+    const paragraphs = [];
+
+    paragraphs.push(new Paragraph({
+      text: book.title || 'Untitled Manuscript',
+      heading: HeadingLevel.TITLE
+    }));
+
+    if (book.synopsis) {
+      paragraphs.push(new Paragraph({
+        text: `Synopsis: ${book.synopsis}`,
+        italics: true
+      }));
+    }
+
+    paragraphs.push(new Paragraph({ text: "" }));
+
+    if (book.pages && book.pages.length > 0) {
+      book.pages.forEach((page, pIdx) => {
+        paragraphs.push(new Paragraph({
+          text: `Page ${page.number || (pIdx + 1)}${page.description ? ` — ${page.description}` : ''}`,
+          heading: HeadingLevel.HEADING_2
+        }));
+
+        if (page.chunks && page.chunks.length > 0) {
+          page.chunks.forEach(chunk => {
+            const text = (typeof getChunkText === 'function') ? getChunkText(chunk) : (chunk.text || '');
+            if (text) {
+              paragraphs.push(new Paragraph({
+                text: text
+              }));
+            }
+          });
+        }
+        paragraphs.push(new Paragraph({ text: "" }));
+      });
+    }
+
+    const doc = new Document({
+      sections: [{
+        properties: {},
+        children: paragraphs
+      }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const cleanTitle = (book.title || 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const filename = `${cleanTitle}_${new Date().toISOString().slice(0, 10)}.docx`;
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    showToast(`Exported "${book.title}" as Word document (.docx)`);
+    playCarriageReturnBell();
+  } catch (err) {
+    console.error("[DOCX Export] Error:", err);
+    showToast("Failed to export Word document.");
+  }
+}
+
+async function importDOCXFile(file) {
+  if (!window.mammoth) {
+    showToast("Word document parser is initializing, please try again in a moment.");
+    return;
+  }
+
+  try {
+    const arrayBuffer = await file.arrayBuffer();
+    const result = await window.mammoth.extractRawText({ arrayBuffer: arrayBuffer });
+    const text = result.value || '';
+
+    if (!text.trim()) {
+      showToast("The Word document is empty.");
+      return;
+    }
+
+    const rawParagraphs = text.split(/\r?\n\r?\n/).map(p => p.trim()).filter(Boolean);
+    const bookTitle = file.name.replace(/\.[^/.]+$/, "") || "Imported Word Document";
+
+    const newBook = {
+      id: 'book_' + Date.now(),
+      title: bookTitle,
+      synopsis: '',
+      tags: [],
+      folderId: null,
+      category: '',
+      starred: false,
+      archived: false,
+      wordTarget: 80000,
+      bestWpm: 0,
+      pages: [],
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      lastAccessedAt: Date.now(),
+      version: CURRENT_SCHEMA_VERSION,
+      schemaVersion: CURRENT_SCHEMA_VERSION
+    };
+
+    let currentPage = {
+      id: 'page_1_' + Date.now(),
+      number: 1,
+      description: '',
+      tags: [],
+      chunks: [],
+      locked: false,
+      targetWordCount: (state.settings && state.settings.wordsPerPage) || 300,
+      createdAt: Date.now(),
+      updatedAt: Date.now(),
+      version: CURRENT_SCHEMA_VERSION,
+      schemaVersion: CURRENT_SCHEMA_VERSION
+    };
+    newBook.pages.push(currentPage);
+
+    let currentWordCount = 0;
+    const wordsPerPage = (state.settings && state.settings.wordsPerPage) || 300;
+
+    rawParagraphs.forEach((para, idx) => {
+      const words = para.split(/\s+/).filter(Boolean);
+      const paraWordCount = words.length;
+
+      if (currentWordCount > 0 && (currentWordCount + paraWordCount > wordsPerPage)) {
+        currentPage = {
+          id: 'page_' + (newBook.pages.length + 1) + '_' + Date.now() + '_' + idx,
+          number: newBook.pages.length + 1,
+          description: '',
+          tags: [],
+          chunks: [],
+          locked: false,
+          targetWordCount: wordsPerPage,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          version: CURRENT_SCHEMA_VERSION,
+          schemaVersion: CURRENT_SCHEMA_VERSION
+        };
+        newBook.pages.push(currentPage);
+        currentWordCount = 0;
+      }
+
+      currentPage.chunks.push({
+        id: 'chunk_' + Date.now() + '_' + idx,
+        text: para,
+        timestamp: new Date().toISOString()
+      });
+      currentWordCount += paraWordCount;
+    });
+
+    state.books.push(newBook);
+    state.activeBookId = newBook.id;
+    state.currentPageId = newBook.pages[0].id;
+
+    saveStorage(true);
+    renderAll();
+    showToast(`Imported Word document as "${newBook.title}" (${newBook.pages.length} pages)`);
+    playCarriageReturnBell();
+  } catch (err) {
+    console.error("[DOCX Import] Error:", err);
+    showToast("Failed to parse Word document (.docx).");
+  }
+}
+
 async function exportManuscriptEPUB() {
   const book = getActiveBook();
   if (!book) {
@@ -5960,9 +6209,15 @@ function handleFileLoadedFromDevice(file) {
   const filename = file.name;
   const isEpub = /\.epub$/i.test(filename) || (file.type && file.type.includes('epub'));
   const isJson = /\.json$/i.test(filename) || (file.type && file.type.includes('json'));
+  const isDocx = /\.docx$/i.test(filename) || (file.type && file.type.includes('wordprocessingml'));
+
+  if (isDocx) {
+    importDOCXFile(file);
+    if (DOM.fileInputLoadDevice) DOM.fileInputLoadDevice.value = '';
+    return;
+  }
 
   if (isEpub) {
-    const reader = new FileReader();
     reader.onload = async (e) => {
       try {
         const parsedBook = await parseEpubFile(e.target.result, filename);
@@ -6784,6 +7039,7 @@ function renderAll(lastChunkIsNew = false) {
   updateCharCounter();
   updateStationControls();
   renderUserUI();
+  updateOfflineModeUI();
 }
 
 function renderBookSlotsDropdown() {
@@ -7637,6 +7893,7 @@ function applySettingsUI() {
   if (DOM.settingShowFinishProjection) DOM.settingShowFinishProjection.checked = Boolean(state.settings.showFinishProjection);
   if (DOM.settingShowGhostRace) DOM.settingShowGhostRace.checked = Boolean(state.settings.showGhostRace);
   updateCommitHint();
+  updateOfflineModeUI();
 }
 
 let toastDismissTimer = null;
@@ -7685,6 +7942,11 @@ async function exportManuscript(format) {
   }
   if (format === 'epub') {
     await exportManuscriptEPUB();
+    return;
+  }
+  if (format === 'docx') {
+    await exportBookDOCX();
+    if (DOM.exportModal) DOM.exportModal.classList.add('hidden');
     return;
   }
   if (format === 'zip') {
@@ -9160,6 +9422,32 @@ function setupEventListeners() {
     };
   }
 
+  if (DOM.settingOfflineMode) {
+    DOM.settingOfflineMode.onchange = (e) => {
+      state.settings.offlineMode = e.target.checked;
+      saveStorage();
+      applySettingsUI();
+      renderAll();
+      showToast(state.settings.offlineMode ? "Offline mode enabled. Writing stays on this device." : "Offline mode disabled. Signed-out state restored.");
+    };
+  }
+
+  const offlineCard = document.getElementById('offline-mode-card');
+  if (offlineCard && DOM.settingOfflineMode) {
+    offlineCard.onclick = () => {
+      DOM.settingOfflineMode.checked = !DOM.settingOfflineMode.checked;
+      DOM.settingOfflineMode.dispatchEvent(new Event('change'));
+    };
+  }
+
+  if (DOM.btnMenuSave) {
+    DOM.btnMenuSave.onclick = saveActiveBookJSON;
+  }
+
+  if (DOM.btnMenuLoad) {
+    DOM.btnMenuLoad.onclick = triggerLoadFromDevice;
+  }
+
   if (DOM.btnToggleTimestamps) {
     DOM.btnToggleTimestamps.onclick = () => {
       state.settings.showTimestamps = !state.settings.showTimestamps;
@@ -9232,6 +9520,7 @@ function setupEventListeners() {
   if (DOM.btnExportMd) DOM.btnExportMd.onclick = () => exportManuscript('md');
   if (DOM.btnExportPdf) DOM.btnExportPdf.onclick = () => exportManuscript('pdf');
   if (DOM.btnExportEpub) DOM.btnExportEpub.onclick = () => exportManuscript('epub');
+  if (DOM.btnExportDocx) DOM.btnExportDocx.onclick = () => exportManuscript('docx');
   if (DOM.btnExportJson) DOM.btnExportJson.onclick = () => exportManuscript('json');
   if (DOM.btnExportZip) DOM.btnExportZip.onclick = () => exportManuscript('zip');
   if (DOM.btnCopyAll) DOM.btnCopyAll.onclick = copyManuscriptToClipboard;
