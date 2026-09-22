@@ -6884,6 +6884,7 @@ function commitDraft() {
         appendChunkToInkStream(newChunk);
         updateSidebarActivePageBadge(activePage.id, pageWords);
         updateStats();
+        updateDraftInputCursorAlignment();
       }
     }
   }
@@ -6973,7 +6974,7 @@ function adjustDraftInputHeight() {
   if (!DOM.draftInput) return;
   DOM.draftInput.style.height = 'auto';
   const singleRowHeight = 28;
-  const newHeight = Math.min(Math.max(DOM.draftInput.scrollHeight, singleRowHeight), 180);
+  const newHeight = Math.max(Math.ceil(DOM.draftInput.scrollHeight), singleRowHeight);
   DOM.draftInput.style.height = `${newHeight}px`;
 
   if (DOM.draftInputBackdrop) {
@@ -7703,6 +7704,7 @@ function renderActivePage(lastChunkIsNew = false) {
           } else {
             activeTypewriterTimer = null;
             animatedTextElem.textContent = animatedFullText;
+            updateDraftInputCursorAlignment();
             playCarriageReturnBell();
             if (DOM.writingSurface) {
               scrollToPageBottom(true);
@@ -7740,6 +7742,8 @@ function renderActivePage(lastChunkIsNew = false) {
             activeTypewriterTimer = setTimeout(typeNextChar, delay);
           } else {
             activeTypewriterTimer = null;
+            animatedTextElem.textContent = animatedFullText;
+            updateDraftInputCursorAlignment();
             playCarriageReturnBell();
             if (DOM.writingSurface) {
               scrollToPageBottom(true);
@@ -7841,6 +7845,9 @@ function updateDraftInputCursorAlignment() {
     DOM.draftInputBackdrop.style.textIndent = `${indentPx}px`;
     DOM.draftInputBackdrop.style.paddingLeft = '0px';
   }
+  setTimeout(() => {
+    adjustDraftInputHeight();
+  }, 200);
 }
 
 function updatePageWordCounter() {

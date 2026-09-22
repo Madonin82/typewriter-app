@@ -2140,14 +2140,13 @@ input:checked + .toggle-slider:before {
   background: transparent;
   min-height: 28px;
   height: 28px;
-  max-height: 180px;
   tab-size: var(--tab-width);
   -moz-tab-size: var(--tab-width);
   box-sizing: border-box;
   padding: 0;
   margin: 0;
   text-indent: 0;
-  transition: text-indent 0.18s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow-y: hidden;
 }
 
 #draft-input-backdrop {
