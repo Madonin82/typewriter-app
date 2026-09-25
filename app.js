@@ -10143,6 +10143,7 @@ function setupChatPresence() {
 
     set(userPresenceRef, {
       name: name,
+      ts: serverTimestamp(),
       at: serverTimestamp()
     }).catch(err => console.warn('[Presence] Set error:', err));
 
@@ -10197,6 +10198,7 @@ function handleChatTypingWrite() {
     const name = currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'Writer');
     set(typingRef, {
       name: name,
+      ts: serverTimestamp(),
       at: serverTimestamp()
     }).catch(err => console.warn('[Typing] Write error:', err));
 
@@ -10270,10 +10272,11 @@ function renderTypingIndicator() {
 
   for (const [uid, entry] of Object.entries(currentTypingEntries || {})) {
     if (currentUid && uid === currentUid) continue;
-    if (!entry || !entry.name || !entry.at) continue;
+    if (!entry || !entry.name) continue;
 
-    const at = typeof entry.at === 'number' ? entry.at : (entry.at && entry.at.toMillis ? entry.at.toMillis() : 0);
-    if (now - at <= 5000) {
+    const rawTime = entry.ts !== undefined ? entry.ts : entry.at;
+    const timeVal = typeof rawTime === 'number' ? rawTime : (rawTime && rawTime.toMillis ? rawTime.toMillis() : 0);
+    if (now - timeVal <= 5000) {
       activeTypers.push(entry.name);
     }
   }
@@ -10332,11 +10335,13 @@ function sendChatMessage() {
     senderName: senderName,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   }).then((docRef) => {
-    // 4. Signals: push {mid, uid, at} to signals/{roomId}
+    // 4. Signals: push to signals/main = {msgId, uid, ts}
     if (rtdb && docRef && docRef.id) {
       push(ref(rtdb, `signals/${roomId}`), {
+        msgId: docRef.id,
         mid: docRef.id,
         uid: currentUser.uid,
+        ts: serverTimestamp(),
         at: serverTimestamp()
       }).catch(err => console.warn('[RTDB Signal] Push error:', err));
     }
