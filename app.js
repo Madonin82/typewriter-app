@@ -8,6 +8,7 @@
 const firebaseConfig = {
   apiKey: "AIzaSyB5UvSiArIv_YnmbWyjSG0so6MJc5S1A9E",
   authDomain: "typewriter-app-6e624.firebaseapp.com",
+  databaseURL: "https://typewriter-app-6e624-default-rtdb.firebaseio.com/",
   projectId: "typewriter-app-6e624",
   storageBucket: "typewriter-app-6e624.firebasestorage.app",
   messagingSenderId: "1010879061490",
@@ -18,8 +19,78 @@ const STATION_ADMIN_UIDS = ['vW2BVmvIxQap7mYBhzUU1l7P0VH3', 'HQe2aRANHoOFFPofQyf
 
 let auth = null;
 let db = null;
+let rtdb = null;
 let currentUser = null;
 let activeStorageNamespace = 'signed-out';
+
+// ─── FIREBASE REALTIME DATABASE (MODULAR API) ────────────────
+const RTDB_URL = 'https://typewriter-app-6e624-default-rtdb.firebaseio.com/';
+
+function getDatabase(app, url) {
+  const targetUrl = url || RTDB_URL;
+  if (typeof firebase !== 'undefined' && firebase.database) {
+    return firebase.app ? firebase.app().database(targetUrl) : firebase.database(targetUrl);
+  }
+  return null;
+}
+
+function ref(database, path) {
+  if (!database) return null;
+  return path ? database.ref(path) : database.ref();
+}
+
+function set(refInstance, value) {
+  if (!refInstance) return Promise.resolve();
+  return refInstance.set(value);
+}
+
+function push(refInstance, value) {
+  if (!refInstance) return Promise.resolve();
+  return value !== undefined ? refInstance.push(value) : refInstance.push();
+}
+
+function onValue(refInstance, callback, cancelCallback) {
+  if (!refInstance) return () => {};
+  const handler = (snapshot) => {
+    callback({
+      val: () => snapshot.val(),
+      exists: () => snapshot.exists(),
+      forEach: (cb) => snapshot.forEach(cb),
+      key: snapshot.key,
+      ref: snapshot.ref
+    });
+  };
+  refInstance.on('value', handler, cancelCallback);
+  return () => refInstance.off('value', handler);
+}
+
+function onDisconnect(refInstance) {
+  if (!refInstance) {
+    return {
+      remove: () => Promise.resolve(),
+      set: () => Promise.resolve(),
+      cancel: () => Promise.resolve()
+    };
+  }
+  return refInstance.onDisconnect();
+}
+
+function serverTimestamp() {
+  if (typeof firebase !== 'undefined' && firebase.database && firebase.database.ServerValue) {
+    return firebase.database.ServerValue.TIMESTAMP;
+  }
+  return Date.now();
+}
+
+if (typeof window !== 'undefined') {
+  window.getDatabase = getDatabase;
+  window.ref = ref;
+  window.set = set;
+  window.push = push;
+  window.onValue = onValue;
+  window.onDisconnect = onDisconnect;
+  window.serverTimestamp = serverTimestamp;
+}
 
 function getStorageKey(name) {
   return `${activeStorageNamespace}:${name}`;
@@ -714,6 +785,9 @@ function initFirebase() {
       }
       auth = firebase.auth();
       db = firebase.firestore();
+      if (firebase.database) {
+        rtdb = getDatabase(firebase.app(), RTDB_URL);
+      }
 
       auth.onAuthStateChanged((user) => {
         const previousUid = currentUser ? currentUser.uid : null;
@@ -738,6 +812,8 @@ function initFirebase() {
           }
           if (getChatRoute()) {
             subscribeToChatMessages();
+            setupChatPresence();
+            setupChatTypingListener();
           }
         } else {
           if (firestoreUnsubscribe) {
@@ -747,6 +823,11 @@ function initFirebase() {
           currentUser = null;
           renderUserUI();
           if (getAdminRoute()) renderStationAdmin();
+          if (getChatRoute()) {
+            clearChatPresence();
+            clearChatTypingStatus();
+            renderChatAuthState();
+          }
         }
       });
     } catch (e) {
@@ -9847,6 +9928,13 @@ if (document.readyState === 'loading') {
 
 let chatRouteActive = false;
 let chatUnsubscribe = null;
+let currentChatRoomId = 'main';
+let chatPresenceUnsubscribe = null;
+let currentPresenceUserUid = null;
+let chatTypingUnsubscribe = null;
+let currentTypingEntries = {};
+let typingExpiryInterval = null;
+let lastTypingWriteTime = 0;
 
 function initChatPage() {
   chatRouteActive = true;
@@ -9858,7 +9946,8 @@ function initChatPage() {
   // Wire up input
   const chatInput = document.getElementById('chat-input');
   if (chatInput) {
-    // Remove any old listeners by replacing the element clone trick
+    chatInput.removeEventListener('keydown', handleChatKeydown);
+    chatInput.removeEventListener('input', onChatInput);
     chatInput.addEventListener('keydown', handleChatKeydown);
     chatInput.addEventListener('input', onChatInput);
     chatInput.focus();
@@ -9867,12 +9956,18 @@ function initChatPage() {
   const sendBtn = document.getElementById('chat-send-btn');
   if (sendBtn) sendBtn.onclick = sendChatMessage;
 
-  // (Re)subscribe on every entry: safe to call repeatedly — it unsubscribes
-  // any existing listener first, and shows the auth wall when signed out.
-  // (Previously this only ran from onAuthStateChanged, so navigating here
-  // while already signed in left the room with no listener: writes landed
-  // in Firestore but nothing rendered.)
+  // Initialize RTDB if not yet initialized
+  if (!rtdb && typeof firebase !== 'undefined' && firebase.database) {
+    try {
+      rtdb = getDatabase(firebase.app(), RTDB_URL);
+    } catch (e) {
+      console.warn('[Chat] RTDB Init error:', e);
+    }
+  }
+
   subscribeToChatMessages();
+  setupChatPresence();
+  setupChatTypingListener();
 }
 
 function handleChatKeydown(e) {
@@ -9890,6 +9985,8 @@ function onChatInput() {
   chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + 'px';
   // Update ghost preview
   renderChatGhost();
+  // Update typing presence in RTDB
+  handleChatTypingWrite();
 }
 
 function renderChatAuthState() {
@@ -10009,6 +10106,199 @@ function scrollChatToBottom() {
   }
 }
 
+// ─── RTDB PRESENCE ──────────────────────────────────────────
+
+function setupChatPresence() {
+  if (!rtdb && typeof firebase !== 'undefined' && firebase.database) {
+    try {
+      rtdb = getDatabase(firebase.app(), RTDB_URL);
+    } catch (e) {}
+  }
+  if (!rtdb) return;
+
+  const roomId = currentChatRoomId || 'main';
+
+  if (chatPresenceUnsubscribe) {
+    chatPresenceUnsubscribe();
+    chatPresenceUnsubscribe = null;
+  }
+
+  // Subscribe to live online presence count
+  const presenceRoomRef = ref(rtdb, `presence/${roomId}`);
+  chatPresenceUnsubscribe = onValue(presenceRoomRef, (snapshot) => {
+    if (!chatRouteActive) return;
+    const data = snapshot.val() || {};
+    const count = Object.keys(data).length;
+    updateChatPresenceHeader(count);
+  }, (err) => {
+    console.warn('[Presence] RTDB error:', err);
+  });
+
+  // Write presence if signed in
+  if (currentUser && !isAnonymousUser(currentUser)) {
+    const uid = currentUser.uid;
+    currentPresenceUserUid = uid;
+    const userPresenceRef = ref(rtdb, `presence/${roomId}/${uid}`);
+    const name = currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'Writer');
+
+    set(userPresenceRef, {
+      name: name,
+      at: serverTimestamp()
+    }).catch(err => console.warn('[Presence] Set error:', err));
+
+    onDisconnect(userPresenceRef).remove().catch(err => console.warn('[Presence] onDisconnect error:', err));
+  }
+}
+
+function updateChatPresenceHeader(count) {
+  const el = document.getElementById('chat-online-count');
+  if (el) {
+    el.textContent = `${count} online`;
+  }
+}
+
+function clearChatPresence() {
+  const roomId = currentChatRoomId || 'main';
+  if (rtdb && currentPresenceUserUid) {
+    const userPresenceRef = ref(rtdb, `presence/${roomId}/${currentPresenceUserUid}`);
+    set(userPresenceRef, null).catch(() => {});
+    try {
+      onDisconnect(userPresenceRef).cancel();
+    } catch (e) {}
+    currentPresenceUserUid = null;
+  }
+  if (chatPresenceUnsubscribe) {
+    chatPresenceUnsubscribe();
+    chatPresenceUnsubscribe = null;
+  }
+  updateChatPresenceHeader(0);
+}
+
+// ─── RTDB TYPING ────────────────────────────────────────────
+
+function handleChatTypingWrite() {
+  if (!rtdb || !currentUser || isAnonymousUser(currentUser)) return;
+  const chatInput = document.getElementById('chat-input');
+  if (!chatInput) return;
+
+  const text = chatInput.value.trim();
+  const roomId = currentChatRoomId || 'main';
+  const uid = currentUser.uid;
+  const typingRef = ref(rtdb, `typing/${roomId}/${uid}`);
+
+  if (!text) {
+    set(typingRef, null).catch(() => {});
+    return;
+  }
+
+  const now = Date.now();
+  if (now - lastTypingWriteTime >= 3000) {
+    lastTypingWriteTime = now;
+    const name = currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'Writer');
+    set(typingRef, {
+      name: name,
+      at: serverTimestamp()
+    }).catch(err => console.warn('[Typing] Write error:', err));
+
+    onDisconnect(typingRef).remove().catch(err => console.warn('[Typing] onDisconnect error:', err));
+  }
+}
+
+function clearChatTypingStatus() {
+  if (!rtdb || !currentUser || isAnonymousUser(currentUser)) return;
+  const roomId = currentChatRoomId || 'main';
+  const uid = currentUser.uid;
+  const typingRef = ref(rtdb, `typing/${roomId}/${uid}`);
+  lastTypingWriteTime = 0;
+  set(typingRef, null).catch(() => {});
+}
+
+function setupChatTypingListener() {
+  if (!rtdb && typeof firebase !== 'undefined' && firebase.database) {
+    try {
+      rtdb = getDatabase(firebase.app(), RTDB_URL);
+    } catch (e) {}
+  }
+  if (!rtdb) return;
+
+  const roomId = currentChatRoomId || 'main';
+
+  if (chatTypingUnsubscribe) {
+    chatTypingUnsubscribe();
+    chatTypingUnsubscribe = null;
+  }
+
+  const roomTypingRef = ref(rtdb, `typing/${roomId}`);
+  chatTypingUnsubscribe = onValue(roomTypingRef, (snapshot) => {
+    if (!chatRouteActive) return;
+    currentTypingEntries = snapshot.val() || {};
+    renderTypingIndicator();
+  }, (err) => {
+    console.warn('[Typing] RTDB error:', err);
+  });
+
+  if (typingExpiryInterval) {
+    clearInterval(typingExpiryInterval);
+  }
+  // Expire entries older than 5 seconds client-side
+  typingExpiryInterval = setInterval(() => {
+    if (!chatRouteActive) return;
+    renderTypingIndicator();
+  }, 1000);
+}
+
+function teardownChatTypingListener() {
+  if (chatTypingUnsubscribe) {
+    chatTypingUnsubscribe();
+    chatTypingUnsubscribe = null;
+  }
+  if (typingExpiryInterval) {
+    clearInterval(typingExpiryInterval);
+    typingExpiryInterval = null;
+  }
+  currentTypingEntries = {};
+  renderTypingIndicator();
+}
+
+function renderTypingIndicator() {
+  const container = document.getElementById('chat-typing-indicator');
+  if (!container) return;
+
+  const now = Date.now();
+  const currentUid = currentUser ? currentUser.uid : null;
+  const activeTypers = [];
+
+  for (const [uid, entry] of Object.entries(currentTypingEntries || {})) {
+    if (currentUid && uid === currentUid) continue;
+    if (!entry || !entry.name || !entry.at) continue;
+
+    const at = typeof entry.at === 'number' ? entry.at : (entry.at && entry.at.toMillis ? entry.at.toMillis() : 0);
+    if (now - at <= 5000) {
+      activeTypers.push(entry.name);
+    }
+  }
+
+  if (activeTypers.length === 0) {
+    container.textContent = '';
+    container.classList.remove('active');
+    return;
+  }
+
+  let text = '';
+  if (activeTypers.length === 1) {
+    text = `${activeTypers[0]} is typing…`;
+  } else if (activeTypers.length === 2) {
+    text = `${activeTypers[0]} and ${activeTypers[1]} are typing…`;
+  } else {
+    text = `${activeTypers[0]} and ${activeTypers.length - 1} others are typing…`;
+  }
+
+  container.textContent = text;
+  container.classList.add('active');
+}
+
+// ─── CHAT MESSAGES & SIGNALS ────────────────────────────────
+
 function sendChatMessage() {
   if (!db || !currentUser || isAnonymousUser()) return;
 
@@ -10031,11 +10321,25 @@ function sendChatMessage() {
     if (ghost) ghost.remove();
   }
 
+  // Clear typing state in RTDB immediately upon send
+  clearChatTypingStatus();
+
+  const roomId = currentChatRoomId || 'main';
+
   db.collection('chatrooms').doc('main').collection('messages').add({
     text: text,
     senderUid: currentUser.uid,
     senderName: senderName,
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).then((docRef) => {
+    // 4. Signals: push {mid, uid, at} to signals/{roomId}
+    if (rtdb && docRef && docRef.id) {
+      push(ref(rtdb, `signals/${roomId}`), {
+        mid: docRef.id,
+        uid: currentUser.uid,
+        at: serverTimestamp()
+      }).catch(err => console.warn('[RTDB Signal] Push error:', err));
+    }
   }).catch(err => console.warn('[Chat] Send error:', err));
 
   chatInput.focus();
@@ -10051,6 +10355,9 @@ function exitChatPage() {
     chatUnsubscribe();
     chatUnsubscribe = null;
   }
+  clearChatPresence();
+  clearChatTypingStatus();
+  teardownChatTypingListener();
   // Remove listeners to avoid accumulation
   const chatInput = document.getElementById('chat-input');
   if (chatInput) {

@@ -28,6 +28,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 </head>
 <body class="theme-cream font-courier">
 
@@ -38,6 +39,15 @@
 
   <!-- ── CHAT ROOM SURFACE ── -->
   <div id="chat-root" class="chat-root hidden">
+    <header class="chat-header" id="chat-header">
+      <div class="chat-header-left">
+        <a href="#/" class="chat-header-back" title="Back to Writer">← Writer</a>
+        <span class="chat-header-title">Chat Room</span>
+      </div>
+      <div class="chat-header-right">
+        <span class="chat-presence-badge" id="chat-online-count">0 online</span>
+      </div>
+    </header>
     <div class="chat-surface" id="chat-surface">
       <div class="chat-messages" id="chat-messages"></div>
     </div>
@@ -48,6 +58,7 @@
             <div id="chat-draft-backdrop" class="chat-draft-backdrop"></div>
             <textarea id="chat-input" rows="1" autocomplete="off" autocapitalize="sentences" placeholder="Type a message…"></textarea>
           </div>
+          <div id="chat-typing-indicator" class="chat-typing-indicator" aria-live="polite"></div>
           <div class="draft-footer">
             <div class="draft-footer-left">
               <a href="#/" class="esc-btn">← Writer</a>

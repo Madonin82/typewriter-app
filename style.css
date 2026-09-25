@@ -4407,6 +4407,92 @@ body.chat-mode > :not(#chat-root) {
   color: var(--ink);
 }
 
+.chat-header {
+  height: 48px;
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background: var(--paper);
+  z-index: 10;
+  box-sizing: border-box;
+}
+
+body.theme-dark .chat-header,
+body.theme-matrix .chat-header {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+.chat-header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.chat-header-back {
+  font-family: 'Inter', sans-serif;
+  font-size: 12px;
+  color: var(--ink-faded);
+  text-decoration: none;
+  padding: 4px 8px;
+  border-radius: 4px;
+  border: 1px solid rgba(0, 0, 0, 0.1);
+  transition: all 0.15s ease;
+}
+
+body.theme-dark .chat-header-back,
+body.theme-matrix .chat-header-back {
+  border-color: rgba(255, 255, 255, 0.12);
+}
+
+.chat-header-back:hover {
+  color: var(--ink);
+  border-color: var(--accent);
+}
+
+.chat-header-title {
+  font-family: var(--font-family);
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+}
+
+.chat-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chat-presence-badge {
+  font-family: 'Inter', sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--ink-faded);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.04);
+}
+
+body.theme-dark .chat-presence-badge,
+body.theme-matrix .chat-presence-badge {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.chat-presence-badge::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  display: inline-block;
+}
+
 .chat-surface {
   flex: 1;
   overflow-y: auto;
@@ -4558,6 +4644,24 @@ body.theme-matrix .chat-draft-overlay {
   overflow-y: auto;
   box-sizing: border-box;
   padding: 0;
+}
+
+.chat-typing-indicator {
+  font-size: 11px;
+  color: var(--ink-faded);
+  font-family: 'Inter', sans-serif;
+  min-height: 16px;
+  line-height: 16px;
+  margin-top: 4px;
+  margin-bottom: 2px;
+  font-style: italic;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.chat-typing-indicator.active {
+  opacity: 1;
 }
 
 .chat-draft-box .draft-footer {
