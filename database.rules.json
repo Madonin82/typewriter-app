@@ -1,0 +1,28 @@
+{
+  "rules": {
+    "presence": {
+      "$roomId": {
+        ".read": "auth != null",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      }
+    },
+    "typing": {
+      "$roomId": {
+        ".read": "auth != null",
+        "$uid": {
+          ".write": "auth != null && auth.uid === $uid"
+        }
+      }
+    },
+    "signals": {
+      "$roomId": {
+        ".read": "auth != null",
+        "$signalId": {
+          ".write": "auth != null && (!data.exists() || data.child('uid').val() === auth.uid)"
+        }
+      }
+    }
+  }
+}
