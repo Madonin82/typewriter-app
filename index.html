@@ -36,6 +36,34 @@
     <div id="station-content" class="station-content"></div>
   </main>
 
+  <!-- ── CHAT ROOM SURFACE ── -->
+  <div id="chat-root" class="chat-root hidden">
+    <div class="chat-surface" id="chat-surface">
+      <div class="chat-messages" id="chat-messages"></div>
+    </div>
+    <div class="chat-draft-overlay">
+      <div class="chat-draft-container">
+        <div class="chat-draft-box" id="chat-draft-box">
+          <div class="draft-input-wrapper" style="position: relative; width: 100%;">
+            <div id="chat-draft-backdrop" class="chat-draft-backdrop"></div>
+            <textarea id="chat-input" rows="1" autocomplete="off" autocapitalize="sentences" placeholder="Type a message…"></textarea>
+          </div>
+          <div class="draft-footer">
+            <div class="draft-footer-left">
+              <a href="#/" class="esc-btn">← Writer</a>
+              <span class="meta-separator">•</span>
+              <span id="chat-status" style="font-size: 11px; color: var(--ink-faded); font-family: 'Inter', sans-serif;">Chat Room</span>
+              <button id="chat-send-btn" class="btn-commit-mini" type="button" title="Send (Enter)">
+                <span class="commit-icon" aria-hidden="true">↵</span>
+                <span>Send</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ── MAIN WRITING SURFACE ── -->
   <div id="writing-surface" class="writing-surface">
     <div class="page timestamp-layout" id="page-sheet">
@@ -135,6 +163,10 @@
             <a class="station-admin-link" href="#/admin">Admin ↗</a>
           </div>
         </div>
+      </div>
+
+      <div id="panel-chat-link-row" class="hidden" style="padding: 4px 16px 10px; display: flex; align-items: center; gap: 8px;">
+        <a id="btn-chat-link" class="station-admin-link" href="#/chat" style="font-size: 11px;">💬 Chat Room ↗</a>
       </div>
 
       <div class="panel-section-label">Search Current Book</div>

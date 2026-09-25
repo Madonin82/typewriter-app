@@ -736,6 +736,9 @@ function initFirebase() {
           if (getAdminRoute()) {
             subscribeToStationAdmin();
           }
+          if (getChatRoute()) {
+            subscribeToChatMessages();
+          }
         } else {
           if (firestoreUnsubscribe) {
             firestoreUnsubscribe();
@@ -1028,6 +1031,8 @@ function renderUserUI() {
     cloudControls.forEach((control) => {
       if (control) control.classList.toggle('hidden', isAnonymousUser());
     });
+    const chatLinkRow = document.getElementById('panel-chat-link-row');
+    if (chatLinkRow) chatLinkRow.classList.toggle('hidden', isAnonymousUser());
   } else {
     clearAuthForm();
     if (DOM.btnGoogleSignIn) DOM.btnGoogleSignIn.classList.remove('hidden');
@@ -1035,6 +1040,8 @@ function renderUserUI() {
     if (DOM.userProfile) DOM.userProfile.classList.add('hidden');
     if (DOM.btnGuestSignIn) DOM.btnGuestSignIn.classList.remove('hidden');
     if (DOM.guestModeIndicator) DOM.guestModeIndicator.classList.add('hidden');
+    const chatLinkRow = document.getElementById('panel-chat-link-row');
+    if (chatLinkRow) chatLinkRow.classList.add('hidden');
   }
 }
 
@@ -1496,6 +1503,10 @@ function formatStationPageDate(page, bookData) {
 
 function getAdminRoute() {
   return window.location.hash === '#/admin' || window.location.hash === '#/admin/';
+}
+
+function getChatRoute() {
+  return window.location.hash === '#/chat' || window.location.hash === '#/chat/';
 }
 
 function stationPagesForBook(book) {
@@ -3296,6 +3307,21 @@ function subscribeToStationRoute() {
 function handleHashRouteChange() {
   const stationRoute = getStationRoute();
   const adminRoute = getAdminRoute();
+  const chatRoute = getChatRoute();
+
+  // ── Navigate TO chat ──
+  if (chatRoute) {
+    if (!writerRouteInitialized) { window.location.reload(); return; }
+    exitChatPage(); // reset if already active
+    initChatPage();
+    return;
+  }
+
+  // ── Exit chat (navigating away) ──
+  if (chatRouteActive) {
+    exitChatPage();
+  }
+
   if (stationRoute || adminRoute) {
     if (!writerRouteInitialized) {
       window.location.reload();
@@ -9770,6 +9796,12 @@ function init() {
     else initStationPage();
     return;
   }
+  if (getChatRoute()) {
+    initFirebase();
+    initChatPage();
+    window.addEventListener('hashchange', handleHashRouteChange);
+    return;
+  }
   TextWorkerBridge.init();
   loadStorage();
   setupEventListeners();
@@ -9809,4 +9841,220 @@ if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
 } else {
   init();
+}
+
+// ─── CHAT ROOM ───────────────────────────────────────────────
+
+let chatRouteActive = false;
+let chatUnsubscribe = null;
+
+function initChatPage() {
+  chatRouteActive = true;
+  document.body.classList.add('chat-mode');
+  const chatRoot = document.getElementById('chat-root');
+  if (chatRoot) chatRoot.classList.remove('hidden');
+  document.title = 'Chat Room — Note to Self';
+
+  // Wire up input
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput) {
+    // Remove any old listeners by replacing the element clone trick
+    chatInput.addEventListener('keydown', handleChatKeydown);
+    chatInput.addEventListener('input', onChatInput);
+    chatInput.focus();
+  }
+
+  const sendBtn = document.getElementById('chat-send-btn');
+  if (sendBtn) sendBtn.onclick = sendChatMessage;
+
+  // Show auth-wall if not signed in (auth may not be resolved yet — will
+  // update when subscribeToChatMessages fires from the auth state handler)
+  renderChatAuthState();
+}
+
+function handleChatKeydown(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendChatMessage();
+  }
+}
+
+function onChatInput() {
+  const chatInput = document.getElementById('chat-input');
+  if (!chatInput) return;
+  // Auto-resize
+  chatInput.style.height = 'auto';
+  chatInput.style.height = Math.min(chatInput.scrollHeight, 140) + 'px';
+  // Update ghost preview
+  renderChatGhost();
+}
+
+function renderChatAuthState() {
+  const chatMessages = document.getElementById('chat-messages');
+  const chatDraftBox = document.getElementById('chat-draft-box');
+  const chatInput = document.getElementById('chat-input');
+
+  if (!currentUser || isAnonymousUser()) {
+    // Show auth-wall placeholder
+    if (chatMessages) {
+      chatMessages.innerHTML = '<div class="chat-auth-wall"><p>Sign in to use the chat room.</p><p><a href="#/" style="color: var(--accent); text-decoration: underline;">← Go back to writer</a></p></div>';
+    }
+    if (chatDraftBox) chatDraftBox.style.opacity = '0.4';
+    if (chatInput) chatInput.disabled = true;
+    return;
+  }
+  if (chatDraftBox) chatDraftBox.style.opacity = '';
+  if (chatInput) { chatInput.disabled = false; chatInput.focus(); }
+}
+
+function subscribeToChatMessages() {
+  if (!db || !currentUser || isAnonymousUser()) {
+    renderChatAuthState();
+    return;
+  }
+
+  if (chatUnsubscribe) {
+    chatUnsubscribe();
+    chatUnsubscribe = null;
+  }
+
+  renderChatAuthState();
+
+  chatUnsubscribe = db.collection('chatrooms').doc('main').collection('messages')
+    .orderBy('createdAt', 'asc')
+    .limitToLast(200)
+    .onSnapshot((snapshot) => {
+      if (!chatRouteActive) return;
+      const msgs = snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+      renderChatMessages(msgs);
+    }, (err) => {
+      console.warn('[Chat] Snapshot error:', err);
+    });
+}
+
+function renderChatMessages(messages) {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+
+  const uid = currentUser ? currentUser.uid : null;
+  container.innerHTML = '';
+
+  messages.forEach((msg) => {
+    const isMine = msg.senderUid === uid;
+
+    const row = document.createElement('div');
+    row.className = 'chat-msg-row ' + (isMine ? 'mine' : 'theirs');
+
+    const col = document.createElement('div');
+    col.className = 'chat-msg-col ' + (isMine ? 'chat-mine' : 'chat-theirs');
+
+    if (!isMine) {
+      const nameEl = document.createElement('div');
+      nameEl.className = 'chat-sender-name';
+      nameEl.textContent = msg.senderName || 'Someone';
+      col.appendChild(nameEl);
+    }
+
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble';
+    bubble.textContent = msg.text || '';
+    col.appendChild(bubble);
+
+    row.appendChild(col);
+    container.appendChild(row);
+  });
+
+  // Re-render ghost on top of new messages
+  renderChatGhost();
+  scrollChatToBottom();
+}
+
+function renderChatGhost() {
+  const container = document.getElementById('chat-messages');
+  if (!container) return;
+
+  // Remove old ghost
+  const old = container.querySelector('.chat-ghost-row');
+  if (old) old.remove();
+
+  const chatInput = document.getElementById('chat-input');
+  const text = chatInput ? chatInput.value : '';
+  if (!text) return;
+
+  const ghost = document.createElement('div');
+  ghost.className = 'chat-msg-row mine chat-ghost-row';
+
+  const col = document.createElement('div');
+  col.className = 'chat-msg-col chat-mine';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'chat-bubble';
+  bubble.textContent = text;
+  col.appendChild(bubble);
+  ghost.appendChild(col);
+  container.appendChild(ghost);
+
+  scrollChatToBottom();
+}
+
+function scrollChatToBottom() {
+  const surface = document.getElementById('chat-surface');
+  if (surface) {
+    requestAnimationFrame(() => {
+      surface.scrollTop = surface.scrollHeight;
+    });
+  }
+}
+
+function sendChatMessage() {
+  if (!db || !currentUser || isAnonymousUser()) return;
+
+  const chatInput = document.getElementById('chat-input');
+  if (!chatInput) return;
+
+  const text = chatInput.value.trim();
+  if (!text) return;
+
+  const senderName = isAnonymousUser()
+    ? 'Guest'
+    : (currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'Writer'));
+
+  // Clear input and ghost immediately
+  chatInput.value = '';
+  chatInput.style.height = '28px';
+  const container = document.getElementById('chat-messages');
+  if (container) {
+    const ghost = container.querySelector('.chat-ghost-row');
+    if (ghost) ghost.remove();
+  }
+
+  db.collection('chatrooms').doc('main').collection('messages').add({
+    text: text,
+    senderUid: currentUser.uid,
+    senderName: senderName,
+    createdAt: firebase.firestore.FieldValue.serverTimestamp()
+  }).catch(err => console.warn('[Chat] Send error:', err));
+
+  chatInput.focus();
+}
+
+function exitChatPage() {
+  if (!chatRouteActive) return;
+  chatRouteActive = false;
+  document.body.classList.remove('chat-mode');
+  const chatRoot = document.getElementById('chat-root');
+  if (chatRoot) chatRoot.classList.add('hidden');
+  if (chatUnsubscribe) {
+    chatUnsubscribe();
+    chatUnsubscribe = null;
+  }
+  // Remove listeners to avoid accumulation
+  const chatInput = document.getElementById('chat-input');
+  if (chatInput) {
+    chatInput.removeEventListener('keydown', handleChatKeydown);
+    chatInput.removeEventListener('input', onChatInput);
+    chatInput.value = '';
+    chatInput.style.height = '28px';
+  }
+  document.title = 'Note to Self';
 }
