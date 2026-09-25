@@ -16,6 +16,7 @@ A writing app for drafting books. You write in short chunks, commit them, and ke
 - Words-per-page target: pages lock and turn when the target is reached. Locked pages can't be edited.
 - Multiple books: create, rename, search, delete. Page descriptions work as chapter labels.
 - In-book search across the current book.
+- Focus mode: dims everything except the line you're typing.
 
 ## Progress
 
@@ -33,6 +34,15 @@ The Station is a public page where readers can read what you publish. One perman
 - **Unpublish**: removes the book from the Station.
 - Readers can change paper theme, font, size, spacing, and timestamps for themselves; their settings stay on their device.
 - `#/admin` is a dashboard of live and published books (owner only).
+- Readers see how many pages are new since their last visit and can jump straight to the first unread one.
+
+## Chat
+
+A live chat room built into the app (`#/chat`).
+
+- Messages send instantly and appear for everyone in the room.
+- See who's online right now and who's typing.
+- Chat history is stored with the app's cloud sync; online status and typing indicators use the Realtime Database (rules in `database.rules.json`).
 
 ## Analysis
 
@@ -40,7 +50,7 @@ Readability stats computed in a Web Worker: Flesch Reading Ease, grade level, wo
 
 ## Import, export, backup
 
-- Export: TXT, Markdown, PDF, EPUB, copy to clipboard, Google Drive / Google Docs.
+- Export: TXT, Markdown, DOCX, PDF, EPUB, copy to clipboard, Google Drive / Google Docs.
 - Import: .txt, .md, .epub, .json from device or Google Drive.
 - Session backups: full snapshots (.json) to device or Drive, inspect before restore.
 - Deleting a book or resetting the app keeps a restorable snapshot automatically.
@@ -78,6 +88,7 @@ Copy `.env.example` to `.env` and add your Firebase API key. Everything else wor
 ### Firestore rules
 
 Rules live in `firestore.rules` (`firebase.json` points the CLI at it). Deploy with `firebase deploy --only firestore:rules`, or paste the file into the Firebase console Rules tab.
+Chat presence/typing rules live in `database.rules.json` — deploy with `firebase deploy --only database`.
 
 ## Files
 
@@ -90,6 +101,7 @@ Rules live in `firestore.rules` (`firebase.json` points the CLI at it). Deploy w
 | `server.js` | Static file server |
 | `sw.js` / `manifest.json` | PWA service worker and manifest |
 | `firestore.rules` | Firestore security rules |
+| `database.rules.json` | Realtime Database security rules (chat presence/typing) |
 | `jspdf.umd.min.js` / `jszip.min.js` | Bundled locally so PDF/ZIP export work offline |
 
 ## License
