@@ -8,7 +8,7 @@ A writing app for drafting books. You write in short chunks, commit them, and ke
 
 ## Writing
 
-- Draft in a small text buffer (200 characters max, auto-commits when full), then press Enter to commit. Committed text is permanent.
+- Draft in a small text buffer (200 characters max), then press Enter to commit. Committed text is permanent.
 - Typewriter keystroke sounds via Web Audio, volume adjustable, can be turned off.
 - Keystroke replay: replays your typing rhythm on commit and shows WPM, at 1x-10x speed.
 - Optional per-commit timestamps in the page margin.
