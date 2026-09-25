@@ -9867,9 +9867,12 @@ function initChatPage() {
   const sendBtn = document.getElementById('chat-send-btn');
   if (sendBtn) sendBtn.onclick = sendChatMessage;
 
-  // Show auth-wall if not signed in (auth may not be resolved yet — will
-  // update when subscribeToChatMessages fires from the auth state handler)
-  renderChatAuthState();
+  // (Re)subscribe on every entry: safe to call repeatedly — it unsubscribes
+  // any existing listener first, and shows the auth wall when signed out.
+  // (Previously this only ran from onAuthStateChanged, so navigating here
+  // while already signed in left the room with no listener: writes landed
+  // in Firestore but nothing rendered.)
+  subscribeToChatMessages();
 }
 
 function handleChatKeydown(e) {
