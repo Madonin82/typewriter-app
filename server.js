@@ -72,11 +72,46 @@ function ensureUploadsDir() {
   }
 }
 
+function isLocalArtworkUrl(url) {
+  return typeof url === 'string' && url.length > 0 &&
+    !/^(https?:|data:|blob:)/i.test(url);
+}
+
+function artworkFileExists(art) {
+  if (!art || !isLocalArtworkUrl(art.url)) return true; // remote/data URLs can't be verified; keep
+  try {
+    const filePath = path.join(__dirname, art.url);
+    return fs.existsSync(filePath) && fs.statSync(filePath).isFile();
+  } catch (e) {
+    return false;
+  }
+}
+
+// Drops registry entries whose local file no longer exists (e.g. deleted
+// outside the curator) and persists the pruned list, so gallery-data.json
+// can never point at missing files.
+function pruneMissingArtworks(artworks) {
+  const kept = artworks.filter(artworkFileExists);
+  const dropped = artworks.length - kept.length;
+  if (dropped > 0) {
+    console.log(`Pruned ${dropped} gallery entr${dropped === 1 ? 'y' : 'ies'} with missing files from gallery-data.json`);
+  }
+  return kept;
+}
+
 function getStoredArtworks() {
   try {
     if (fs.existsSync(DATA_FILE)) {
       const data = fs.readFileSync(DATA_FILE, 'utf8');
-      return JSON.parse(data);
+      const parsed = JSON.parse(data);
+      if (Array.isArray(parsed)) {
+        const pruned = pruneMissingArtworks(parsed);
+        if (pruned.length !== parsed.length) {
+          saveStoredArtworks(pruned);
+        }
+        return pruned;
+      }
+      return parsed;
     }
   } catch (err) {
     console.error('Error reading gallery data:', err);
