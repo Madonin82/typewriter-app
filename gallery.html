@@ -19,6 +19,9 @@
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+    <!-- Google Model Viewer for GLB/GLTF 3D Models with Draco Compression -->
+    <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
     
     <style>
         body, html {
@@ -236,11 +239,11 @@
                 <!-- Upload Section -->
                 <div id="section-upload" class="space-y-3">
                     <div id="dropzone" class="border-2 border-dashed border-zinc-700 hover:border-amber-500/80 rounded-xl p-5 text-center cursor-pointer transition bg-zinc-950/50 hover:bg-zinc-950" onclick="document.getElementById('artwork-file-input').click()">
-                        <input type="file" id="artwork-file-input" class="hidden" accept="image/*,.html,.htm" onchange="handleFileSelected(event)">
+                        <input type="file" id="artwork-file-input" class="hidden" accept="image/*,video/*,.html,.htm,.glb,.gltf" onchange="handleFileSelected(event)">
                         <div class="flex flex-col items-center">
                             <svg class="w-8 h-8 text-amber-500/80 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
                             <p class="text-xs font-medium text-zinc-200">Click to upload or drag & drop</p>
-                            <p class="text-[11px] text-zinc-500 mt-0.5">Images (JPG, PNG, WebP, SVG) or Interactive HTML scenes</p>
+                            <p class="text-[11px] text-zinc-500 mt-0.5">Images (JPG, PNG, WebP), Videos (MP4, WebM, MOV), 3D Models (GLB, GLTF), or HTML</p>
                         </div>
                     </div>
                     <div id="file-info-badge" class="hidden bg-zinc-950 border border-zinc-800 p-2.5 rounded-xl flex items-center justify-between text-xs">
@@ -255,8 +258,8 @@
 
                 <!-- Direct URL Section -->
                 <div id="section-url" class="space-y-2 hidden">
-                    <label class="block text-xs font-medium text-zinc-300">Image URL or HTML Public Path</label>
-                    <input type="text" id="artwork-url" placeholder="e.g. public/night-nook.html or https://..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    <label class="block text-xs font-medium text-zinc-300">File URL or Public Path</label>
+                    <input type="text" id="artwork-url" placeholder="e.g. public/night-nook.html, model.glb, video.mp4, or https://..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
                 </div>
 
                 <!-- Preview Box -->
@@ -264,6 +267,8 @@
                     <div class="text-[10px] uppercase tracking-wider text-zinc-500 font-semibold mb-1 px-1">Live Preview</div>
                     <div class="h-40 rounded-lg overflow-hidden flex items-center justify-center bg-black/40 relative">
                         <img id="preview-img" class="max-h-full max-w-full object-contain hidden" alt="Artwork preview">
+                        <video id="preview-video" class="max-h-full max-w-full object-contain hidden" autoplay muted loop playsinline></video>
+                        <model-viewer id="preview-model" class="w-full h-full hidden" camera-controls auto-rotate shadow-intensity="1" style="background-color: #0d0b09;"></model-viewer>
                         <div id="preview-html-note" class="text-xs text-zinc-400 text-center p-3 hidden">
                             <span class="text-2xl mb-1 block">🌐</span>
                             Interactive HTML Scene ready for 3D frame embedding
@@ -389,8 +394,10 @@
                     <div class="sm:col-span-1">
                         <label class="block text-xs font-medium text-zinc-300 mb-1">Display Type</label>
                         <select id="edit-art-type" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition cursor-pointer">
-                            <option value="image">Image / Canvas</option>
-                            <option value="html">Interactive HTML</option>
+                            <option value="image">🖼️ Image / Canvas</option>
+                            <option value="video">🎬 Video (Looping)</option>
+                            <option value="model">🗿 3D Model (GLB/GLTF)</option>
+                            <option value="html">🌐 Interactive HTML</option>
                         </select>
                     </div>
                     <div class="sm:col-span-2">
@@ -1025,6 +1032,28 @@
                 img.style.objectFit = 'cover';
                 img.loading = 'eager';
                 containerDiv.appendChild(img);
+            } else if (art.type === 'video') {
+                const video = document.createElement('video');
+                video.src = art.url;
+                video.autoplay = true;
+                video.muted = true;
+                video.loop = true;
+                video.playsInline = true;
+                video.style.width = '100%';
+                video.style.height = '100%';
+                video.style.objectFit = 'cover';
+                containerDiv.appendChild(video);
+            } else if (art.type === 'model') {
+                const modelViewer = document.createElement('model-viewer');
+                modelViewer.src = art.url;
+                modelViewer.setAttribute('camera-controls', '');
+                modelViewer.setAttribute('auto-rotate', '');
+                modelViewer.setAttribute('shadow-intensity', '1');
+                modelViewer.style.width = '100%';
+                modelViewer.style.height = '100%';
+                modelViewer.style.backgroundColor = '#0d0b09';
+                modelViewer.style.display = 'block';
+                containerDiv.appendChild(modelViewer);
             } else {
                 const iframe = document.createElement('iframe');
                 iframe.src = art.url;
@@ -1044,10 +1073,12 @@
             if (!item.isLoaded) return;
             const { art, containerDiv } = item;
 
-            // Free memory and stop background scripts/video/WebGL inside distant iframes
+            const icon = art.type === 'html' ? '🌐' : (art.type === 'model' ? '🗿' : (art.type === 'video' ? '🎬' : '🖼️'));
+
+            // Free memory and stop background scripts/video/WebGL inside distant iframes/videos/models
             containerDiv.innerHTML = `
                 <div class="lazy-placeholder">
-                    <span class="text-xl mb-1">${art.type === 'html' ? '🌐' : '🖼️'}</span>
+                    <span class="text-xl mb-1">${icon}</span>
                     <span class="text-xs font-semibold text-zinc-300">${art.title}</span>
                     <span class="text-[10px] text-zinc-500">${art.artist} (${art.year || '2026'})</span>
                     <span class="text-[9px] text-amber-500/70 mt-1">Approaching...</span>
@@ -1424,7 +1455,18 @@
             selectedFileName = file.name;
             const ext = file.name.split('.').pop().toLowerCase();
             const isHtml = ext === 'html' || ext === 'htm';
-            selectedFileType = isHtml ? 'html' : 'image';
+            const isModel = ext === 'glb' || ext === 'gltf' || file.type === 'model/gltf-binary' || file.type === 'model/gltf+json';
+            const isVideo = file.type.startsWith('video/') || ['mp4', 'webm', 'mov', 'ogv', 'm4v'].includes(ext);
+
+            if (isHtml) {
+                selectedFileType = 'html';
+            } else if (isModel) {
+                selectedFileType = 'model';
+            } else if (isVideo) {
+                selectedFileType = 'video';
+            } else {
+                selectedFileType = 'image';
+            }
 
             const reader = new FileReader();
             reader.onload = (e) => {
@@ -1433,7 +1475,8 @@
                 // Update UI badge
                 document.getElementById('file-name').textContent = file.name;
                 document.getElementById('file-size').textContent = (file.size / 1024 / 1024).toFixed(2) + ' MB';
-                document.getElementById('file-icon').textContent = isHtml ? '🌐' : '🖼️';
+                const icon = isHtml ? '🌐' : (isModel ? '🗿' : (isVideo ? '🎬' : '🖼️'));
+                document.getElementById('file-icon').textContent = icon;
                 document.getElementById('file-info-badge').classList.remove('hidden');
 
                 // Auto-fill Title from filename if empty
@@ -1446,20 +1489,34 @@
                 // Medium hint
                 const mediumInput = document.getElementById('artwork-medium');
                 if (!mediumInput.value.trim()) {
-                    mediumInput.value = isHtml ? 'Interactive 3D Scene' : 'Digital Artwork';
+                    if (isHtml) mediumInput.value = 'Interactive 3D Scene';
+                    else if (isModel) mediumInput.value = '3D Model';
+                    else if (isVideo) mediumInput.value = 'Video Artwork';
+                    else mediumInput.value = 'Digital Artwork';
                 }
 
                 // Live Preview
                 const previewContainer = document.getElementById('preview-container');
                 const previewImg = document.getElementById('preview-img');
+                const previewVideo = document.getElementById('preview-video');
+                const previewModel = document.getElementById('preview-model');
                 const previewHtmlNote = document.getElementById('preview-html-note');
 
                 previewContainer.classList.remove('hidden');
+                previewImg.classList.add('hidden');
+                if (previewVideo) previewVideo.classList.add('hidden');
+                if (previewModel) previewModel.classList.add('hidden');
+                previewHtmlNote.classList.add('hidden');
+
                 if (isHtml) {
-                    previewImg.classList.add('hidden');
                     previewHtmlNote.classList.remove('hidden');
+                } else if (isVideo && previewVideo) {
+                    previewVideo.src = selectedFileBase64;
+                    previewVideo.classList.remove('hidden');
+                } else if (isModel && previewModel) {
+                    previewModel.src = selectedFileBase64;
+                    previewModel.classList.remove('hidden');
                 } else {
-                    previewHtmlNote.classList.add('hidden');
                     previewImg.src = selectedFileBase64;
                     previewImg.classList.remove('hidden');
                 }
@@ -1473,12 +1530,16 @@
             selectedFileName = null;
             document.getElementById('artwork-file-input').value = '';
             document.getElementById('file-info-badge').classList.add('hidden');
-            document.getElementById('preview-container').classList.add('hidden');
+            const previewContainer = document.getElementById('preview-container');
+            if (previewContainer) previewContainer.classList.add('hidden');
+            const previewVideo = document.getElementById('preview-video');
+            if (previewVideo) { previewVideo.src = ''; previewVideo.classList.add('hidden'); }
+            const previewModel = document.getElementById('preview-model');
+            if (previewModel) { previewModel.src = ''; previewModel.classList.add('hidden'); }
         }
 
         async function saveNewArtwork() {
             if (!isGalleryAdmin(currentGalleryUser)) {
-                alert('Administrator privileges required to mount artworks. Please sign in with an admin account.');
                 openAuthModal();
                 return;
             }
@@ -1491,11 +1552,9 @@
             const directUrl = document.getElementById('artwork-url').value.trim();
 
             if (activeSourceTab === 'upload' && !selectedFileBase64) {
-                alert('Please select or drop an artwork file to upload.');
                 return;
             }
             if (activeSourceTab === 'url' && !directUrl) {
-                alert('Please enter an artwork file path or URL.');
                 document.getElementById('artwork-url').focus();
                 return;
             }
@@ -1512,13 +1571,27 @@
             if (btnText) btnText.textContent = 'Mounting...';
             if (btnSpinner) btnSpinner.classList.remove('hidden');
 
+            let determinedType = selectedFileType;
+            if (activeSourceTab === 'url') {
+                const cleanUrl = directUrl.toLowerCase().split('?')[0];
+                if (cleanUrl.endsWith('.html') || cleanUrl.endsWith('.htm')) {
+                    determinedType = 'html';
+                } else if (cleanUrl.endsWith('.glb') || cleanUrl.endsWith('.gltf')) {
+                    determinedType = 'model';
+                } else if (cleanUrl.endsWith('.mp4') || cleanUrl.endsWith('.webm') || cleanUrl.endsWith('.mov') || cleanUrl.endsWith('.ogv') || cleanUrl.endsWith('.m4v')) {
+                    determinedType = 'video';
+                } else {
+                    determinedType = 'image';
+                }
+            }
+
             const payload = {
                 title,
                 artist,
                 year,
                 medium,
                 description,
-                type: activeSourceTab === 'upload' ? selectedFileType : (directUrl.endsWith('.html') || directUrl.endsWith('.htm') ? 'html' : 'image'),
+                type: determinedType,
                 fileBase64: activeSourceTab === 'upload' ? selectedFileBase64 : null,
                 fileName: activeSourceTab === 'upload' ? selectedFileName : null,
                 directUrl: activeSourceTab === 'url' ? directUrl : null
@@ -1597,7 +1670,6 @@
         // ─── CURATOR / MANAGE MODAL & EDIT CONTROLLERS ───────────
         function openCurateModal() {
             if (!isGalleryAdmin(currentGalleryUser)) {
-                alert('Administrator privileges required to curate gallery exhibits. Please sign in with an authorized admin account.');
                 openAuthModal();
                 return;
             }
@@ -1621,7 +1693,11 @@
                     const displayArtist = art.artist || 'Unknown Artist';
                     const displayMedium = art.medium || 'Mixed Media';
                     const displayYear = art.year || '';
-                    const typeBadge = art.type === 'html' ? '🌐 HTML 3D' : '🖼️ Image';
+
+                    let typeBadge = '🖼️ Image';
+                    if (art.type === 'html') typeBadge = '🌐 HTML 3D';
+                    else if (art.type === 'model') typeBadge = '🗿 3D Model';
+                    else if (art.type === 'video') typeBadge = '🎬 Video';
 
                     row.innerHTML = `
                         <div class="flex items-center gap-3 overflow-hidden">

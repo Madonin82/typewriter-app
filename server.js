@@ -17,7 +17,14 @@ const MIME = {
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.pdf': 'application/pdf',
-  '.epub': 'application/epub+zip'
+  '.epub': 'application/epub+zip',
+  '.mp4': 'video/mp4',
+  '.webm': 'video/webm',
+  '.mov': 'video/quicktime',
+  '.ogv': 'video/ogg',
+  '.m4v': 'video/x-m4v',
+  '.glb': 'model/gltf-binary',
+  '.gltf': 'model/gltf+json'
 };
 
 const DEFAULT_ARTWORKS = [
@@ -169,7 +176,12 @@ const server = http.createServer((req, res) => {
 
           if (fileBase64 && fileName) {
             ensureUploadsDir();
-            const ext = path.extname(fileName).toLowerCase() || (type === 'html' ? '.html' : '.png');
+            let defaultExt = '.png';
+            if (type === 'html') defaultExt = '.html';
+            else if (type === 'model') defaultExt = '.glb';
+            else if (type === 'video') defaultExt = '.mp4';
+
+            const ext = path.extname(fileName).toLowerCase() || defaultExt;
             const sanitizedBase = path.basename(fileName, ext).replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
             const uniqueName = `${Date.now()}_${sanitizedBase}${ext}`;
             const targetPath = path.join(UPLOADS_DIR, uniqueName);
@@ -188,14 +200,25 @@ const server = http.createServer((req, res) => {
           const currentList = getStoredArtworks();
           const cleanTitle = (title && title.trim()) ? title.trim() : 'Untitled';
           const cleanArtist = (artist && artist.trim()) ? artist.trim() : '';
+          
+          let resolvedType = 'image';
+          if (type === 'html') resolvedType = 'html';
+          else if (type === 'model') resolvedType = 'model';
+          else if (type === 'video') resolvedType = 'video';
+
+          let defaultMedium = 'Digital Artwork';
+          if (resolvedType === 'html') defaultMedium = 'Interactive 3D Scene';
+          else if (resolvedType === 'model') defaultMedium = '3D Model';
+          else if (resolvedType === 'video') defaultMedium = 'Video Artwork';
+
           const newArtwork = {
             id: `art-${Date.now()}`,
             title: cleanTitle,
             artist: cleanArtist,
             year: (year || '').toString().trim(),
-            medium: (medium || (type === 'html' ? 'Interactive 3D Scene' : 'Digital Artwork')).trim(),
+            medium: (medium && medium.trim()) ? medium.trim() : defaultMedium,
             description: (description || '').trim(),
-            type: type === 'html' ? 'html' : 'image',
+            type: resolvedType,
             url: finalUrl,
             createdAt: new Date().toISOString(),
             isCustom: true
@@ -255,7 +278,12 @@ const server = http.createServer((req, res) => {
 
           if (payload.fileBase64 && payload.fileName) {
             ensureUploadsDir();
-            const ext = path.extname(payload.fileName).toLowerCase() || (payload.type === 'html' ? '.html' : '.png');
+            let defaultExt = '.png';
+            if (payload.type === 'html') defaultExt = '.html';
+            else if (payload.type === 'model') defaultExt = '.glb';
+            else if (payload.type === 'video') defaultExt = '.mp4';
+
+            const ext = path.extname(payload.fileName).toLowerCase() || defaultExt;
             const sanitizedBase = path.basename(payload.fileName, ext).replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
             const uniqueName = `${Date.now()}_${sanitizedBase}${ext}`;
             const targetPath = path.join(UPLOADS_DIR, uniqueName);
@@ -266,6 +294,11 @@ const server = http.createServer((req, res) => {
             updatedUrl = payload.url.trim();
           }
 
+          let updatedType = existing.type;
+          if (['html', 'model', 'video', 'image'].includes(payload.type)) {
+            updatedType = payload.type;
+          }
+
           const updatedArtwork = {
             ...existing,
             title: payload.title !== undefined ? payload.title.trim() || 'Untitled' : existing.title,
@@ -273,7 +306,7 @@ const server = http.createServer((req, res) => {
             year: payload.year !== undefined ? payload.year.toString().trim() : existing.year,
             medium: payload.medium !== undefined ? payload.medium.trim() : existing.medium,
             description: payload.description !== undefined ? payload.description.trim() : existing.description,
-            type: payload.type === 'html' ? 'html' : (payload.type === 'image' ? 'image' : existing.type),
+            type: updatedType,
             url: updatedUrl,
             updatedAt: new Date().toISOString()
           };
