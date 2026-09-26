@@ -6,6 +6,8 @@ A writing app for drafting books. You write in short chunks, commit them, and ke
 
 **Station (public reading page):** https://madonin82.github.io/typewriter-app/#/station/
 
+**3D Art Gallery (beta):** https://madonin82.github.io/typewriter-app/gallery.html
+
 ## Writing
 
 - Draft in a small text buffer (200 characters max), then press Enter to commit. Committed text is permanent.
@@ -33,8 +35,17 @@ The Station is a public page where readers can read what you publish. One perman
 - **Go Live**: streams committed text to readers in near-real time with an ON AIR badge. End the stream from the ESC menu.
 - **Unpublish**: removes the book from the Station.
 - Readers can change paper theme, font, size, spacing, and timestamps for themselves; their settings stay on their device.
-- `#/admin` is a dashboard of live and published books (owner only).
+- `#/admin` is a dashboard of live and published books (owner only), with chat moderation — delete one, several, or all chat messages.
 - Readers see how many pages are new since their last visit and can jump straight to the first unread one.
+
+## Art Gallery (beta)
+
+A 3D museum wall for AI-made art, at `gallery.html` — linked from the write menu, the Station, and `#/admin`.
+
+- Every piece hangs in its own frame as a **live** artwork: interactive scenes stay fully clickable inside their frames — orbiting, buttons, and audio keep working.
+- Drag or scroll sideways to walk down the wall; the 3D pieces shift perspective as you pass (the gallery syncs its camera into each frame for a parallax effect).
+- **Curator**: hang your own pieces without touching code — upload an image or a self-contained HTML file, or link a URL, from the curator panel inside the gallery.
+- Current exhibits include *Diorama Room* (Annie) and *Night Nook* / *Night Nook 3D* (Jessika).
 
 ## Chat
 
