@@ -3213,6 +3213,14 @@ function setupStationAdminFloatingMenu() {
   };
   navigation.appendChild(stationSelect);
 
+  const galleryNavBtn = document.createElement('a');
+  galleryNavBtn.className = 'station-floating-action';
+  galleryNavBtn.href = 'gallery.html';
+  galleryNavBtn.textContent = '🖼️ 3D Art Gallery (Beta)';
+  galleryNavBtn.style.textDecoration = 'none';
+  galleryNavBtn.style.color = 'var(--accent-light, #e5a93b)';
+  navigation.appendChild(galleryNavBtn);
+
   const writerBtn = document.createElement('button');
   writerBtn.type = 'button';
   writerBtn.className = 'station-floating-action';
@@ -3301,6 +3309,19 @@ function renderStationAdmin(snapshotDocs = [], chatSnapshotDocs = []) {
   counts.textContent = `${docs.filter(doc => doc.data().isLive).length} live · ${docs.length} published`;
   header.append(title, counts);
   DOM.stationContent.appendChild(header);
+
+  const adminQuickLinks = document.createElement('div');
+  adminQuickLinks.className = 'station-admin-quick-links';
+  adminQuickLinks.style.margin = '12px 0 22px';
+  adminQuickLinks.style.display = 'flex';
+  adminQuickLinks.style.gap = '10px';
+  adminQuickLinks.style.flexWrap = 'wrap';
+  adminQuickLinks.innerHTML = `
+    <a href="gallery.html" class="station-control-btn" style="display:inline-flex; align-items:center; gap:6px; text-decoration:none; color:#e5a93b; border:1px solid rgba(229,169,59,0.4); padding:7px 16px; border-radius:6px; font-size:12px; font-weight:500; background:rgba(229,169,59,0.08); transition:all 0.2s ease;">
+      <span>🖼️</span> 3D Art Gallery & Curator ↗
+    </a>
+  `;
+  DOM.stationContent.appendChild(adminQuickLinks);
 
   const liveDocs = docs.filter(doc => doc.data().isLive);
   const publishedDocs = docs.filter(doc => !doc.data().isLive);

@@ -1,0 +1,79 @@
+[
+  {
+    "id": "art-1",
+    "title": "Diorama Room",
+    "artist": "Annie",
+    "year": "2026",
+    "medium": "Interactive 3D Room",
+    "type": "html",
+    "url": "public/diorama-room.html",
+    "isDefault": true,
+    "updatedAt": "2026-09-26T07:51:41.957Z"
+  },
+  {
+    "id": "art-2",
+    "title": "Night Nook",
+    "artist": "Jessika",
+    "year": "2026",
+    "medium": "Interactive Night Scene",
+    "type": "html",
+    "url": "public/night-nook.html",
+    "isDefault": true
+  },
+  {
+    "id": "art-3",
+    "title": "Night Nook 3D",
+    "artist": "Jessika",
+    "year": "2026",
+    "medium": "Interactive 3D Spatial",
+    "type": "html",
+    "url": "public/night-nook-3d.html",
+    "isDefault": true
+  },
+  {
+    "id": "art-4",
+    "title": "Composition Study",
+    "artist": "Gallery Archive",
+    "year": "2026",
+    "medium": "Digital Art on Canvas",
+    "type": "image",
+    "url": "public/527ea5ef-5a3c-46c7-b2d1-a542186f901e.jpg",
+    "isDefault": true
+  },
+  {
+    "id": "art-1790407957368",
+    "title": "Character wanders inside room",
+    "artist": "anon",
+    "year": "2026",
+    "medium": "Digital Artwork",
+    "description": "",
+    "type": "image",
+    "url": "public/uploads/1790407957343_character_wanders_inside_room_20260925101827.gif",
+    "createdAt": "2026-09-26T07:32:37.368Z",
+    "isCustom": true
+  },
+  {
+    "id": "art-1790408594488",
+    "title": "Image 20260923 035821",
+    "artist": "dad",
+    "year": "2026",
+    "medium": "Digital Artwork",
+    "description": "",
+    "type": "image",
+    "url": "public/uploads/1790408594487_image_20260923_035821.jpg",
+    "createdAt": "2026-09-26T07:43:14.488Z",
+    "isCustom": true
+  },
+  {
+    "id": "art-1790408932371",
+    "title": "Smd2glb",
+    "artist": "",
+    "year": "",
+    "medium": "Interactive 3D Scene",
+    "description": "",
+    "type": "html",
+    "url": "public/uploads/1790408932370_smd2glb.html",
+    "createdAt": "2026-09-26T07:48:52.371Z",
+    "isCustom": true
+  }
+]

@@ -385,6 +385,24 @@ const motes = new THREE.Points(moteGeo, new THREE.PointsMaterial({
 }));
 scene.add(motes);
 
+/* --------------------------------- parallax -------------------------------- */
+let targetParallaxAngleX = 0;
+let targetParallaxAngleY = 0;
+let currentParallaxAngleX = 0;
+let currentParallaxAngleY = 0;
+let isInteracting = false;
+
+window.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'GALLERY_CAMERA_PARALLAX') {
+    // When visitor walks left (angleX < 0), camera swings left around target, looking deeper into the right side
+    targetParallaxAngleX = Math.max(-0.65, Math.min(0.65, event.data.angleX * 0.95));
+    targetParallaxAngleY = Math.max(-0.25, Math.min(0.25, event.data.angleY * 0.6));
+  }
+});
+
+controls.addEventListener('start', () => { isInteracting = true; });
+controls.addEventListener('end', () => { isInteracting = false; });
+
 /* ---------------------------------- animate -------------------------------- */
 const clock = new THREE.Clock();
 function tick() {
@@ -407,7 +425,23 @@ function tick() {
   }
   moteGeo.attributes.position.needsUpdate = true;
 
-  controls.update();
+  currentParallaxAngleX += (targetParallaxAngleX - currentParallaxAngleX) * 0.08;
+  currentParallaxAngleY += (targetParallaxAngleY - currentParallaxAngleY) * 0.08;
+
+  if (!isInteracting) {
+    const radius = 8.2;
+    const baseElevation = 0.28;
+    const phi = Math.PI / 2 - (baseElevation + currentParallaxAngleY);
+    const theta = 0.08 + currentParallaxAngleX;
+
+    camera.position.x = controls.target.x + radius * Math.sin(phi) * Math.sin(theta);
+    camera.position.y = controls.target.y + radius * Math.cos(phi);
+    camera.position.z = controls.target.z + radius * Math.sin(phi) * Math.cos(theta);
+    camera.lookAt(controls.target);
+  } else {
+    controls.update();
+  }
+
   renderer.render(scene, camera);
 }
 tick();

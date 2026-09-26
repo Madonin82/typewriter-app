@@ -379,10 +379,24 @@
       if(e.key==='+'||e.key==='=')targetDistance=Math.max(10.5,targetDistance-.5); if(e.key==='-')targetDistance=Math.min(17,targetDistance+.5);
     });
 
+    let galleryParallaxYaw = 0;
+    let galleryParallaxPitch = 0;
+    window.addEventListener('message', function (e) {
+      if (e.data && e.data.type === 'GALLERY_CAMERA_PARALLAX') {
+        galleryParallaxYaw = Math.max(-0.55, Math.min(0.55, e.data.angleX * 0.75));
+        galleryParallaxPitch = Math.max(-0.15, Math.min(0.2, e.data.angleY * 0.5));
+      }
+    });
+
     const clock = new THREE.Clock();
     function animate() {
       const t = clock.getElapsedTime();
-      yaw += (targetYaw-yaw)*.075; pitch += (targetPitch-pitch)*.075; distance += (targetDistance-distance)*.075; positionCamera();
+      const effectiveTargetYaw = dragging ? targetYaw : (targetYaw + galleryParallaxYaw);
+      const effectiveTargetPitch = dragging ? targetPitch : (targetPitch + galleryParallaxPitch);
+      yaw += (effectiveTargetYaw - yaw) * 0.075;
+      pitch += (effectiveTargetPitch - pitch) * 0.075;
+      distance += (targetDistance - distance) * 0.075;
+      positionCamera();
       if (!reduceMotion) {
         const p = rainGeo.attributes.position.array;
         for (let i=0;i<rainCount;i++) {

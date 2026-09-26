@@ -200,13 +200,25 @@
     }
   }
 
+  let galleryParallaxX = 0;
+  let galleryParallaxY = 0;
+  window.addEventListener('message', e => {
+    if (e.data && e.data.type === 'GALLERY_CAMERA_PARALLAX') {
+      galleryParallaxX = Math.max(-W * 0.18, Math.min(W * 0.18, -e.data.angleX * (W * 0.22)));
+      galleryParallaxY = Math.max(-H * 0.1, Math.min(H * 0.1, -e.data.angleY * (H * 0.15)));
+    }
+  });
+
   function drawScene(ms) {
     const u=Math.max(.55,Math.min(W/1100,H/760));
     ctx.setTransform(dpr,0,0,dpr,0,0);
     ctx.clearRect(0,0,W,H);
     // background outside the open-front miniature
     const bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#090d1a');bg.addColorStop(1,'#16121b');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
-    viewX += (targetX-viewX)*.08; viewY += (targetY-viewY)*.08; zoom += (targetZoom-zoom)*.08;
+
+    const effTargetX = dragging ? targetX : (targetX + galleryParallaxX);
+    const effTargetY = dragging ? targetY : (targetY + galleryParallaxY);
+    viewX += (effTargetX - viewX) * .08; viewY += (effTargetY - viewY) * .08; zoom += (targetZoom - zoom) * .08;
     ctx.save(); ctx.translate(W/2+viewX,H/2+viewY);ctx.scale(zoom,zoom);ctx.translate(-W/2,-H/2);
     const portrait=W<650;
     const margin=portrait?0:Math.max(18,32*u); const top=portrait?0:Math.max(15,22*u); const bottom=portrait?H+20:H-22*u;

@@ -11,11 +11,88 @@ const MIME = {
   '.webmanifest': 'application/manifest+json; charset=utf-8',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.webp': 'image/webp',
+  '.gif': 'image/gif',
   '.svg': 'image/svg+xml',
   '.ico': 'image/x-icon',
   '.pdf': 'application/pdf',
   '.epub': 'application/epub+zip'
 };
+
+const DEFAULT_ARTWORKS = [
+  {
+    id: 'art-1',
+    title: 'Diorama Room',
+    artist: 'Annie',
+    year: '2026',
+    medium: 'Interactive 3D Room',
+    type: 'html',
+    url: 'public/diorama-room.html',
+    isDefault: true
+  },
+  {
+    id: 'art-2',
+    title: 'Night Nook',
+    artist: 'Jessika',
+    year: '2026',
+    medium: 'Interactive Night Scene',
+    type: 'html',
+    url: 'public/night-nook.html',
+    isDefault: true
+  },
+  {
+    id: 'art-3',
+    title: 'Night Nook 3D',
+    artist: 'Jessika',
+    year: '2026',
+    medium: 'Interactive 3D Spatial',
+    type: 'html',
+    url: 'public/night-nook-3d.html',
+    isDefault: true
+  },
+  {
+    id: 'art-4',
+    title: 'Composition Study',
+    artist: 'Gallery Archive',
+    year: '2026',
+    medium: 'Digital Art on Canvas',
+    type: 'image',
+    url: 'public/527ea5ef-5a3c-46c7-b2d1-a542186f901e.jpg',
+    isDefault: true
+  }
+];
+
+const DATA_FILE = path.join(__dirname, 'gallery-data.json');
+const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
+
+function ensureUploadsDir() {
+  if (!fs.existsSync(UPLOADS_DIR)) {
+    fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+  }
+}
+
+function getStoredArtworks() {
+  try {
+    if (fs.existsSync(DATA_FILE)) {
+      const data = fs.readFileSync(DATA_FILE, 'utf8');
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    console.error('Error reading gallery data:', err);
+  }
+  return DEFAULT_ARTWORKS;
+}
+
+function saveStoredArtworks(artworks) {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(artworks, null, 2), 'utf8');
+    return true;
+  } catch (err) {
+    console.error('Error writing gallery data:', err);
+    return false;
+  }
+}
 
 function getCacheHeaders(filePath, ext) {
   const fileName = path.basename(filePath).toLowerCase();
@@ -46,7 +123,7 @@ function getCacheHeaders(filePath, ext) {
   }
 
   // 4. Static media, icons, and fonts: cached with stale-while-revalidate
-  if (['.png', '.jpg', '.jpeg', '.svg', '.ico', '.woff', '.woff2', '.ttf'].includes(ext)) {
+  if (['.png', '.jpg', '.jpeg', '.webp', '.gif', '.svg', '.ico', '.woff', '.woff2', '.ttf'].includes(ext)) {
     return {
       'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800'
     };
@@ -58,8 +135,200 @@ function getCacheHeaders(filePath, ext) {
 }
 
 const server = http.createServer((req, res) => {
-  let reqUrl = req.url.split('?')[0];
-  let safePath = path.normalize(reqUrl).replace(/^(\.\.[\/\\])+/, '');
+  const parsedUrl = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
+  const pathname = parsedUrl.pathname;
+
+  // ─── API: /api/gallery ───────────────────────────────────
+  if (pathname === '/api/gallery') {
+    if (req.method === 'GET') {
+      const artworks = getStoredArtworks();
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      });
+      return res.end(JSON.stringify({ success: true, artworks }));
+    }
+
+    if (req.method === 'POST') {
+      let body = '';
+      req.on('data', chunk => {
+        body += chunk;
+        if (body.length > 50 * 1024 * 1024) { // 50MB max upload
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Payload too large' }));
+          req.destroy();
+        }
+      });
+
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body);
+          const { title, artist, year, medium, description, type, fileBase64, fileName, directUrl } = payload;
+
+          let finalUrl = directUrl || '';
+
+          if (fileBase64 && fileName) {
+            ensureUploadsDir();
+            const ext = path.extname(fileName).toLowerCase() || (type === 'html' ? '.html' : '.png');
+            const sanitizedBase = path.basename(fileName, ext).replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+            const uniqueName = `${Date.now()}_${sanitizedBase}${ext}`;
+            const targetPath = path.join(UPLOADS_DIR, uniqueName);
+
+            // Strip data:mime/type;base64, prefix if present
+            const cleanBase64 = fileBase64.replace(/^data:[^;]+;base64,/, '');
+            fs.writeFileSync(targetPath, Buffer.from(cleanBase64, 'base64'));
+            finalUrl = `public/uploads/${uniqueName}`;
+          }
+
+          if (!finalUrl) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'No artwork file or URL provided' }));
+          }
+
+          const currentList = getStoredArtworks();
+          const cleanTitle = (title && title.trim()) ? title.trim() : 'Untitled';
+          const cleanArtist = (artist && artist.trim()) ? artist.trim() : '';
+          const newArtwork = {
+            id: `art-${Date.now()}`,
+            title: cleanTitle,
+            artist: cleanArtist,
+            year: (year || '').toString().trim(),
+            medium: (medium || (type === 'html' ? 'Interactive 3D Scene' : 'Digital Artwork')).trim(),
+            description: (description || '').trim(),
+            type: type === 'html' ? 'html' : 'image',
+            url: finalUrl,
+            createdAt: new Date().toISOString(),
+            isCustom: true
+          };
+
+          currentList.push(newArtwork);
+          saveStoredArtworks(currentList);
+
+          res.writeHead(201, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+          });
+          return res.end(JSON.stringify({ success: true, artwork: newArtwork, artworks: currentList }));
+        } catch (err) {
+          console.error('Failed to create artwork:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Internal server error processing artwork' }));
+        }
+      });
+      return;
+    }
+  }
+
+  // ─── API: /api/gallery/:id (PUT & DELETE) ──────────────────────
+  if (pathname.startsWith('/api/gallery/')) {
+    const artId = pathname.replace('/api/gallery/', '').trim();
+
+    if (req.method === 'PUT') {
+      if (!artId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Artwork ID required' }));
+      }
+
+      let body = '';
+      req.on('data', chunk => {
+        body += chunk;
+        if (body.length > 50 * 1024 * 1024) {
+          res.writeHead(413, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Payload too large' }));
+          req.destroy();
+        }
+      });
+
+      req.on('end', () => {
+        try {
+          const payload = JSON.parse(body);
+          const currentList = getStoredArtworks();
+          const artIndex = currentList.findIndex(a => a.id === artId);
+
+          if (artIndex === -1) {
+            res.writeHead(404, { 'Content-Type': 'application/json' });
+            return res.end(JSON.stringify({ error: 'Artwork not found' }));
+          }
+
+          const existing = currentList[artIndex];
+          let updatedUrl = existing.url;
+
+          if (payload.fileBase64 && payload.fileName) {
+            ensureUploadsDir();
+            const ext = path.extname(payload.fileName).toLowerCase() || (payload.type === 'html' ? '.html' : '.png');
+            const sanitizedBase = path.basename(payload.fileName, ext).replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+            const uniqueName = `${Date.now()}_${sanitizedBase}${ext}`;
+            const targetPath = path.join(UPLOADS_DIR, uniqueName);
+            const cleanBase64 = payload.fileBase64.replace(/^data:[^;]+;base64,/, '');
+            fs.writeFileSync(targetPath, Buffer.from(cleanBase64, 'base64'));
+            updatedUrl = `public/uploads/${uniqueName}`;
+          } else if (payload.url) {
+            updatedUrl = payload.url.trim();
+          }
+
+          const updatedArtwork = {
+            ...existing,
+            title: payload.title !== undefined ? payload.title.trim() || 'Untitled' : existing.title,
+            artist: payload.artist !== undefined ? payload.artist.trim() : existing.artist,
+            year: payload.year !== undefined ? payload.year.toString().trim() : existing.year,
+            medium: payload.medium !== undefined ? payload.medium.trim() : existing.medium,
+            description: payload.description !== undefined ? payload.description.trim() : existing.description,
+            type: payload.type === 'html' ? 'html' : (payload.type === 'image' ? 'image' : existing.type),
+            url: updatedUrl,
+            updatedAt: new Date().toISOString()
+          };
+
+          currentList[artIndex] = updatedArtwork;
+          saveStoredArtworks(currentList);
+
+          res.writeHead(200, {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-cache, no-store, must-revalidate'
+          });
+          return res.end(JSON.stringify({ success: true, artwork: updatedArtwork, artworks: currentList }));
+        } catch (err) {
+          console.error('Failed to update artwork:', err);
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          return res.end(JSON.stringify({ error: 'Internal server error updating artwork' }));
+        }
+      });
+      return;
+    }
+
+    if (req.method === 'DELETE') {
+      if (!artId) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'Artwork ID required' }));
+      }
+
+      const currentList = getStoredArtworks();
+      const targetArt = currentList.find(a => a.id === artId);
+
+      // If uploaded file, try to clean up
+      if (targetArt && targetArt.url && targetArt.url.startsWith('public/uploads/')) {
+        try {
+          const filePath = path.join(__dirname, targetArt.url);
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+          }
+        } catch (e) {
+          console.warn('Could not delete upload file:', e);
+        }
+      }
+
+      const updatedList = currentList.filter(a => a.id !== artId);
+      saveStoredArtworks(updatedList);
+
+      res.writeHead(200, {
+        'Content-Type': 'application/json; charset=utf-8',
+        'Cache-Control': 'no-cache, no-store, must-revalidate'
+      });
+      return res.end(JSON.stringify({ success: true, artworks: updatedList }));
+    }
+  }
+
+  // ─── STATIC FILE SERVING ──────────────────────────────────
+  let safePath = path.normalize(pathname).replace(/^(\.\.[\/\\])+/, '');
   let filePath = path.join(__dirname, safePath === '/' ? 'index.html' : safePath);
 
   fs.stat(filePath, (statErr, stats) => {
