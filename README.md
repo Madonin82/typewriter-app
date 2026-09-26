@@ -45,7 +45,6 @@ A 3D museum wall for AI-made art, at `gallery.html` — linked from the write me
 - Every piece hangs in its own frame as a **live** artwork: interactive scenes stay fully clickable inside their frames — orbiting, buttons, and audio keep working.
 - Drag or scroll sideways to walk down the wall; the 3D pieces shift perspective as you pass (the gallery syncs its camera into each frame for a parallax effect).
 - **Curator**: hang your own pieces without touching code — upload an image or a self-contained HTML file, or link a URL, from the curator panel inside the gallery.
-- Current exhibits include *Diorama Room* (Annie) and *Night Nook* / *Night Nook 3D* (Jessika).
 
 ## Chat
 
