@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <link rel="icon" href="data:," />
+  <title>Night Nook</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --ink: #1b1f2d;
+      --muted: #626879;
+      --panel: rgba(244, 238, 225, .93);
+      --panel-strong: #f5efe3;
+      --line: rgba(27, 31, 45, .16);
+      --accent: #a64b34;
+      --accent-ink: #fff8ed;
+      --shadow: rgba(39, 27, 28, .22);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f1e9db;
+        --muted: #aaa6a8;
+        --panel: rgba(24, 27, 39, .92);
+        --panel-strong: #1b1e2a;
+        --line: rgba(241, 233, 219, .16);
+        --accent: #df8b5d;
+        --accent-ink: #21130f;
+        --shadow: rgba(0, 0, 0, .42);
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0b101f; }
+    body {
+      font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      color: var(--ink);
+      overscroll-behavior: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    .grain {
+      position: fixed; inset: 0; pointer-events: none; opacity: .11; mix-blend-mode: soft-light;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+    }
+    .top-note {
+      position: fixed; top: max(18px, env(safe-area-inset-top)); left: clamp(18px, 4vw, 52px);
+      max-width: min(470px, calc(100vw - 36px)); color: #f4ebdf; text-shadow: 0 2px 16px rgba(0,0,0,.5);
+      pointer-events: none;
+    }
+    .time { margin: 0 0 7px; font: 600 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; opacity: .68; }
+    .thought { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(20px, 2.8vw, 32px); font-weight: 400; line-height: 1.15; }
+    .thought span { display: block; font-size: .58em; margin-top: 7px; font-style: italic; opacity: .72; }
+    .controls {
+      position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+      display: flex; align-items: center; gap: 8px; width: max-content; max-width: calc(100vw - 24px);
+      padding: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+      box-shadow: 0 12px 35px var(--shadow); border-radius: 16px;
+    }
+    button {
+      appearance: none; border: 0; color: inherit; background: transparent; min-height: 42px; padding: 0 14px;
+      border-radius: 10px; font: 650 13px/1 "Avenir Next", Avenir, "Segoe UI", sans-serif; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+    }
+    button:hover { background: color-mix(in srgb, var(--panel-strong) 72%, var(--ink) 8%); }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+    .glyph { width: 17px; height: 17px; display: block; }
+    .divider { width: 1px; height: 24px; background: var(--line); }
+    .hint {
+      position: fixed; right: clamp(18px, 3vw, 38px); top: max(22px, env(safe-area-inset-top));
+      color: #f4ebdf; font: 500 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      opacity: .56; text-align: right; pointer-events: none;
+    }
+    .toast {
+      position: fixed; left: 50%; bottom: 86px; transform: translate(-50%, 8px); opacity: 0;
+      background: var(--panel-strong); border: 1px solid var(--line); color: var(--ink); padding: 9px 13px;
+      border-radius: 9px; font-size: 12px; box-shadow: 0 8px 22px var(--shadow); pointer-events: none;
+      transition: opacity .2s ease, transform .2s ease;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    @media (max-width: 620px) {
+      .hint { display: none; }
+      .top-note { top: max(16px, env(safe-area-inset-top)); }
+      .thought { font-size: 22px; }
+      .controls { width: calc(100vw - 24px); justify-content: space-between; border-radius: 14px; }
+      button { flex: 1; justify-content: center; padding: 0 8px; font-size: 12px; }
+      .divider { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .toast { transition: none; }
+    }
+  </style>
+</head>
+<body>
+  <canvas id="room" aria-label="An interactive moonlit reading nook with a rainy window, books, cushions, a warm lamp, and a sleeping cat"></canvas>
+  <div class="grain" aria-hidden="true"></div>
+
+  <section class="top-note" aria-label="Night note">
+    <p class="time">2:14 AM · WEATHER INSIDE: QUIET</p>
+    <p class="thought">Nothing needs an answer tonight.<span>Stay here for a while.</span></p>
+  </section>
+
+  <div class="hint" aria-hidden="true">drag to wander<br>scroll to move closer</div>
+
+  <nav class="controls" aria-label="Room controls">
+    <button id="lamp" type="button" aria-pressed="true" aria-label="Turn reading lamp off">
+      <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 18h6M10 22h4M8.6 15.4A7 7 0 1 1 15.4 15.4c-.8.7-1.3 1.5-1.4 2.6h-4c-.1-1.1-.6-1.9-1.4-2.6Z"/></svg>
+      <span>Lamp</span>
+    </button>
+    <div class="divider" aria-hidden="true"></div>
+    <button id="rain" type="button" aria-pressed="false" aria-label="Play quiet rain">
+      <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6.5 17.5A4.5 4.5 0 0 1 7 8.6 6 6 0 0 1 18.3 10 3.8 3.8 0 0 1 18 17.5"/><path d="m8 20 1-2M12 21l1-2M16 20l1-2"/></svg>
+      <span>Rain</span>
+    </button>
+    <div class="divider" aria-hidden="true"></div>
+    <button id="reset" type="button" aria-label="Reset the view">
+      <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.6"/><path d="M4 4v4.6h4.6"/></svg>
+      <span>Center</span>
+    </button>
+  </nav>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(function () {
+  'use strict';
+  const canvas = document.getElementById('room');
+  const ctx = canvas.getContext('2d');
+  const lampButton = document.getElementById('lamp');
+  const rainButton = document.getElementById('rain');
+  const resetButton = document.getElementById('reset');
+  const toast = document.getElementById('toast');
+  const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let W = 0, H = 0, dpr = 1, lampOn = true, soundOn = false;
+  let viewX = 0, viewY = 0, targetX = 0, targetY = 0, zoom = 1, targetZoom = 1;
+  let dragging = false, lastX = 0, lastY = 0, toastTimer = null, audio = null;
+
+  const rainDrops = Array.from({length: 95}, (_, i) => ({
+    x: ((i * 47) % 101) / 100,
+    y: ((i * 71 + 13) % 103) / 102,
+    len: 0.035 + ((i * 19) % 37) / 700,
+    speed: 0.16 + ((i * 29) % 41) / 140
+  }));
+  const stars = Array.from({length: 42}, (_, i) => ({
+    x: ((i * 37 + 11) % 97) / 96,
+    y: ((i * 61 + 7) % 83) / 160,
+    a: .18 + ((i * 23) % 65) / 100
+  }));
+
+  function resize() {
+    dpr = Math.min(devicePixelRatio || 1, 2);
+    W = innerWidth; H = innerHeight;
+    canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr);
+    canvas.style.width = W + 'px'; canvas.style.height = H + 'px';
+  }
+  addEventListener('resize', resize, {passive:true}); resize();
+
+  function rr(x, y, w, h, r) {
+    r = Math.min(r, w/2, h/2);
+    ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath();
+  }
+  function poly(points) {
+    ctx.beginPath(); ctx.moveTo(points[0][0], points[0][1]);
+    for (let i=1;i<points.length;i++) ctx.lineTo(points[i][0],points[i][1]);
+    ctx.closePath();
+  }
+  function line(x1,y1,x2,y2,color,width) { ctx.strokeStyle=color; ctx.lineWidth=width; ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke(); }
+
+  function drawWindow(x,y,w,h,t) {
+    ctx.save();
+    ctx.fillStyle='#11182a'; rr(x-13,y-13,w+26,h+26,7); ctx.fill();
+    const sky=ctx.createLinearGradient(0,y,0,y+h); sky.addColorStop(0,'#10182d'); sky.addColorStop(.55,'#233650'); sky.addColorStop(1,'#6f6d75');
+    ctx.fillStyle=sky; ctx.fillRect(x,y,w,h);
+    // stars and moon
+    stars.forEach(s=>{ctx.globalAlpha=s.a*(.74+.26*Math.sin(t*.0005+s.x*18));ctx.fillStyle='#e9edf4';ctx.beginPath();ctx.arc(x+s.x*w,y+s.y*h,Math.max(1,w*.0017),0,Math.PI*2);ctx.fill();});
+    ctx.globalAlpha=1; ctx.fillStyle='#f2e9c6'; ctx.beginPath(); ctx.arc(x+w*.77,y+h*.21,Math.min(w,h)*.095,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='#172139'; ctx.beginPath(); ctx.arc(x+w*.80,y+h*.18,Math.min(w,h)*.092,0,Math.PI*2); ctx.fill();
+    // distant buildings
+    const base=y+h*.82; ctx.fillStyle='#151b29';
+    const bs=[[0,.14,.20],[.11,.12,.29],[.22,.18,.17],[.37,.11,.33],[.47,.20,.24],[.64,.13,.40],[.77,.17,.23],[.91,.11,.31]];
+    bs.forEach((b,i)=>{const bx=x+b[0]*w,bw=b[1]*w,bh=b[2]*h;ctx.fillRect(bx,base-bh,bw,bh+h*.18);ctx.fillStyle='rgba(222,174,101,.28)';for(let yy=base-bh+12;yy<base-5;yy+=16){for(let xx=bx+9;xx<bx+bw-5;xx+=17){if((i+Math.floor(xx)+Math.floor(yy))%3===0)ctx.fillRect(xx,yy,3,5);}}ctx.fillStyle='#151b29';});
+    // rain on glass
+    ctx.save(); ctx.beginPath(); ctx.rect(x,y,w,h); ctx.clip(); ctx.lineCap='round';
+    rainDrops.forEach((r,i)=>{const py=(r.y + (reduceMotion?0:t*.00004*r.speed))%1;ctx.strokeStyle='rgba(202,222,238,'+(0.16+(i%4)*.035)+')';ctx.lineWidth=Math.max(1,w*.0018);ctx.beginPath();ctx.moveTo(x+r.x*w,y+py*h);ctx.lineTo(x+r.x*w-w*.009,y+(py+r.len)*h);ctx.stroke();});
+    ctx.restore();
+    // muntins and wet sheen
+    ctx.fillStyle='#262838'; ctx.fillRect(x+w*.49,y,Math.max(5,w*.018),h); ctx.fillRect(x,y+h*.51,w,Math.max(5,h*.018));
+    const gl=ctx.createLinearGradient(x,y,x+w,y+h);gl.addColorStop(.15,'rgba(255,255,255,.12)');gl.addColorStop(.32,'rgba(255,255,255,0)');gl.addColorStop(.72,'rgba(255,255,255,.05)');ctx.fillStyle=gl;ctx.fillRect(x,y,w,h);
+    ctx.restore();
+  }
+
+  function drawShelf(x,y,w,h,u) {
+    ctx.fillStyle='#241d22'; rr(x,y,w,h,4*u);ctx.fill();
+    ctx.fillStyle='#402a25';ctx.fillRect(x+7*u,y+7*u,w-14*u,h-14*u);
+    const levels=4; for(let k=0;k<levels;k++){
+      const sy=y+12*u+(k+1)*(h-22*u)/levels;ctx.fillStyle='#211a1e';ctx.fillRect(x+7*u,sy,w-14*u,7*u);
+      let bx=x+14*u; const top=sy-8*u; let j=0;
+      while(bx<x+w-18*u){const bw=(7+(j*7)%11)*u,bh=(25+(j*13+k*7)%25)*u;const colors=['#7d3d32','#b47a42','#5c6978','#7f7660','#384d4c','#8b5863'];ctx.fillStyle=colors[(j+k)%colors.length];ctx.fillRect(bx,top-bh,bw,bh);if(j%4===0){ctx.fillStyle='rgba(244,220,176,.28)';ctx.fillRect(bx+2*u,top-bh+4*u,Math.max(1,u),bh-8*u);}bx+=bw+3*u;j++;}
+    }
+  }
+
+  function drawScene(ms) {
+    const u=Math.max(.55,Math.min(W/1100,H/760));
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,W,H);
+    // background outside the open-front miniature
+    const bg=ctx.createLinearGradient(0,0,0,H);bg.addColorStop(0,'#090d1a');bg.addColorStop(1,'#16121b');ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+    viewX += (targetX-viewX)*.08; viewY += (targetY-viewY)*.08; zoom += (targetZoom-zoom)*.08;
+    ctx.save(); ctx.translate(W/2+viewX,H/2+viewY);ctx.scale(zoom,zoom);ctx.translate(-W/2,-H/2);
+    const portrait=W<650;
+    const margin=portrait?0:Math.max(18,32*u); const top=portrait?0:Math.max(15,22*u); const bottom=portrait?H+20:H-22*u;
+    const left=margin, right=W-margin, horizon=H*(portrait?.62:.60);
+    // room shell and depth
+    const wall=ctx.createLinearGradient(left,top,right,horizon);wall.addColorStop(0,'#30334a');wall.addColorStop(.55,'#25283c');wall.addColorStop(1,'#1c2031');ctx.fillStyle=wall;poly([[left,top],[right,top],[right,horizon],[left,horizon]]);ctx.fill();
+    ctx.fillStyle='#1c1926';poly([[left,horizon],[right,horizon],[right,bottom],[left,bottom]]);ctx.fill();
+    ctx.fillStyle='#181725';poly([[left,top],[left+10*u,horizon],[left,bottom],[0,bottom],[0,0],[left,0]]);ctx.fill();
+    ctx.fillStyle='#12131e';poly([[right,top],[right-10*u,horizon],[right,bottom],[W,bottom],[W,0],[right,0]]);ctx.fill();
+    // floorboards
+    for(let i=0;i<11;i++){const yy=horizon+(bottom-horizon)*i/11;line(left,yy,right,yy,'rgba(139,101,82,.18)',Math.max(1,u));}
+    for(let i=-5;i<=5;i++){line(W/2+i*65*u,horizon,W/2+i*150*u,bottom,'rgba(139,101,82,.13)',Math.max(1,u));}
+    // window dimensions
+    const ww=portrait?W*.78:Math.min(W*.46,560*u); const wh=portrait?H*.34:Math.min(H*.43,360*u); const wx=W*.52-ww*.5; const wy=portrait?H*.18:H*.12;
+    // moon spill behind the furniture
+    const spill=ctx.createRadialGradient(wx+ww*.65,wy+wh*.42,0,wx+ww*.65,wy+wh*.42,ww*.9);spill.addColorStop(0,'rgba(161,185,204,.18)');spill.addColorStop(1,'rgba(34,40,62,0)');ctx.fillStyle=spill;ctx.fillRect(wx-ww*.3,wy-wh*.3,ww*1.6,wh*1.8);
+    drawWindow(wx,wy,ww,wh,ms);
+    // curtains
+    const curtain='#453d50';ctx.fillStyle=curtain;poly([[wx-28*u,wy-12*u],[wx+18*u,wy],[wx+5*u,wy+wh+45*u],[wx-38*u,wy+wh+35*u]]);ctx.fill();poly([[wx+ww+28*u,wy-12*u],[wx+ww-18*u,wy],[wx+ww-4*u,wy+wh+45*u],[wx+ww+38*u,wy+wh+35*u]]);ctx.fill();
+    ctx.strokeStyle='rgba(255,255,255,.08)';ctx.lineWidth=2*u;for(let i=0;i<3;i++){ctx.beginPath();ctx.moveTo(wx-23*u+i*11*u,wy);ctx.quadraticCurveTo(wx-30*u+i*15*u,wy+wh*.5,wx-27*u+i*10*u,wy+wh+30*u);ctx.stroke();}
+    // bookshelf left; on mobile it peeks in
+    const sh=portrait?H*.35:H*.43, sw=portrait?W*.23:Math.min(W*.18,190*u); drawShelf(left+(portrait?-sw*.28:25*u),horizon-sh-10*u,sw,sh,u);
+    // window seat base
+    const seatX=portrait?W*.10:wx-36*u, seatW=portrait?W*.80:ww+72*u, seatY=wy+wh+16*u, seatH=portrait?115*u:130*u;
+    ctx.fillStyle='#33252a';rr(seatX,seatY,seatW,seatH,5*u);ctx.fill();ctx.fillStyle='#4e3532';ctx.fillRect(seatX+9*u,seatY+9*u,seatW-18*u,seatH-18*u);
+    ctx.fillStyle='#8d6b5d';rr(seatX-6*u,seatY-13*u,seatW+12*u,42*u,14*u);ctx.fill();
+    // pillows
+    const pillows=[{x:seatX+seatW*.10,c:'#ae7b63',a:-.08},{x:seatX+seatW*.32,c:'#5f6c73',a:.05},{x:seatX+seatW*.73,c:'#8f7866',a:-.03}];
+    pillows.forEach((p,i)=>{ctx.save();ctx.translate(p.x,seatY+5*u);ctx.rotate(p.a);ctx.fillStyle=p.c;rr(0,-24*u,(i===1?78:66)*u,57*u,16*u);ctx.fill();ctx.strokeStyle='rgba(255,255,255,.13)';ctx.lineWidth=1*u;rr(5*u,-19*u,(i===1?68:56)*u,47*u,13*u);ctx.stroke();ctx.restore();});
+    // blanket
+    ctx.fillStyle='#ad6548';poly([[seatX+seatW*.48,seatY+8*u],[seatX+seatW*.76,seatY+15*u],[seatX+seatW*.73,seatY+seatH+42*u],[seatX+seatW*.43,seatY+seatH-5*u]]);ctx.fill();
+    ctx.strokeStyle='rgba(61,35,35,.25)';ctx.lineWidth=2*u;for(let i=0;i<5;i++){ctx.beginPath();ctx.moveTo(seatX+seatW*(.48+i*.055),seatY+14*u);ctx.lineTo(seatX+seatW*(.43+i*.06),seatY+seatH-4*u);ctx.stroke();}
+    // sleeping cat silhouette
+    const catX=seatX+seatW*.76,catY=seatY+39*u;ctx.fillStyle='#15151d';ctx.beginPath();ctx.ellipse(catX,catY,44*u,22*u,-.15,0,Math.PI*2);ctx.fill();ctx.beginPath();ctx.arc(catX+34*u,catY-13*u,17*u,0,Math.PI*2);ctx.fill();poly([[catX+25*u,catY-25*u],[catX+28*u,catY-42*u],[catX+39*u,catY-28*u]]);ctx.fill();poly([[catX+39*u,catY-28*u],[catX+50*u,catY-39*u],[catX+51*u,catY-21*u]]);ctx.fill();ctx.strokeStyle='#15151d';ctx.lineWidth=9*u;ctx.lineCap='round';ctx.beginPath();ctx.arc(catX-35*u,catY+1*u,35*u,.7,3.3);ctx.stroke();
+    // side table and books
+    const tableX=portrait?W*.78:wx+ww+70*u, tableY=horizon+72*u;ctx.fillStyle='#342622';ctx.beginPath();ctx.ellipse(tableX,tableY,63*u,18*u,0,0,Math.PI*2);ctx.fill();ctx.fillRect(tableX-8*u,tableY,16*u,90*u);ctx.fillRect(tableX-43*u,tableY+85*u,86*u,9*u);
+    const bookColors=['#774438','#52616b','#9c7753'];for(let i=0;i<3;i++){ctx.fillStyle=bookColors[i];rr(tableX-47*u+i*3*u,tableY-16*u-i*9*u,70*u,10*u,2*u);ctx.fill();}
+    // mug and steam
+    ctx.fillStyle='#d8c9af';rr(tableX+13*u,tableY-47*u,26*u,31*u,5*u);ctx.fill();ctx.strokeStyle='#d8c9af';ctx.lineWidth=5*u;ctx.beginPath();ctx.arc(tableX+40*u,tableY-32*u,9*u,-1.4,1.4);ctx.stroke();
+    if(!reduceMotion){ctx.strokeStyle='rgba(237,232,220,.28)';ctx.lineWidth=2*u;for(let i=0;i<2;i++){ctx.beginPath();const drift=Math.sin(ms*.001+i*2)*5*u;ctx.moveTo(tableX+24*u+i*7*u,tableY-51*u);ctx.bezierCurveTo(tableX+12*u+drift,tableY-70*u,tableX+38*u-drift,tableY-83*u,tableX+27*u,tableY-99*u);ctx.stroke();}}
+    // lamp and warm pool
+    const lx=portrait?W*.16:wx-92*u, ly=horizon+57*u;
+    if(lampOn){const glow=ctx.createRadialGradient(lx,ly-85*u,2,lx,ly-60*u,180*u);glow.addColorStop(0,'rgba(255,204,132,.62)');glow.addColorStop(.32,'rgba(232,147,83,.19)');glow.addColorStop(1,'rgba(225,116,58,0)');ctx.fillStyle=glow;ctx.fillRect(lx-220*u,ly-290*u,440*u,450*u);}
+    ctx.fillStyle='#1b171b';ctx.fillRect(lx-3*u,ly-54*u,6*u,112*u);ctx.beginPath();ctx.ellipse(lx,ly+60*u,27*u,7*u,0,0,Math.PI*2);ctx.fill();ctx.fillStyle=lampOn?'#e8b06e':'#4e4142';poly([[lx-33*u,ly-92*u],[lx+33*u,ly-92*u],[lx+48*u,ly-51*u],[lx-48*u,ly-51*u]]);ctx.fill();if(lampOn){ctx.fillStyle='rgba(255,237,181,.86)';ctx.beginPath();ctx.arc(lx,ly-54*u,5*u,0,Math.PI*2);ctx.fill();}
+    // open book on seat
+    const bx=seatX+seatW*.38,by=seatY+62*u;ctx.save();ctx.translate(bx,by);ctx.rotate(-.05);ctx.fillStyle='#e2d6bd';poly([[-57*u,0],[-5*u,-7*u],[0,31*u],[-57*u,25*u]]);ctx.fill();poly([[5*u,-7*u],[58*u,0],[57*u,25*u],[0,31*u]]);ctx.fill();ctx.strokeStyle='rgba(75,58,52,.34)';ctx.lineWidth=1*u;for(let i=0;i<4;i++){line(-47*u,6*u+i*4*u,-10*u,2*u+i*5*u,'rgba(75,58,52,.32)',u);line(12*u,3*u+i*5*u,49*u,7*u+i*4*u,'rgba(75,58,52,.32)',u);}ctx.restore();
+    // foreground vignette
+    const vig=ctx.createRadialGradient(W*.5,H*.48,Math.min(W,H)*.2,W*.5,H*.48,Math.max(W,H)*.74);vig.addColorStop(.48,'rgba(4,5,12,0)');vig.addColorStop(1,'rgba(4,5,12,.56)');ctx.fillStyle=vig;ctx.fillRect(0,0,W,H);
+    ctx.restore();
+  }
+
+  function loop(t){drawScene(t||0);requestAnimationFrame(loop);} requestAnimationFrame(loop);
+
+  canvas.addEventListener('pointerdown',e=>{dragging=true;lastX=e.clientX;lastY=e.clientY;canvas.setPointerCapture(e.pointerId);});
+  canvas.addEventListener('pointermove',e=>{if(!dragging)return;targetX=Math.max(-W*.14,Math.min(W*.14,targetX+(e.clientX-lastX)*.7));targetY=Math.max(-H*.08,Math.min(H*.08,targetY+(e.clientY-lastY)*.5));lastX=e.clientX;lastY=e.clientY;});
+  canvas.addEventListener('pointerup',()=>dragging=false);canvas.addEventListener('pointercancel',()=>dragging=false);
+  canvas.addEventListener('wheel',e=>{e.preventDefault();targetZoom=Math.max(.9,Math.min(1.17,targetZoom-e.deltaY*.0007));},{passive:false});
+
+  function showToast(message){toast.textContent=message;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),1800);}
+  lampButton.addEventListener('click',()=>{lampOn=!lampOn;lampButton.setAttribute('aria-pressed',String(lampOn));lampButton.setAttribute('aria-label',lampOn?'Turn reading lamp off':'Turn reading lamp on');showToast(lampOn?'A little warmth.':'Moonlight only.');});
+  resetButton.addEventListener('click',()=>{targetX=0;targetY=0;targetZoom=1;showToast('Back to the window.');});
+
+  function startRainAudio(){
+    const AC=window.AudioContext||window.webkitAudioContext;if(!AC){showToast('Rain audio is not supported here.');return false;}
+    if(!audio){
+      const ac=new AC(),seconds=2,buffer=ac.createBuffer(2,ac.sampleRate*seconds,ac.sampleRate);
+      for(let c=0;c<2;c++){const data=buffer.getChannelData(c);let last=0;for(let i=0;i<data.length;i++){const white=Math.random()*2-1;last=.985*last+.015*white;data[i]=(white-last)*.26+last*.18;}}
+      const src=ac.createBufferSource();src.buffer=buffer;src.loop=true;
+      const filter=ac.createBiquadFilter();filter.type='lowpass';filter.frequency.value=2600;filter.Q.value=.4;
+      const gain=ac.createGain();gain.gain.value=0;src.connect(filter).connect(gain).connect(ac.destination);src.start();audio={ac,src,gain};
+    }
+    audio.ac.resume();audio.gain.gain.cancelScheduledValues(audio.ac.currentTime);audio.gain.gain.linearRampToValueAtTime(.24,audio.ac.currentTime+.6);return true;
+  }
+  rainButton.addEventListener('click',()=>{
+    if(!soundOn){if(startRainAudio()){soundOn=true;rainButton.setAttribute('aria-pressed','true');rainButton.setAttribute('aria-label','Mute quiet rain');showToast('Quiet rain is playing.');}}
+    else{soundOn=false;audio.gain.gain.cancelScheduledValues(audio.ac.currentTime);audio.gain.gain.linearRampToValueAtTime(0,audio.ac.currentTime+.35);rainButton.setAttribute('aria-pressed','false');rainButton.setAttribute('aria-label','Play quiet rain');showToast('Rain muted.');}
+  });
+  addEventListener('keydown',e=>{if(e.key==='ArrowLeft')targetX+=22;if(e.key==='ArrowRight')targetX-=22;if(e.key==='ArrowUp')targetY+=18;if(e.key==='ArrowDown')targetY-=18;if(e.key==='+'||e.key==='=')targetZoom=Math.min(1.17,targetZoom+.04);if(e.key==='-')targetZoom=Math.max(.9,targetZoom-.04);});
+})();
+</script>
+</body>
+</html>
