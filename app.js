@@ -753,6 +753,9 @@ let stationRouteActive = false;
 let stationReaderData = null;
 let stationReaderBookId = null;
 let stationAdminUnsubscribe = null;
+let adminChatUnsubscribe = null;
+let adminStationDocs = [];
+let adminChatDocs = [];
 let writerRouteInitialized = false;
 let stationFloatingMenuCleanup = null;
 let stationPageObserver = null;
@@ -1045,6 +1048,10 @@ function handleSignOut() {
   if (stationAdminUnsubscribe) {
     stationAdminUnsubscribe();
     stationAdminUnsubscribe = null;
+  }
+  if (adminChatUnsubscribe) {
+    adminChatUnsubscribe();
+    adminChatUnsubscribe = null;
   }
   if (auth) {
     if (isAnonymousUser() && !confirm('Guest identity will be discarded. Your local books will stay on this device. Continue?')) {
@@ -3253,7 +3260,7 @@ function setupStationAdminFloatingMenu() {
   };
 }
 
-function renderStationAdmin(snapshotDocs = []) {
+function renderStationAdmin(snapshotDocs = [], chatSnapshotDocs = []) {
   if (!DOM.stationContent || !getAdminRoute()) return;
   if (stationFloatingMenuCleanup) stationFloatingMenuCleanup();
   if (stationPageObserver) stationPageObserver.disconnect();
@@ -3352,19 +3359,232 @@ function renderStationAdmin(snapshotDocs = []) {
   };
   appendSection('Live now', liveDocs, true);
   appendSection('Published', publishedDocs, false);
+
+  // ── Chat moderation section ──
+  const chatSection = document.createElement('section');
+  chatSection.className = 'station-admin-section';
+  const chatSectionTitle = document.createElement('h2');
+  const msgCountText = `${chatSnapshotDocs.length} message${chatSnapshotDocs.length === 1 ? '' : 's'}`;
+  chatSectionTitle.textContent = `Chat moderation — ${msgCountText}`;
+  chatSection.appendChild(chatSectionTitle);
+
+  if (chatSnapshotDocs.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'station-admin-empty';
+    empty.textContent = 'No messages in chat room.';
+    chatSection.appendChild(empty);
+  } else {
+    const toolbar = document.createElement('div');
+    toolbar.className = 'station-admin-toolbar';
+    toolbar.style.display = 'flex';
+    toolbar.style.alignItems = 'center';
+    toolbar.style.gap = '12px';
+    toolbar.style.marginBottom = '14px';
+    toolbar.style.flexWrap = 'wrap';
+
+    const selectAllLabel = document.createElement('label');
+    selectAllLabel.style.display = 'flex';
+    selectAllLabel.style.alignItems = 'center';
+    selectAllLabel.style.gap = '6px';
+    selectAllLabel.style.font = '11px "Inter", sans-serif';
+    selectAllLabel.style.color = 'var(--ink)';
+    selectAllLabel.style.cursor = 'pointer';
+
+    const selectAllCheckbox = document.createElement('input');
+    selectAllCheckbox.type = 'checkbox';
+    selectAllLabel.append(selectAllCheckbox, document.createTextNode('Select all'));
+
+    const deleteSelectedBtn = document.createElement('button');
+    deleteSelectedBtn.type = 'button';
+    deleteSelectedBtn.textContent = 'Delete selected (0)';
+    deleteSelectedBtn.disabled = true;
+    deleteSelectedBtn.style.padding = '5px 10px';
+    deleteSelectedBtn.style.border = '1px solid color-mix(in srgb, var(--ink) 20%, transparent)';
+    deleteSelectedBtn.style.background = 'transparent';
+    deleteSelectedBtn.style.color = 'var(--ink)';
+    deleteSelectedBtn.style.cursor = 'not-allowed';
+    deleteSelectedBtn.style.opacity = '0.5';
+    deleteSelectedBtn.style.font = '10px "Inter", sans-serif';
+
+    const deleteAllBtn = document.createElement('button');
+    deleteAllBtn.type = 'button';
+    deleteAllBtn.textContent = 'Delete all';
+    deleteAllBtn.style.padding = '5px 10px';
+    deleteAllBtn.style.border = '1px solid #d32f2f';
+    deleteAllBtn.style.background = 'transparent';
+    deleteAllBtn.style.color = '#d32f2f';
+    deleteAllBtn.style.cursor = 'pointer';
+    deleteAllBtn.style.font = '10px "Inter", sans-serif';
+    deleteAllBtn.style.marginLeft = 'auto';
+
+    toolbar.append(selectAllLabel, deleteSelectedBtn, deleteAllBtn);
+    chatSection.appendChild(toolbar);
+
+    const messageListContainer = document.createElement('div');
+    const selectedIds = new Set();
+
+    const updateDeleteSelectedButton = () => {
+      const count = selectedIds.size;
+      deleteSelectedBtn.textContent = `Delete selected (${count})`;
+      deleteSelectedBtn.disabled = count === 0;
+      deleteSelectedBtn.style.opacity = count === 0 ? '0.5' : '1';
+      deleteSelectedBtn.style.cursor = count === 0 ? 'not-allowed' : 'pointer';
+    };
+
+    selectAllCheckbox.onchange = () => {
+      const rowCheckboxes = messageListContainer.querySelectorAll('.chat-msg-checkbox');
+      selectedIds.clear();
+      rowCheckboxes.forEach(cb => {
+        cb.checked = selectAllCheckbox.checked;
+        if (cb.checked) {
+          selectedIds.add(cb.dataset.id);
+        }
+      });
+      updateDeleteSelectedButton();
+    };
+
+    chatSnapshotDocs.forEach(doc => {
+      const data = doc.data();
+      const row = document.createElement('div');
+      row.className = 'station-admin-row';
+
+      const leftGroup = document.createElement('div');
+      leftGroup.style.display = 'flex';
+      leftGroup.style.alignItems = 'center';
+      leftGroup.style.gap = '12px';
+      leftGroup.style.minWidth = '0';
+      leftGroup.style.flex = '1';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.className = 'chat-msg-checkbox';
+      checkbox.dataset.id = doc.id;
+      checkbox.onchange = () => {
+        if (checkbox.checked) {
+          selectedIds.add(doc.id);
+        } else {
+          selectedIds.delete(doc.id);
+          selectAllCheckbox.checked = false;
+        }
+        updateDeleteSelectedButton();
+      };
+
+      const info = document.createElement('div');
+      info.className = 'station-admin-row-info';
+      info.style.minWidth = '0';
+
+      const senderNameStr = data.senderName || 'Someone';
+      const identity = document.createElement('strong');
+      identity.textContent = senderNameStr;
+
+      const messageText = document.createElement('span');
+      const textVal = typeof data.text === 'string' ? data.text.trim() : '';
+      messageText.textContent = textVal;
+      messageText.title = textVal; // full text in title tooltip
+      messageText.style.overflow = 'hidden';
+      messageText.style.textOverflow = 'ellipsis';
+      messageText.style.whiteSpace = 'nowrap';
+      messageText.style.maxWidth = '450px';
+
+      const meta = document.createElement('span');
+      const timeStr = formatStationDate(data.createdAt);
+      meta.textContent = timeStr ? `${timeStr} · ${String(data.senderUid || '').slice(0, 8)}` : String(data.senderUid || '').slice(0, 8);
+
+      info.append(identity, messageText, meta);
+      leftGroup.append(checkbox, info);
+
+      const actions = document.createElement('div');
+      actions.className = 'station-admin-actions';
+
+      const deleteBtn = document.createElement('button');
+      deleteBtn.textContent = 'Delete';
+      deleteBtn.onclick = () => {
+        if (confirm(`Delete this message from ${senderNameStr}?`)) {
+          doc.ref.delete().catch(err => console.warn('[Admin] Delete message error:', err));
+        }
+      };
+      actions.appendChild(deleteBtn);
+
+      row.append(leftGroup, actions);
+      messageListContainer.appendChild(row);
+    });
+
+    chatSection.appendChild(messageListContainer);
+
+    const executeBatchDelete = async (ids) => {
+      const chunks = [];
+      for (let i = 0; i < ids.length; i += 500) {
+        chunks.push(ids.slice(i, i + 500));
+      }
+      for (const chunk of chunks) {
+        const batch = db.batch();
+        chunk.forEach(id => {
+          batch.delete(db.collection('chatrooms').doc('main').collection('messages').doc(id));
+        });
+        await batch.commit().catch(err => console.warn('[Admin] Batch delete commit error:', err));
+      }
+    };
+
+    deleteSelectedBtn.onclick = async () => {
+      if (selectedIds.size === 0) return;
+      const count = selectedIds.size;
+      if (confirm(`Delete ${count} selected message${count === 1 ? '' : 's'}?`)) {
+        await executeBatchDelete(Array.from(selectedIds));
+        selectedIds.clear();
+        selectAllCheckbox.checked = false;
+        updateDeleteSelectedButton();
+      }
+    };
+
+    deleteAllBtn.onclick = async () => {
+      if (confirm('Warning: This will wipe the entire chat room history. Continue?')) {
+        if (confirm('Are you absolutely sure? This cannot be undone.')) {
+          const snapshot = await db.collection('chatrooms').doc('main').collection('messages').get().catch(() => ({ docs: [] }));
+          const allIds = snapshot.docs.map(d => d.id);
+          if (allIds.length > 0) {
+            await executeBatchDelete(allIds);
+          }
+        }
+      }
+    };
+  }
+
+  DOM.stationContent.appendChild(chatSection);
   setupStationAdminFloatingMenu();
 }
 
 function subscribeToStationAdmin() {
   if (!db || !getAdminRoute()) return;
-  if (stationAdminUnsubscribe) stationAdminUnsubscribe();
+  if (stationAdminUnsubscribe) {
+    stationAdminUnsubscribe();
+    stationAdminUnsubscribe = null;
+  }
+  if (adminChatUnsubscribe) {
+    adminChatUnsubscribe();
+    adminChatUnsubscribe = null;
+  }
   if (!currentUser || !STATION_ADMIN_UIDS.includes(currentUser.uid)) {
-    renderStationAdmin();
+    renderStationAdmin([], []);
     return;
   }
   stationAdminUnsubscribe = db.collection('station').onSnapshot(snapshot => {
-    renderStationAdmin(snapshot.docs);
-  }, () => renderStationAdmin([]));
+    adminStationDocs = snapshot.docs;
+    renderStationAdmin(adminStationDocs, adminChatDocs);
+  }, () => {
+    adminStationDocs = [];
+    renderStationAdmin(adminStationDocs, adminChatDocs);
+  });
+
+  adminChatUnsubscribe = db.collection('chatrooms').doc('main').collection('messages')
+    .orderBy('createdAt', 'desc')
+    .limit(200)
+    .onSnapshot(snapshot => {
+      adminChatDocs = snapshot.docs;
+      renderStationAdmin(adminStationDocs, adminChatDocs);
+    }, () => {
+      adminChatDocs = [];
+      renderStationAdmin(adminStationDocs, adminChatDocs);
+    });
 }
 
 function subscribeToStationRoute() {
@@ -3419,6 +3639,10 @@ function handleHashRouteChange() {
       stationAdminUnsubscribe();
       stationAdminUnsubscribe = null;
     }
+    if (adminChatUnsubscribe) {
+      adminChatUnsubscribe();
+      adminChatUnsubscribe = null;
+    }
     if (adminRoute) subscribeToStationAdmin();
     else subscribeToStationRoute();
     return;
@@ -3443,6 +3667,10 @@ function handleHashRouteChange() {
   if (stationAdminUnsubscribe) {
     stationAdminUnsubscribe();
     stationAdminUnsubscribe = null;
+  }
+  if (adminChatUnsubscribe) {
+    adminChatUnsubscribe();
+    adminChatUnsubscribe = null;
   }
   stationRouteActive = false;
   document.body.classList.remove('station-mode');
