@@ -182,6 +182,11 @@
             </button>
         </div>
 
+        <!-- Inspect-mode hint pill -->
+        <div id="inspect-hint" class="hidden bg-amber-500/90 backdrop-blur-md px-3.5 py-1 rounded-full text-[11px] text-zinc-950 font-medium shadow-lg">
+            Drag to rotate &middot; Scroll to zoom &middot; Click elsewhere or Esc to exit
+        </div>
+
         <!-- Controls & Zoom Hint Pill -->
         <div class="bg-zinc-950/75 backdrop-blur-md border border-zinc-800/60 px-3.5 py-1 rounded-full text-[11px] text-zinc-400 flex items-center gap-2 shadow-lg">
             <span class="flex items-center gap-1 text-zinc-300">
@@ -580,6 +585,17 @@
         let isDragging = false;
         let previousMouseX = 0;
         let touchStartX = 0;
+
+        // 3D model inspect state (pedestal exhibits)
+        let inspectItem = null;
+        let isModelDragging = false;
+        let inspectPrevX = 0;
+        let inspectPrevY = 0;
+        let downClientX = 0;
+        let downClientY = 0;
+        let downIsValid = false;
+        const modelRaycaster = new THREE.Raycaster();
+        const modelPointerNDC = new THREE.Vector2();
 
         // Gallery 3D object caches
         const frameObjects = [];
@@ -1418,24 +1434,116 @@
             return new THREE.Mesh(planeGeo, planeMat);
         }
 
+        // ─── PEDESTAL MODEL INSPECT ──────────────────────────────────
+        function pickPedestalModel(clientX, clientY) {
+            modelPointerNDC.x = (clientX / window.innerWidth) * 2 - 1;
+            modelPointerNDC.y = -(clientY / window.innerHeight) * 2 + 1;
+            modelRaycaster.setFromCamera(modelPointerNDC, camera);
+            const targets = [];
+            frameObjects.forEach(item => {
+                if (item.isLoaded && item.modelObj) targets.push(item.modelObj);
+            });
+            if (targets.length === 0) return null;
+            const hits = modelRaycaster.intersectObjects(targets, true);
+            if (hits.length === 0) return null;
+            let obj = hits[0].object;
+            while (obj) {
+                const found = frameObjects.find(f => f.modelObj === obj);
+                if (found) return found;
+                obj = obj.parent;
+            }
+            return null;
+        }
+
+        function rotateInspectModel(dx, dy) {
+            if (!inspectItem || !inspectItem.modelObj) return;
+            inspectItem.modelObj.rotation.y += dx * 0.008;
+            inspectItem.modelObj.rotation.x = Math.max(-0.6, Math.min(0.6,
+                inspectItem.modelObj.rotation.x + dy * 0.005));
+        }
+
+        function enterInspectMode(item) {
+            inspectItem = item;
+            targetCameraX = item.xPos;
+            clampCameraX();
+            const hint = document.getElementById('inspect-hint');
+            if (hint) hint.classList.remove('hidden');
+            document.body.style.cursor = 'grab';
+        }
+
+        function exitInspectMode() {
+            inspectItem = null;
+            isModelDragging = false;
+            const hint = document.getElementById('inspect-hint');
+            if (hint) hint.classList.add('hidden');
+            document.body.style.cursor = '';
+        }
+
+        function handleGalleryClick(clientX, clientY) {
+            const hit = pickPedestalModel(clientX, clientY);
+            if (hit) {
+                if (inspectItem === hit) exitInspectMode();
+                else enterInspectMode(hit);
+            } else if (inspectItem) {
+                exitInspectMode();
+            }
+        }
+
+        function updateModelHoverCursor(e) {
+            if (inspectItem) return;
+            if (e.target.tagName === 'BUTTON' || e.target.closest('.interactive-ui')) {
+                document.body.style.cursor = '';
+                return;
+            }
+            document.body.style.cursor = pickPedestalModel(e.clientX, e.clientY) ? 'pointer' : '';
+        }
+
         // ─── NAVIGATION & CONTROLS ────────────────────────────────
         function setupInteractions() {
             // Drag controls
             window.addEventListener('mousedown', (e) => {
-                if (e.target.tagName === 'BUTTON' || e.target.closest('.interactive-ui') || e.target.closest('#add-modal') || e.target.closest('#curate-modal')) return;
-                isDragging = true;
-                previousMouseX = e.clientX;
+                if (e.target.tagName === 'BUTTON' || e.target.closest('.interactive-ui') || e.target.closest('#add-modal') || e.target.closest('#curate-modal')) { downIsValid = false; return; }
+                downIsValid = true;
+                downClientX = e.clientX;
+                downClientY = e.clientY;
+                if (inspectItem && inspectItem.isLoaded && inspectItem.modelObj) {
+                    isModelDragging = true;
+                    inspectPrevX = e.clientX;
+                    inspectPrevY = e.clientY;
+                    document.body.style.cursor = 'grabbing';
+                } else {
+                    isDragging = true;
+                    previousMouseX = e.clientX;
+                }
             });
 
             window.addEventListener('mousemove', (e) => {
-                if (!isDragging) return;
+                if (isModelDragging && inspectItem && inspectItem.modelObj) {
+                    const dx = e.clientX - inspectPrevX;
+                    const dy = e.clientY - inspectPrevY;
+                    inspectPrevX = e.clientX;
+                    inspectPrevY = e.clientY;
+                    rotateInspectModel(dx, dy);
+                    return;
+                }
+                if (!isDragging) { updateModelHoverCursor(e); return; }
                 const deltaX = e.clientX - previousMouseX;
                 previousMouseX = e.clientX;
                 targetCameraX -= deltaX * 0.012;
                 clampCameraX();
             });
 
-            window.addEventListener('mouseup', () => { isDragging = false; });
+            window.addEventListener('mouseup', (e) => {
+                const wasModelDrag = isModelDragging;
+                isDragging = false;
+                isModelDragging = false;
+                if (inspectItem) document.body.style.cursor = 'grab';
+                if (!wasModelDrag && downIsValid && typeof e.clientX === 'number') {
+                    const moved = Math.hypot(e.clientX - downClientX, e.clientY - downClientY);
+                    if (moved < 6) handleGalleryClick(e.clientX, e.clientY);
+                }
+                downIsValid = false;
+            });
 
             // Touch support (1-finger drag pan & 2-finger pinch zoom)
             let touchStartDist = 0;
@@ -1445,8 +1553,17 @@
                 if (e.target.tagName === 'BUTTON' || e.target.closest('.interactive-ui') || e.target.closest('#add-modal') || e.target.closest('#curate-modal') || e.target.closest('#delete-confirm-modal') || e.target.closest('#gallery-auth-modal')) return;
                 
                 if (e.touches.length === 1) {
-                    isDragging = true;
-                    touchStartX = e.touches[0].clientX;
+                    downIsValid = true;
+                    downClientX = e.touches[0].clientX;
+                    downClientY = e.touches[0].clientY;
+                    if (inspectItem && inspectItem.isLoaded && inspectItem.modelObj) {
+                        isModelDragging = true;
+                        inspectPrevX = e.touches[0].clientX;
+                        inspectPrevY = e.touches[0].clientY;
+                    } else {
+                        isDragging = true;
+                        touchStartX = e.touches[0].clientX;
+                    }
                 } else if (e.touches.length === 2) {
                     isDragging = false;
                     const dx = e.touches[0].clientX - e.touches[1].clientX;
@@ -1457,7 +1574,12 @@
             });
 
             window.addEventListener('touchmove', (e) => {
-                if (e.touches.length === 1 && isDragging) {
+                if (e.touches.length === 1 && isModelDragging && inspectItem && inspectItem.modelObj) {
+                    const t = e.touches[0];
+                    rotateInspectModel(t.clientX - inspectPrevX, t.clientY - inspectPrevY);
+                    inspectPrevX = t.clientX;
+                    inspectPrevY = t.clientY;
+                } else if (e.touches.length === 1 && isDragging) {
                     const currentX = e.touches[0].clientX;
                     const deltaX = currentX - touchStartX;
                     touchStartX = currentX;
@@ -1474,9 +1596,17 @@
                 }
             });
 
-            window.addEventListener('touchend', () => {
+            window.addEventListener('touchend', (e) => {
+                const wasModelDrag = isModelDragging;
                 isDragging = false;
+                isModelDragging = false;
                 touchStartDist = 0;
+                if (!wasModelDrag && downIsValid && e.changedTouches.length === 1) {
+                    const t = e.changedTouches[0];
+                    const moved = Math.hypot(t.clientX - downClientX, t.clientY - downClientY);
+                    if (moved < 12) handleGalleryClick(t.clientX, t.clientY);
+                }
+                downIsValid = false;
             });
 
             // Mouse wheel zoom (allows zooming all the way up to the wall & frame at z = -1.78)
@@ -1498,6 +1628,8 @@
                     targetCameraZ = Math.max(-1.78, targetCameraZ - 0.4);
                 } else if (e.key === 'ArrowDown' || e.key === 's') {
                     targetCameraZ = Math.min(8.5, targetCameraZ + 0.4);
+                } else if (e.key === 'Escape' && inspectItem) {
+                    exitInspectMode();
                 } else if (e.key === 'Home') {
                     resetCamera();
                 }
@@ -1738,9 +1870,18 @@
             requestAnimationFrame(animate);
 
             const delta = galleryClock.getDelta();
+            if (inspectItem && !inspectItem.isLoaded) exitInspectMode();
             frameObjects.forEach(item => {
                 if (item.mixer && item.isLoaded) {
                     item.mixer.update(delta);
+                }
+                // Idle turntable rotation for pedestal models (pauses on the inspected one)
+                if (item.isLoaded && item.modelObj && item !== inspectItem) {
+                    item.modelObj.rotation.y += delta * 0.45;
+                }
+                // Ease leftover tilt back to level when not actively dragging
+                if (item === inspectItem && !isModelDragging && item.modelObj) {
+                    item.modelObj.rotation.x *= 0.95;
                 }
             });
 
