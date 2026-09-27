@@ -15,10 +15,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <!-- Official Firebase SDK (Compat) for Shared Auth State -->
+    <!-- Official Firebase SDK (Compat) for Shared Auth State & Storage -->
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
 
     <!-- Google Model Viewer for GLB/GLTF 3D Models with Draco Compression -->
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
@@ -127,20 +128,17 @@
         </div>
 
         <div class="interactive-ui flex items-center flex-wrap gap-2">
-            <!-- Admin Controls (Only visible to authenticated administrators) -->
-            <div id="admin-controls-group" class="hidden flex items-center gap-2">
-                <!-- Add Artwork Button -->
-                <button onclick="openAddModal()" class="bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-zinc-950 font-semibold px-3 py-1.5 rounded-xl text-xs transition shadow-lg flex items-center gap-1.5 cursor-pointer">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
-                    <span>Add Artwork</span>
-                </button>
+            <!-- Add Artwork Button (Visible to verified users & admins) -->
+            <button id="btn-add-artwork" onclick="openAddModal()" class="hidden bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-zinc-950 font-semibold px-3 py-1.5 rounded-xl text-xs transition shadow-lg flex items-center gap-1.5 cursor-pointer">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+                <span>Add Artwork</span>
+            </button>
 
-                <!-- Curate / Manage Button -->
-                <button onclick="openCurateModal()" class="bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800/80 text-zinc-300 px-3 py-1.5 rounded-xl text-xs font-medium transition shadow-lg flex items-center gap-1.5 cursor-pointer" title="Manage artworks in gallery">
-                    <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
-                    <span>Curate</span>
-                </button>
-            </div>
+            <!-- Curate / Manage Button (Only visible to administrators) -->
+            <button id="btn-curate-gallery" onclick="openCurateModal()" class="hidden bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800/80 text-zinc-300 px-3 py-1.5 rounded-xl text-xs font-medium transition shadow-lg flex items-center gap-1.5 cursor-pointer" title="Manage artworks in gallery">
+                <svg class="w-3.5 h-3.5 text-amber-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h7"/></svg>
+                <span>Curate</span>
+            </button>
 
             <!-- Return to Start Button -->
             <button onclick="resetCamera()" class="bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800/80 text-zinc-300 px-2.5 py-1.5 rounded-xl text-xs font-medium transition shadow-lg flex items-center gap-1.5 cursor-pointer" title="Return to first exhibit">
@@ -223,6 +221,8 @@
 
             <!-- Form Body -->
             <div class="p-6 overflow-y-auto space-y-4">
+                <div id="add-artwork-error" class="hidden text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl"></div>
+
                 <!-- Source Tabs -->
                 <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">Artwork Source</label>
@@ -534,6 +534,13 @@
             return false;
         }
 
+        function canUploadArtwork(user) {
+            const u = user || currentGalleryUser || (typeof firebase !== 'undefined' && firebase.auth ? firebase.auth().currentUser : null);
+            if (!u || u.isAnonymous) return false;
+            if (isGalleryAdmin(u)) return true;
+            return u.emailVerified === true;
+        }
+
         let ARTWORKS = [];
         let scene, camera, webGLRenderer, cssRenderer;
         let galleryWidth = 0;
@@ -555,6 +562,7 @@
 
         // Active form state for adding artwork
         let activeSourceTab = 'upload';
+        let selectedFileObject = null;
         let selectedFileBase64 = null;
         let selectedFileName = null;
         let selectedFileType = 'image';
@@ -578,27 +586,40 @@
         }
 
         function renderGalleryAuthUI() {
-            const adminControls = document.getElementById('admin-controls-group');
+            const addBtn = document.getElementById('btn-add-artwork');
+            const curateBtn = document.getElementById('btn-curate-gallery');
             const authStatus = document.getElementById('auth-status-container');
             const isAdmin = isGalleryAdmin(currentGalleryUser);
+            const canUpload = canUploadArtwork(currentGalleryUser);
 
-            if (adminControls) {
-                if (isAdmin) {
-                    adminControls.classList.remove('hidden');
+            if (addBtn) {
+                if (canUpload) {
+                    addBtn.classList.remove('hidden');
                 } else {
-                    adminControls.classList.add('hidden');
+                    addBtn.classList.add('hidden');
+                }
+            }
+
+            if (curateBtn) {
+                if (isAdmin) {
+                    curateBtn.classList.remove('hidden');
+                } else {
+                    curateBtn.classList.add('hidden');
                 }
             }
 
             if (authStatus) {
                 if (currentGalleryUser) {
                     const displayName = currentGalleryUser.displayName || (currentGalleryUser.email ? currentGalleryUser.email.split('@')[0] : 'Author');
+                    const isVerified = currentGalleryUser.emailVerified === true;
+                    const roleBadge = isAdmin ? 'Admin' : (isVerified ? 'Verified' : 'Visitor');
+                    const badgeStyle = isAdmin ? 'bg-amber-500/20 text-amber-300 font-semibold' : (isVerified ? 'bg-emerald-500/20 text-emerald-300 font-medium' : 'bg-zinc-800 text-zinc-400');
                     authStatus.innerHTML = `
                         <div class="flex items-center gap-1.5 bg-zinc-900/90 border ${isAdmin ? 'border-amber-500/40' : 'border-zinc-800'} px-2.5 py-1 rounded-xl text-xs shadow-lg">
                             <span class="${isAdmin ? 'text-amber-400 font-medium' : 'text-zinc-300'} flex items-center gap-1">
                                 <span>${isAdmin ? '👑' : '👤'}</span>
                                 <span class="max-w-[85px] truncate">${displayName}</span>
-                                <span class="text-[9px] ${isAdmin ? 'bg-amber-500/20 text-amber-300 font-semibold' : 'bg-zinc-800 text-zinc-400'} px-1.5 py-0.5 rounded font-mono">${isAdmin ? 'Admin' : 'Visitor'}</span>
+                                <span class="text-[9px] ${badgeStyle} px-1.5 py-0.5 rounded font-mono">${roleBadge}</span>
                             </span>
                             <button onclick="gallerySignOut()" class="text-[11px] text-zinc-500 hover:text-rose-400 ml-1 transition cursor-pointer" title="Sign Out">✕</button>
                         </div>
@@ -664,83 +685,102 @@
         }
 
         // ─── INITIALIZATION & DATA SYNC ───────────────────────────
-        async function fetchGalleryArtworks() {
-            try {
-                const res = await fetch('/api/gallery');
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.artworks && Array.isArray(data.artworks) && data.artworks.length > 0) {
-                        const seenIds = new Set();
-                        ARTWORKS = data.artworks.filter(a => {
-                            if (!a || !a.id || seenIds.has(a.id)) return false;
-                            seenIds.add(a.id);
-                            return true;
-                        });
-                        localStorage.setItem(STORAGE_KEY, JSON.stringify(ARTWORKS));
-                        return;
-                    }
-                }
-            } catch (e) {
-                console.warn('API fetch failed, checking local storage:', e);
+        const DEFAULT_ARTWORKS = [
+            {
+                id: 'art-1',
+                title: 'Diorama Room',
+                artist: 'Annie',
+                year: '2026',
+                medium: 'Interactive 3D Room',
+                type: 'html',
+                url: 'public/diorama-room.html',
+                isDefault: true
+            },
+            {
+                id: 'art-2',
+                title: 'Night Nook',
+                artist: 'Jessika',
+                year: '2026',
+                medium: 'Interactive Night Scene',
+                type: 'html',
+                url: 'public/night-nook.html',
+                isDefault: true
+            },
+            {
+                id: 'art-3',
+                title: 'Night Nook 3D',
+                artist: 'Jessika',
+                year: '2026',
+                medium: 'Interactive 3D Spatial',
+                type: 'html',
+                url: 'public/night-nook-3d.html',
+                isDefault: true
+            },
+            {
+                id: 'art-4',
+                title: 'Composition Study',
+                artist: 'Gallery Archive',
+                year: '2026',
+                medium: 'Digital Art on Canvas',
+                type: 'image',
+                url: 'public/527ea5ef-5a3c-46c7-b2d1-a542186f901e.jpg',
+                isDefault: true
             }
+        ];
 
-            // Fallback to localStorage or built-in defaults
-            const cached = localStorage.getItem(STORAGE_KEY);
-            if (cached) {
+        async function fetchGalleryArtworks() {
+            // 1. Fetch from Firestore collection 'galleryExhibits' (source of truth everywhere)
+            if (typeof firebase !== 'undefined' && firebase.firestore) {
                 try {
-                    const parsed = JSON.parse(cached);
+                    if (!firebase.apps.length) {
+                        firebase.initializeApp(firebaseConfig);
+                    }
+                    const snapshot = await firebase.firestore().collection('galleryExhibits').get();
+                    const firestoreExhibits = [];
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        if (data && data.id) {
+                            firestoreExhibits.push(data);
+                        }
+                    });
+
+                    // Sort exhibits by creation time
+                    firestoreExhibits.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+
+                    const combined = [...DEFAULT_ARTWORKS, ...firestoreExhibits];
                     const seenIds = new Set();
-                    ARTWORKS = parsed.filter(a => {
+                    ARTWORKS = combined.filter(a => {
                         if (!a || !a.id || seenIds.has(a.id)) return false;
                         seenIds.add(a.id);
                         return true;
                     });
+
+                    localStorage.setItem(STORAGE_KEY, JSON.stringify(ARTWORKS));
                     return;
+                } catch (e) {
+                    console.warn('Firestore gallery fetch failed, checking fallback cache:', e);
+                }
+            }
+
+            // 2. Fallback to localStorage cache only if Firestore is unreachable
+            const cached = localStorage.getItem(STORAGE_KEY);
+            if (cached) {
+                try {
+                    const parsed = JSON.parse(cached);
+                    if (Array.isArray(parsed) && parsed.length > 0) {
+                        const seenIds = new Set();
+                        ARTWORKS = parsed.filter(a => {
+                            if (!a || !a.id || seenIds.has(a.id)) return false;
+                            seenIds.add(a.id);
+                            return true;
+                        });
+                        return;
+                    }
                 } catch (e) {}
             }
 
-            ARTWORKS = [
-                {
-                    id: 'art-1',
-                    title: 'Diorama Room',
-                    artist: 'Annie',
-                    year: '2026',
-                    medium: 'Interactive 3D Room',
-                    type: 'html',
-                    url: 'public/diorama-room.html',
-                    isDefault: true
-                },
-                {
-                    id: 'art-2',
-                    title: 'Night Nook',
-                    artist: 'Jessika',
-                    year: '2026',
-                    medium: 'Interactive Night Scene',
-                    type: 'html',
-                    url: 'public/night-nook.html',
-                    isDefault: true
-                },
-                {
-                    id: 'art-3',
-                    title: 'Night Nook 3D',
-                    artist: 'Jessika',
-                    year: '2026',
-                    medium: 'Interactive 3D Spatial',
-                    type: 'html',
-                    url: 'public/night-nook-3d.html',
-                    isDefault: true
-                },
-                {
-                    id: 'art-4',
-                    title: 'Composition Study',
-                    artist: 'Gallery Archive',
-                    year: '2026',
-                    medium: 'Digital Art on Canvas',
-                    type: 'image',
-                    url: 'public/527ea5ef-5a3c-46c7-b2d1-a542186f901e.jpg',
-                    isDefault: true
-                }
-            ];
+            // 3. Fallback to default exhibits
+            ARTWORKS = [...DEFAULT_ARTWORKS];
             localStorage.setItem(STORAGE_KEY, JSON.stringify(ARTWORKS));
         }
 
@@ -1427,22 +1467,44 @@
             }
         }
 
+        function showAddError(msg) {
+            const errBox = document.getElementById('add-artwork-error');
+            if (errBox) {
+                errBox.textContent = msg;
+                errBox.classList.remove('hidden');
+            } else {
+                alert(msg);
+            }
+        }
+
+        function hideAddError() {
+            const errBox = document.getElementById('add-artwork-error');
+            if (errBox) {
+                errBox.textContent = '';
+                errBox.classList.add('hidden');
+            }
+        }
+
         function openAddModal() {
-            if (!isGalleryAdmin(currentGalleryUser)) {
-                alert('Administrator privileges required to add artworks to the gallery. Please sign in with an authorized admin account.');
+            if (!canUploadArtwork(currentGalleryUser)) {
+                alert('A verified account is required to add artworks to the gallery. Please sign in with an email-verified account.');
                 openAuthModal();
                 return;
             }
+            hideAddError();
             document.getElementById('add-modal').classList.remove('hidden');
             document.getElementById('artwork-title').focus();
         }
 
         function closeAddModal() {
             document.getElementById('add-modal').classList.add('hidden');
+            hideAddError();
             clearSelectedFile();
             document.getElementById('artwork-title').value = '';
             document.getElementById('artwork-artist').value = '';
             document.getElementById('artwork-url').value = '';
+            document.getElementById('artwork-year').value = '';
+            document.getElementById('artwork-medium').value = '';
             document.getElementById('artwork-desc').value = '';
         }
 
@@ -1452,6 +1514,8 @@
         }
 
         function processSelectedFile(file) {
+            hideAddError();
+            selectedFileObject = file;
             selectedFileName = file.name;
             const ext = file.name.split('.').pop().toLowerCase();
             const isHtml = ext === 'html' || ext === 'htm';
@@ -1468,81 +1532,97 @@
                 selectedFileType = 'image';
             }
 
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                selectedFileBase64 = e.target.result;
+            // Update UI badge
+            document.getElementById('file-name').textContent = file.name;
+            document.getElementById('file-size').textContent = (file.size / 1024 / 1024).toFixed(2) + ' MB';
+            const icon = isHtml ? '🌐' : (isModel ? '🗿' : (isVideo ? '🎬' : '🖼️'));
+            document.getElementById('file-icon').textContent = icon;
+            document.getElementById('file-info-badge').classList.remove('hidden');
 
-                // Update UI badge
-                document.getElementById('file-name').textContent = file.name;
-                document.getElementById('file-size').textContent = (file.size / 1024 / 1024).toFixed(2) + ' MB';
-                const icon = isHtml ? '🌐' : (isModel ? '🗿' : (isVideo ? '🎬' : '🖼️'));
-                document.getElementById('file-icon').textContent = icon;
-                document.getElementById('file-info-badge').classList.remove('hidden');
+            // Auto-fill Title from filename if empty
+            const titleInput = document.getElementById('artwork-title');
+            if (!titleInput.value.trim()) {
+                const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
+                titleInput.value = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
+            }
 
-                // Auto-fill Title from filename if empty
-                const titleInput = document.getElementById('artwork-title');
-                if (!titleInput.value.trim()) {
-                    const cleanTitle = file.name.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ');
-                    titleInput.value = cleanTitle.charAt(0).toUpperCase() + cleanTitle.slice(1);
-                }
+            // Medium hint
+            const mediumInput = document.getElementById('artwork-medium');
+            if (!mediumInput.value.trim()) {
+                if (isHtml) mediumInput.value = 'Interactive 3D Scene';
+                else if (isModel) mediumInput.value = '3D Model';
+                else if (isVideo) mediumInput.value = 'Video Artwork';
+                else mediumInput.value = 'Digital Artwork';
+            }
 
-                // Medium hint
-                const mediumInput = document.getElementById('artwork-medium');
-                if (!mediumInput.value.trim()) {
-                    if (isHtml) mediumInput.value = 'Interactive 3D Scene';
-                    else if (isModel) mediumInput.value = '3D Model';
-                    else if (isVideo) mediumInput.value = 'Video Artwork';
-                    else mediumInput.value = 'Digital Artwork';
-                }
+            // Live Preview
+            const previewContainer = document.getElementById('preview-container');
+            const previewImg = document.getElementById('preview-img');
+            const previewVideo = document.getElementById('preview-video');
+            const previewModel = document.getElementById('preview-model');
+            const previewHtmlNote = document.getElementById('preview-html-note');
 
-                // Live Preview
-                const previewContainer = document.getElementById('preview-container');
-                const previewImg = document.getElementById('preview-img');
-                const previewVideo = document.getElementById('preview-video');
-                const previewModel = document.getElementById('preview-model');
-                const previewHtmlNote = document.getElementById('preview-html-note');
+            previewContainer.classList.remove('hidden');
+            previewImg.classList.add('hidden');
+            if (previewVideo) previewVideo.classList.add('hidden');
+            if (previewModel) previewModel.classList.add('hidden');
+            previewHtmlNote.classList.add('hidden');
 
-                previewContainer.classList.remove('hidden');
-                previewImg.classList.add('hidden');
-                if (previewVideo) previewVideo.classList.add('hidden');
-                if (previewModel) previewModel.classList.add('hidden');
-                previewHtmlNote.classList.add('hidden');
-
-                if (isHtml) {
-                    previewHtmlNote.classList.remove('hidden');
-                } else if (isVideo && previewVideo) {
-                    previewVideo.src = selectedFileBase64;
+            if (isHtml) {
+                previewHtmlNote.classList.remove('hidden');
+            } else if (isVideo && previewVideo) {
+                try {
+                    previewVideo.src = URL.createObjectURL(file);
                     previewVideo.classList.remove('hidden');
-                } else if (isModel && previewModel) {
-                    previewModel.src = selectedFileBase64;
-                    previewModel.classList.remove('hidden');
-                } else {
-                    previewImg.src = selectedFileBase64;
-                    previewImg.classList.remove('hidden');
+                } catch (e) {
+                    console.warn('Preview video error:', e);
                 }
-            };
-
-            reader.readAsDataURL(file);
+            } else if (isModel && previewModel) {
+                try {
+                    previewModel.src = URL.createObjectURL(file);
+                    previewModel.classList.remove('hidden');
+                } catch (e) {
+                    console.warn('Preview model error:', e);
+                }
+            } else if (previewImg) {
+                try {
+                    previewImg.src = URL.createObjectURL(file);
+                    previewImg.classList.remove('hidden');
+                } catch (e) {
+                    console.warn('Preview img error:', e);
+                }
+            }
         }
 
         function clearSelectedFile() {
+            selectedFileObject = null;
             selectedFileBase64 = null;
             selectedFileName = null;
-            document.getElementById('artwork-file-input').value = '';
-            document.getElementById('file-info-badge').classList.add('hidden');
+            const fileInput = document.getElementById('artwork-file-input');
+            if (fileInput) fileInput.value = '';
+            const infoBadge = document.getElementById('file-info-badge');
+            if (infoBadge) infoBadge.classList.add('hidden');
             const previewContainer = document.getElementById('preview-container');
             if (previewContainer) previewContainer.classList.add('hidden');
             const previewVideo = document.getElementById('preview-video');
             if (previewVideo) { previewVideo.src = ''; previewVideo.classList.add('hidden'); }
             const previewModel = document.getElementById('preview-model');
             if (previewModel) { previewModel.src = ''; previewModel.classList.add('hidden'); }
+            const previewImg = document.getElementById('preview-img');
+            if (previewImg) { previewImg.src = ''; previewImg.classList.add('hidden'); }
         }
 
         async function saveNewArtwork() {
-            if (!isGalleryAdmin(currentGalleryUser)) {
+            hideAddError();
+
+            const isLocalDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+
+            if (!isLocalDev && !canUploadArtwork(currentGalleryUser)) {
+                showAddError('You must be signed in with a verified account to add artwork.');
                 openAuthModal();
                 return;
             }
+
             const btnSubmit = document.getElementById('btn-submit-artwork');
             const titleInput = document.getElementById('artwork-title').value.trim();
             const artist = document.getElementById('artwork-artist').value.trim();
@@ -1551,25 +1631,17 @@
             const description = document.getElementById('artwork-desc').value.trim();
             const directUrl = document.getElementById('artwork-url').value.trim();
 
-            if (activeSourceTab === 'upload' && !selectedFileBase64) {
+            if (activeSourceTab === 'upload' && !selectedFileObject && !selectedFileBase64) {
+                showAddError('Please select a file to upload.');
                 return;
             }
             if (activeSourceTab === 'url' && !directUrl) {
+                showAddError('Please enter a valid artwork URL or path.');
                 document.getElementById('artwork-url').focus();
                 return;
             }
 
-            // Provide default title if blank
             const title = titleInput || (selectedFileName ? selectedFileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') : 'Untitled');
-
-            // Prevent double-submits
-            if (btnSubmit) btnSubmit.disabled = true;
-
-            // Spinner state
-            const btnText = document.getElementById('btn-submit-text');
-            const btnSpinner = document.getElementById('btn-submit-spinner');
-            if (btnText) btnText.textContent = 'Mounting...';
-            if (btnSpinner) btnSpinner.classList.remove('hidden');
 
             let determinedType = selectedFileType;
             if (activeSourceTab === 'url') {
@@ -1585,61 +1657,136 @@
                 }
             }
 
-            const payload = {
-                title,
-                artist,
-                year,
-                medium,
-                description,
-                type: determinedType,
-                fileBase64: activeSourceTab === 'upload' ? selectedFileBase64 : null,
-                fileName: activeSourceTab === 'upload' ? selectedFileName : null,
-                directUrl: activeSourceTab === 'url' ? directUrl : null
+            if (btnSubmit) btnSubmit.disabled = true;
+            const btnText = document.getElementById('btn-submit-text');
+            const btnSpinner = document.getElementById('btn-submit-spinner');
+            if (btnText) btnText.textContent = 'Mounting...';
+            if (btnSpinner) btnSpinner.classList.remove('hidden');
+
+            const resetBtnState = () => {
+                if (btnSubmit) btnSubmit.disabled = false;
+                if (btnText) btnText.textContent = 'Mount to Gallery';
+                if (btnSpinner) btnSpinner.classList.add('hidden');
             };
 
-            try {
-                const response = await fetch('/api/gallery', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+            if (isLocalDev) {
+                // Local dev flow via server.js
+                if (activeSourceTab === 'upload' && !selectedFileBase64 && selectedFileObject) {
+                    try {
+                        selectedFileBase64 = await new Promise((resolve, reject) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result);
+                            reader.onerror = reject;
+                            reader.readAsDataURL(selectedFileObject);
+                        });
+                    } catch (e) {
+                        resetBtnState();
+                        showAddError('Failed to read file for local upload: ' + e.message);
+                        return;
+                    }
+                }
 
-                if (response.ok) {
+                const payload = {
+                    title,
+                    artist,
+                    year,
+                    medium,
+                    description,
+                    type: determinedType,
+                    fileBase64: activeSourceTab === 'upload' ? selectedFileBase64 : null,
+                    fileName: activeSourceTab === 'upload' ? selectedFileName : null,
+                    directUrl: activeSourceTab === 'url' ? directUrl : null
+                };
+
+                try {
+                    const response = await fetch('/api/gallery', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errData = await response.json().catch(() => ({}));
+                        throw new Error(errData.error || `Server returned status ${response.status}`);
+                    }
+
                     const result = await response.json();
                     if (result.artworks && Array.isArray(result.artworks)) {
                         ARTWORKS = result.artworks;
                     } else if (result.artwork) {
                         ARTWORKS.push(result.artwork);
                     }
-                } else {
-                    // Fallback local save
-                    const fallbackArt = {
-                        id: `art-${Date.now()}`,
+                } catch (err) {
+                    resetBtnState();
+                    showAddError('Local dev upload failed: ' + err.message);
+                    return;
+                }
+            } else {
+                // Public static site: Firebase Storage + Firestore
+                try {
+                    let finalUrl = directUrl;
+
+                    if (activeSourceTab === 'upload') {
+                        if (!selectedFileObject) {
+                            throw new Error('No file selected for upload.');
+                        }
+
+                        let defaultExt = '.png';
+                        if (determinedType === 'html') defaultExt = '.html';
+                        else if (determinedType === 'model') defaultExt = '.glb';
+                        else if (determinedType === 'video') defaultExt = '.mp4';
+
+                        const rawName = selectedFileName || selectedFileObject.name || 'artwork';
+                        const lastDotIndex = rawName.lastIndexOf('.');
+                        const ext = lastDotIndex !== -1 ? rawName.slice(lastDotIndex).toLowerCase() : defaultExt;
+                        const base = lastDotIndex !== -1 ? rawName.slice(0, lastDotIndex) : rawName;
+                        const sanitizedBase = base.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+                        const sanitizedFileName = sanitizedBase + ext;
+
+                        const uploader = (currentGalleryUser && currentGalleryUser.uid) ? currentGalleryUser : (firebase.auth ? firebase.auth().currentUser : null);
+                        if (!uploader || !uploader.uid) {
+                            throw new Error('You must be signed in to upload.');
+                        }
+
+                        if (btnText) btnText.textContent = 'Uploading to Storage...';
+                        const storageRef = firebase.storage()
+                            .ref('gallery/' + uploader.uid + '/' + Date.now() + '_' + sanitizedFileName);
+                        await storageRef.put(selectedFileObject);
+                        finalUrl = await storageRef.getDownloadURL();
+                    }
+
+                    if (!finalUrl) {
+                        throw new Error('Failed to obtain a valid download URL for the artwork.');
+                    }
+
+                    if (btnText) btnText.textContent = 'Saving Exhibit...';
+                    const newArtId = 'art-' + Date.now();
+                    const uploaderUid = (currentGalleryUser && currentGalleryUser.uid) ? currentGalleryUser.uid : (firebase.auth().currentUser ? firebase.auth().currentUser.uid : '');
+
+                    const defaultMedium = determinedType === 'html' ? 'Interactive 3D Scene' : (determinedType === 'model' ? '3D Model' : (determinedType === 'video' ? 'Video Artwork' : 'Digital Artwork'));
+
+                    const newArtwork = {
+                        id: newArtId,
                         title,
                         artist,
-                        year,
-                        medium,
-                        description,
-                        type: payload.type,
-                        url: payload.fileBase64 || payload.directUrl,
-                        isCustom: true
+                        year: year || '',
+                        medium: medium || defaultMedium,
+                        description: description || '',
+                        type: determinedType,
+                        url: finalUrl,
+                        createdAt: new Date().toISOString(),
+                        isCustom: true,
+                        uploaderUid: uploaderUid
                     };
-                    ARTWORKS.push(fallbackArt);
+
+                    await firebase.firestore().collection('galleryExhibits').doc(newArtId).set(newArtwork);
+                    ARTWORKS.push(newArtwork);
+                } catch (err) {
+                    console.error('Save artwork error:', err);
+                    resetBtnState();
+                    showAddError('Failed to upload artwork: ' + (err.message || err));
+                    return;
                 }
-            } catch (err) {
-                console.warn('Server upload error, saving locally:', err);
-                const fallbackArt = {
-                    id: `art-${Date.now()}`,
-                    title,
-                    artist,
-                    year,
-                    medium,
-                    description,
-                    type: payload.type,
-                    url: payload.fileBase64 || payload.directUrl,
-                    isCustom: true
-                };
-                ARTWORKS.push(fallbackArt);
             }
 
             // Deduplicate
@@ -1651,14 +1798,9 @@
             });
 
             localStorage.setItem(STORAGE_KEY, JSON.stringify(ARTWORKS));
-
-            // Rebuild scene
             rebuildArtworkScene();
 
-            // Reset modal state
-            if (btnSubmit) btnSubmit.disabled = false;
-            if (btnText) btnText.textContent = 'Mount to Gallery';
-            if (btnSpinner) btnSpinner.classList.add('hidden');
+            resetBtnState();
             closeAddModal();
 
             // Smoothly pan camera directly to the newly mounted artwork at the end
@@ -1787,42 +1929,52 @@
                 medium,
                 type,
                 url,
-                description
+                description,
+                updatedAt: new Date().toISOString()
             };
 
-            try {
-                const res = await fetch(`/api/gallery/${id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+            const isLocalDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
 
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.artworks && Array.isArray(data.artworks)) {
-                        ARTWORKS = data.artworks;
-                    } else if (data.artwork) {
+            if (isLocalDev) {
+                try {
+                    const res = await fetch(`/api/gallery/${id}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.artworks && Array.isArray(data.artworks)) {
+                            ARTWORKS = data.artworks;
+                        } else if (data.artwork) {
+                            const idx = ARTWORKS.findIndex(a => a.id === id);
+                            if (idx !== -1) ARTWORKS[idx] = data.artwork;
+                        }
+                    } else {
                         const idx = ARTWORKS.findIndex(a => a.id === id);
-                        if (idx !== -1) ARTWORKS[idx] = data.artwork;
+                        if (idx !== -1) {
+                            ARTWORKS[idx] = { ...ARTWORKS[idx], ...payload };
+                        }
                     }
-                } else {
-                    // Local fallback
+                } catch (err) {
+                    console.warn('Local edit failed, updating locally:', err);
                     const idx = ARTWORKS.findIndex(a => a.id === id);
                     if (idx !== -1) {
-                        ARTWORKS[idx] = {
-                            ...ARTWORKS[idx],
-                            ...payload
-                        };
+                        ARTWORKS[idx] = { ...ARTWORKS[idx], ...payload };
                     }
                 }
-            } catch (err) {
-                console.warn('Server edit failed, updating locally:', err);
-                const idx = ARTWORKS.findIndex(a => a.id === id);
-                if (idx !== -1) {
-                    ARTWORKS[idx] = {
-                        ...ARTWORKS[idx],
-                        ...payload
-                    };
+            } else {
+                // Public site: persist to Firestore
+                try {
+                    await firebase.firestore().collection('galleryExhibits').doc(id).set(payload, { merge: true });
+                    const idx = ARTWORKS.findIndex(a => a.id === id);
+                    if (idx !== -1) {
+                        ARTWORKS[idx] = { ...ARTWORKS[idx], ...payload };
+                    }
+                } catch (err) {
+                    console.error('Firestore edit error:', err);
+                    alert('Failed to save exhibit changes to Firestore: ' + (err.message || err));
                 }
             }
 
@@ -1863,7 +2015,14 @@
             const id = pendingDeleteId;
             if (!id) return;
 
+            if (!isGalleryAdmin(currentGalleryUser)) {
+                openAuthModal();
+                return;
+            }
+
             closeDeleteConfirmModal();
+
+            const targetArt = ARTWORKS.find(a => a.id === id);
 
             // 1. Instantly remove from local state and update local cache
             ARTWORKS = ARTWORKS.filter(a => a.id !== id);
@@ -1874,20 +2033,40 @@
             rebuildArtworkScene();
             clampCameraX();
 
-            // 3. Persist deletion on the server
-            try {
-                const res = await fetch(`/api/gallery/${id}`, { method: 'DELETE' });
-                if (res.ok) {
-                    const data = await res.json();
-                    if (data.artworks && Array.isArray(data.artworks)) {
-                        ARTWORKS = data.artworks;
-                        localStorage.setItem(STORAGE_KEY, JSON.stringify(ARTWORKS));
-                        rebuildArtworkScene();
-                        openCurateModal();
+            const isLocalDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+
+            if (isLocalDev) {
+                // 3. Persist deletion on the local server
+                try {
+                    const res = await fetch(`/api/gallery/${id}`, { method: 'DELETE' });
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data.artworks && Array.isArray(data.artworks)) {
+                            ARTWORKS = data.artworks;
+                            localStorage.setItem(STORAGE_KEY, JSON.stringify(ARTWORKS));
+                            rebuildArtworkScene();
+                            openCurateModal();
+                        }
+                    }
+                } catch (e) {
+                    console.warn('Server delete error (retained local delete):', e);
+                }
+            } else {
+                // Public site: delete from Firestore and Firebase Storage
+                try {
+                    await firebase.firestore().collection('galleryExhibits').doc(id).delete();
+                } catch (err) {
+                    console.warn('Firestore exhibit delete error:', err);
+                }
+
+                if (targetArt && targetArt.url && (targetArt.url.includes('firebasestorage') || targetArt.url.includes('storage.googleapis.com') || targetArt.url.includes('typewriter-app-6e624.firebasestorage.app'))) {
+                    try {
+                        const storageRef = firebase.storage().refFromURL(targetArt.url);
+                        await storageRef.delete();
+                    } catch (storageErr) {
+                        console.warn('Firebase Storage delete error:', storageErr);
                     }
                 }
-            } catch (e) {
-                console.warn('Server delete error (retained local delete):', e);
             }
         }
 
