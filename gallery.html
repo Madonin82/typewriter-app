@@ -292,7 +292,7 @@
                     <div class="h-40 rounded-lg overflow-hidden flex items-center justify-center bg-black/40 relative">
                         <img id="preview-img" class="max-h-full max-w-full object-contain hidden" alt="Artwork preview">
                         <video id="preview-video" class="max-h-full max-w-full object-contain hidden" autoplay muted loop playsinline></video>
-                        <model-viewer id="preview-model" class="w-full h-full hidden" camera-controls auto-rotate shadow-intensity="1" style="background-color: #0d0b09;"></model-viewer>
+                        <model-viewer id="preview-model" class="w-full h-full hidden" camera-controls auto-rotate autoplay shadow-intensity="1" style="background-color: #0d0b09;"></model-viewer>
                         <div id="preview-html-note" class="text-xs text-zinc-400 text-center p-3 hidden">
                             <span class="text-2xl mb-1 block">🌐</span>
                             Interactive HTML Scene ready for 3D frame embedding
@@ -1112,6 +1112,7 @@
                 modelViewer.src = art.url;
                 modelViewer.setAttribute('camera-controls', '');
                 modelViewer.setAttribute('auto-rotate', '');
+                modelViewer.setAttribute('autoplay', '');
                 modelViewer.setAttribute('shadow-intensity', '1');
                 modelViewer.style.width = '100%';
                 modelViewer.style.height = '100%';
