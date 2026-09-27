@@ -165,12 +165,17 @@
 
     <!-- ── BOTTOM NAVIGATION HUD ── -->
     <div class="ui-layer bottom-4 left-1/2 -translate-x-1/2 pointer-events-none flex flex-col items-center gap-2">
+        <!-- Go-to-exhibit menu (pops upward from the nav bar) -->
+        <div id="goto-menu" class="interactive-ui hidden w-72 max-w-[85vw] bg-zinc-900/90 backdrop-blur-md border border-zinc-800/90 rounded-2xl shadow-2xl overflow-hidden">
+            <div class="px-4 py-2.5 border-b border-zinc-800/80 text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Go to exhibit</div>
+            <div id="goto-menu-list" class="max-h-72 overflow-y-auto py-1"></div>
+        </div>
         <div class="interactive-ui bg-zinc-900/85 backdrop-blur-md border border-zinc-800/90 px-4 py-1.5 rounded-full shadow-2xl flex items-center gap-3 text-xs text-zinc-400">
             <button onclick="panLeft()" class="hover:text-amber-400 transition flex items-center gap-1 cursor-pointer">
                 <span>◀</span> Previous
             </button>
             <span class="text-zinc-600">|</span>
-            <span id="current-exhibit-label" class="text-zinc-200 font-medium">Exhibit 1 of 4</span>
+            <button id="current-exhibit-label" onclick="toggleGotoMenu(event)" title="Jump to an exhibit" aria-expanded="false" aria-haspopup="true" class="text-zinc-200 font-medium hover:text-amber-400 transition cursor-pointer">Exhibit 1 of 4</button>
             <span class="text-zinc-600">|</span>
             <button onclick="panRight()" class="hover:text-amber-400 transition flex items-center gap-1 cursor-pointer">
                 Next <span>▶</span>
@@ -1377,6 +1382,115 @@
             targetCameraZ = 2.93;
             clampCameraX();
         }
+
+        // ─── GO-TO-EXHIBIT MENU ─────────────────────────────
+        // The center label in the bottom nav bar opens a menu listing every
+        // exhibit in hall order. Picking one moves the camera exactly the way
+        // Previous/Next do, then closes the menu.
+        function getNearestExhibitIndex() {
+            if (frameObjects.length === 0) return 0;
+            let nearestIndex = 0;
+            let nearestDist = Infinity;
+            frameObjects.forEach((item, idx) => {
+                const d = Math.abs(currentCameraX - item.xPos);
+                if (d < nearestDist) {
+                    nearestDist = d;
+                    nearestIndex = idx;
+                }
+            });
+            return nearestIndex;
+        }
+
+        function gotoExhibit(index) {
+            if (ARTWORKS.length === 0) return;
+            index = Math.max(0, Math.min(ARTWORKS.length - 1, index));
+            targetCameraX = startXOffset + (index * SPACING_X);
+            targetCameraZ = 2.93;
+            clampCameraX();
+            closeGotoMenu();
+        }
+
+        function toggleGotoMenu(event) {
+            if (event) event.stopPropagation();
+            const menu = document.getElementById('goto-menu');
+            if (!menu) return;
+            if (menu.classList.contains('hidden')) {
+                openGotoMenu();
+            } else {
+                closeGotoMenu();
+            }
+        }
+
+        function openGotoMenu() {
+            const menu = document.getElementById('goto-menu');
+            const list = document.getElementById('goto-menu-list');
+            const label = document.getElementById('current-exhibit-label');
+            if (!menu || !list) return;
+            const current = getNearestExhibitIndex();
+            list.innerHTML = '';
+            ARTWORKS.forEach((art, idx) => {
+                const title = (art.title || '').trim() || 'Untitled';
+                const artist = (art.artist || '').trim();
+                const row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'w-full flex items-center gap-3 px-4 py-3 text-left transition cursor-pointer ' +
+                    (idx === current ? 'bg-amber-500/15 hover:bg-amber-500/25' : 'hover:bg-zinc-800/70');
+                row.setAttribute('aria-current', idx === current ? 'true' : 'false');
+                row.onclick = (e) => { e.stopPropagation(); gotoExhibit(idx); };
+
+                const num = document.createElement('span');
+                num.className = 'text-[11px] font-semibold w-6 shrink-0 ' + (idx === current ? 'text-amber-400' : 'text-zinc-500');
+                num.textContent = String(idx + 1);
+
+                const meta = document.createElement('span');
+                meta.className = 'flex flex-col min-w-0 flex-1';
+
+                const t = document.createElement('span');
+                t.className = 'text-xs font-medium truncate ' + (idx === current ? 'text-amber-200' : 'text-zinc-200');
+                t.textContent = title;
+                meta.appendChild(t);
+
+                if (artist) {
+                    const a = document.createElement('span');
+                    a.className = 'text-[10px] text-zinc-500 truncate';
+                    a.textContent = artist;
+                    meta.appendChild(a);
+                }
+
+                row.appendChild(num);
+                row.appendChild(meta);
+                list.appendChild(row);
+            });
+            menu.classList.remove('hidden');
+            if (label) label.setAttribute('aria-expanded', 'true');
+        }
+
+        function closeGotoMenu() {
+            const menu = document.getElementById('goto-menu');
+            const label = document.getElementById('current-exhibit-label');
+            if (menu) menu.classList.add('hidden');
+            if (label) label.setAttribute('aria-expanded', 'false');
+        }
+
+        // Dismiss the menu on outside-click; also close it when the user
+        // navigates with the keyboard so the highlight never goes stale.
+        document.addEventListener('click', (e) => {
+            const menu = document.getElementById('goto-menu');
+            if (!menu || menu.classList.contains('hidden')) return;
+            const label = document.getElementById('current-exhibit-label');
+            if (!menu.contains(e.target) && !(label && label.contains(e.target))) {
+                closeGotoMenu();
+            }
+        });
+
+        document.addEventListener('keydown', (e) => {
+            const menu = document.getElementById('goto-menu');
+            if (!menu || menu.classList.contains('hidden')) return;
+            if (e.key === 'Escape' || e.key === 'ArrowLeft' || e.key === 'ArrowRight' ||
+                e.key === 'a' || e.key === 'd' || e.key === 'Home') {
+                closeGotoMenu();
+            }
+        });
 
         function focusOnArtwork(index) {
             if (index < 0 || index >= ARTWORKS.length) return;
