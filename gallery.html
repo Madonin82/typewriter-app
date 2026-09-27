@@ -226,12 +226,15 @@
                 <!-- Source Tabs -->
                 <div>
                     <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">Artwork Source</label>
-                    <div class="grid grid-cols-2 gap-2 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+                    <div class="grid grid-cols-3 gap-2 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
                         <button type="button" id="tab-upload" onclick="setSourceTab('upload')" class="py-1.5 text-xs font-medium rounded-lg transition bg-amber-500 text-zinc-950 font-semibold shadow">
                             📁 Upload File
                         </button>
                         <button type="button" id="tab-url" onclick="setSourceTab('url')" class="py-1.5 text-xs font-medium rounded-lg transition text-zinc-400 hover:text-zinc-200">
                             🔗 File URL / Path
+                        </button>
+                        <button type="button" id="tab-paste" onclick="setSourceTab('paste')" class="py-1.5 text-xs font-medium rounded-lg transition text-zinc-400 hover:text-zinc-200">
+                            📋 Paste Base64
                         </button>
                     </div>
                 </div>
@@ -260,6 +263,22 @@
                 <div id="section-url" class="space-y-2 hidden">
                     <label class="block text-xs font-medium text-zinc-300">File URL or Public Path</label>
                     <input type="text" id="artwork-url" placeholder="e.g. public/night-nook.html, model.glb, video.mp4, or https://..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                </div>
+
+                <!-- Paste Base64 Section -->
+                <div id="section-paste" class="space-y-2 hidden">
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-300 mb-1">File name <span class="text-zinc-500">(sets the file type, e.g. beacon.glb)</span></label>
+                        <input type="text" id="paste-filename" placeholder="e.g. my-artwork.glb" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-300 mb-1">Base64 data <span class="text-zinc-500">(raw base64 or a data: URL)</span></label>
+                        <textarea id="paste-data" rows="4" placeholder="Paste base64 here..." spellcheck="false" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-[11px] font-mono text-zinc-200 focus:outline-none focus:border-amber-500 transition"></textarea>
+                    </div>
+                    <button type="button" onclick="usePastedData()" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium px-4 py-2 rounded-xl text-xs transition">
+                        Load pasted file
+                    </button>
+                    <p class="text-[10px] text-zinc-500">For agents and setups without file-picker access: paste the file as base64, load it, and it joins the exact same upload pipeline as a picked file.</p>
                 </div>
 
                 <!-- Preview Box -->
@@ -1449,22 +1468,65 @@
 
         function setSourceTab(tab) {
             activeSourceTab = tab;
-            const btnUpload = document.getElementById('tab-upload');
-            const btnUrl = document.getElementById('tab-url');
-            const secUpload = document.getElementById('section-upload');
-            const secUrl = document.getElementById('section-url');
-
-            if (tab === 'upload') {
-                btnUpload.className = 'py-1.5 text-xs font-semibold rounded-lg transition bg-amber-500 text-zinc-950 shadow';
-                btnUrl.className = 'py-1.5 text-xs font-medium rounded-lg transition text-zinc-400 hover:text-zinc-200';
-                secUpload.classList.remove('hidden');
-                secUrl.classList.add('hidden');
-            } else {
-                btnUrl.className = 'py-1.5 text-xs font-semibold rounded-lg transition bg-amber-500 text-zinc-950 shadow';
-                btnUpload.className = 'py-1.5 text-xs font-medium rounded-lg transition text-zinc-400 hover:text-zinc-200';
-                secUrl.classList.remove('hidden');
-                secUpload.classList.add('hidden');
+            const tabs = {
+                upload: [document.getElementById('tab-upload'), document.getElementById('section-upload')],
+                url: [document.getElementById('tab-url'), document.getElementById('section-url')],
+                paste: [document.getElementById('tab-paste'), document.getElementById('section-paste')]
+            };
+            const activeBtn = 'py-1.5 text-xs font-semibold rounded-lg transition bg-amber-500 text-zinc-950 shadow';
+            const idleBtn = 'py-1.5 text-xs font-medium rounded-lg transition text-zinc-400 hover:text-zinc-200';
+            for (const [name, [btn, sec]] of Object.entries(tabs)) {
+                if (!btn || !sec) continue;
+                const isActive = name === tab;
+                btn.className = isActive ? activeBtn : idleBtn;
+                sec.classList.toggle('hidden', !isActive);
             }
+        }
+
+        function mimeFromFilename(name) {
+            const ext = (name.split('.').pop() || '').toLowerCase();
+            const map = {
+                png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
+                mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', ogv: 'video/ogg', m4v: 'video/x-m4v',
+                glb: 'model/gltf-binary', gltf: 'model/gltf+json',
+                html: 'text/html', htm: 'text/html'
+            };
+            return map[ext] || 'application/octet-stream';
+        }
+
+        function usePastedData() {
+            hideAddError();
+            const nameInput = (document.getElementById('paste-filename').value || '').trim() || 'pasted-artwork';
+            let data = (document.getElementById('paste-data').value || '').trim();
+            if (!data) {
+                showAddError('Paste base64 data first.');
+                return;
+            }
+            // Tolerate a full data: URL — keep only the payload after the comma.
+            if (data.startsWith('data:')) {
+                const commaIdx = data.indexOf(',');
+                if (commaIdx === -1) {
+                    showAddError('That data URL looks incomplete (no comma separator).');
+                    return;
+                }
+                data = data.slice(commaIdx + 1);
+            }
+            data = data.replace(/\s+/g, '');
+            let bytes;
+            try {
+                bytes = Uint8Array.from(atob(data), c => c.charCodeAt(0));
+            } catch (e) {
+                showAddError('That does not look like valid base64: ' + e.message);
+                return;
+            }
+            if (!bytes.length) {
+                showAddError('The pasted data decoded to zero bytes.');
+                return;
+            }
+            const file = new File([bytes], nameInput, { type: mimeFromFilename(nameInput) });
+            // Join the exact same pipeline a picked file takes.
+            setSourceTab('upload');
+            processSelectedFile(file);
         }
 
         function showAddError(msg) {
@@ -1503,6 +1565,10 @@
             document.getElementById('artwork-title').value = '';
             document.getElementById('artwork-artist').value = '';
             document.getElementById('artwork-url').value = '';
+            const pasteName = document.getElementById('paste-filename');
+            if (pasteName) pasteName.value = '';
+            const pasteData = document.getElementById('paste-data');
+            if (pasteData) pasteData.value = '';
             document.getElementById('artwork-year').value = '';
             document.getElementById('artwork-medium').value = '';
             document.getElementById('artwork-desc').value = '';
@@ -1638,6 +1704,10 @@
             if (activeSourceTab === 'url' && !directUrl) {
                 showAddError('Please enter a valid artwork URL or path.');
                 document.getElementById('artwork-url').focus();
+                return;
+            }
+            if (activeSourceTab === 'paste') {
+                showAddError('Click "Load pasted file" first to bring the pasted data into the upload.');
                 return;
             }
 
