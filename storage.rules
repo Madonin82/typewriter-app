@@ -1,0 +1,54 @@
+rules_version = '2';
+service firebase.storage {
+  // ── Named tuning constants (keep MAX_QUOTA_* in sync with firestore.rules).
+  function MAX_FILE_BYTES() { return 10 * 1024 * 1024; }      // S1: 10 MiB per file
+  function MAX_QUOTA_BYTES() { return 500 * 1024 * 1024; }    // S3: 500 MiB lifetime per UID
+  function MAX_QUOTA_FILES() { return 200; }                  // S3: 200 files lifetime per UID
+  function ADMIN_UIDS() {
+    return ['vW2BVmvIxQap7mYBhzUU1l7P0VH3', 'HQe2aRANHoOFFPofQyfPTUV4LXB2'];
+  }
+
+  // S2: content-type allowlist. Matches what the gallery uploader accepts,
+  // minus text/html (deliberately excluded: a public bucket serving
+  // attacker-controlled HTML is a phishing/malware host — see notes).
+  // application/octet-stream is included because browsers report extensionless
+  // or OS-unmapped binaries (notably .glb on some systems) as octet-stream;
+  // served as octet-stream it can only download, never execute.
+  function galleryContentTypeOk() {
+    return request.resource.contentType.matches('image/.*')
+        || request.resource.contentType.matches('video/.*')
+        || request.resource.contentType.matches('model/gltf.*')
+        || request.resource.contentType == 'application/octet-stream';
+  }
+
+  // S3: per-user quota enforced against the /storageQuotas/{uid} counter doc.
+  // Missing doc == zero usage. Each upload evaluation costs one Firestore
+  // read (short-circuit: auth/size/type checks run first, so malformed
+  // attempts never reach the get()).
+  function quotaFits(userId, newBytes) {
+    let q = firestore.get(/databases/(default)/documents/storageQuotas/$(userId));
+    let usedBytes = q == null ? 0 : q.data.totalBytes;
+    let usedFiles = q == null ? 0 : q.data.fileCount;
+    return usedBytes + newBytes <= MAX_QUOTA_BYTES()
+        && usedFiles + 1 <= MAX_QUOTA_FILES();
+  }
+
+  match /b/{bucket}/o {
+    match /gallery/{userId}/{allPaths=**} {
+      allow read: if true;
+      // Verified, non-anonymous uploaders only; uid-scoped paths; 10 MiB cap;
+      // content-type allowlist; per-user lifetime quota.
+      allow create: if request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && request.auth.token.email_verified == true
+        && request.auth.uid == userId
+        && request.resource.size < MAX_FILE_BYTES()
+        && galleryContentTypeOk()
+        && quotaFits(userId, request.resource.size);
+      // No update rule: objects are immutable once written (the uploader
+      // always writes new timestamped paths). Overwrites stay denied.
+      allow delete: if request.auth != null
+        && (request.auth.uid == userId || request.auth.uid in ADMIN_UIDS());
+    }
+  }
+}

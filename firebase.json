@@ -1,8 +1,29 @@
 {
+  "database": {
+    "rules": "database.rules.json"
+  },
   "firestore": {
     "rules": "firestore.rules"
   },
-  "database": {
-    "rules": "database.rules.json"
+  "hosting": {
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "server.js",
+      "database.rules.json",
+      "firestore.rules",
+      "storage.rules"
+    ],
+    "public": ".",
+    "rewrites": [
+      {
+        "destination": "/index.html",
+        "source": "**"
+      }
+    ]
+  },
+  "storage": {
+    "rules": "storage.rules"
   }
 }

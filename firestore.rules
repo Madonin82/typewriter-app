@@ -1,6 +1,30 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ── Named tuning constants (rules have no `const`; functions are the idiom).
+    //    STATION_WRITE_THROTTLE: minimum gap between station/{bookId} updates
+    //    for verified users.
+    //    NOTE: 400ms, NOT 2s. The writer pushes liveDraft updates on a 500ms
+    //    debounce while streaming (scheduleStationDraftPush), so 2s would
+    //    reject legitimate live writes. 400ms sits just under that floor and
+    //    still kills tight spam loops (caps a single doc at ~150 writes/min).
+    function STATION_WRITE_THROTTLE() { return duration.value(400, 'ms'); }
+    //    STATION_WRITE_THROTTLE_ANON: the same gap for anonymous (guest)
+    //    writers — the spec's original 2s. Anonymous accounts are free to
+    //    mint, so they get the stricter budget; rejected guest pushes lose
+    //    no data (every push is a full snapshot — the next one carries it).
+    function STATION_WRITE_THROTTLE_ANON() { return duration.value(2, 's'); }
+    //    CHAT_SEND_THROTTLE: minimum gap between a user's chat send-claims.
+    function CHAT_SEND_THROTTLE() { return duration.value(2, 's'); }
+    //    CHAT_CLAIM_FRESHNESS: a send-claim expires this long after stamping.
+    function CHAT_CLAIM_FRESHNESS() { return duration.value(15, 's'); }
+    //    STATION_LIST_LIMIT: anti-scraping cap on public station list queries.
+    function STATION_LIST_LIMIT() { return 50; }
+    //    Storage quota defaults (mirrored in storage.rules — keep in sync).
+    function MAX_QUOTA_BYTES() { return 500 * 1024 * 1024; }
+    function MAX_QUOTA_FILES() { return 200; }
+
     function isStationAdmin() {
       return request.auth != null && request.auth.uid in
         ['vW2BVmvIxQap7mYBhzUU1l7P0VH3', 'HQe2aRANHoOFFPofQyfPTUV4LXB2'];
@@ -33,11 +57,95 @@ service cloud.firestore {
         && request.resource.data.liveDraft.size() <= 50000
         && request.resource.data.pages is list
         && request.resource.data.pages.size() <= 50000
+        // NOTE (F5): per-element shape validation of `pages` is NOT expressible
+        // in Firestore security rules — the language has no list iteration
+        // (no map/filter). The 1 MiB Firestore document ceiling is the real
+        // bound on page-payload size; the write throttle below bounds cadence.
         && request.resource.data.lastUpdateAddedPages is number;
     }
 
     function existingStationIsGuest() {
       return resource.data.keys().hasAll(['isGuest']) && resource.data.isGuest == true;
+    }
+
+    // F3: minimum interval between station doc updates, keyed off the
+    // lastWrite server-timestamp the client stamps on every write.
+    // Fail-open when lastWrite is absent (legacy docs); the write itself
+    // stamps a fresh one. Admins are exempt (trusted; the End-stream button
+    // issues merge writes without re-stamping lastWrite). Anonymous writers
+    // get the stricter 2s budget (cheapest abuse vector); verified writers
+    // get 400ms so the 500ms live-draft cadence never trips the rule.
+    function stationWriteThrottled() {
+      return isStationAdmin()
+        || !(resource.data.lastWrite is timestamp)
+        || request.time - resource.data.lastWrite
+             >= (isAnonymous() ? STATION_WRITE_THROTTLE_ANON()
+                               : STATION_WRITE_THROTTLE());
+    }
+
+    // F1: the client's current send-claim must be fresh and unconsumed.
+    // get() observes pre-write state, so this proves a claim write landed
+    // recently; the batched consume (lastSendAt := request.time) prevents
+    // replaying one claim for many messages.
+    function chatClaimIsFresh(roomId) {
+      let t = get(/databases/$(database)/documents/chatrooms/$(roomId)/throttles/$(request.auth.uid));
+      return t != null
+        && t.data.lastClaimAt is timestamp
+        && request.time - t.data.lastClaimAt <= CHAT_CLAIM_FRESHNESS()
+        && (!(t.data.lastSendAt is timestamp) || t.data.lastSendAt < t.data.lastClaimAt);
+    }
+
+    // F1 (double-spend guard): the batch must consume the claim FOR THIS
+    // MESSAGE. getAfter() sees post-batch state, so a batch smuggling two
+    // message creates behind one claim fails — the consume's nonce can only
+    // name one messageId, and the whole batch is rejected atomically.
+    function chatConsumeBindsMessage(roomId, messageId) {
+      let t = getAfter(/databases/$(database)/documents/chatrooms/$(roomId)/throttles/$(request.auth.uid));
+      return t != null
+        && t.data.nonce is string && t.data.nonce == messageId
+        && t.data.lastSendAt is timestamp && t.data.lastSendAt == request.time;
+    }
+
+    function chatMessageIsValid() {
+      return request.resource.data.keys().hasOnly(
+               ['text', 'senderUid', 'senderName', 'createdAt'])
+        && request.resource.data.senderUid == request.auth.uid
+        && request.resource.data.text is string
+        && request.resource.data.text.size() >= 1
+        && request.resource.data.text.size() <= 1000
+        && request.resource.data.senderName is string
+        && request.resource.data.senderName.size() <= 100
+        && request.resource.data.createdAt == request.time;
+    }
+
+    // F6: galleryExhibits schema — mirrors the uploader contract
+    // (gallery Paste-Base64 tab). createdAt is a client ISO string, not a
+    // Firestore timestamp.
+    function galleryExhibitIsValid(exhibitId) {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+               'id', 'title', 'artist', 'year', 'medium', 'description',
+               'type', 'url', 'createdAt', 'isCustom', 'uploaderUid'])
+        && d.id is string && d.id == exhibitId && d.id.size() <= 64
+        && d.title is string && d.title.size() >= 1 && d.title.size() <= 200
+        && d.artist is string && d.artist.size() <= 100
+        && d.year is string && d.year.size() <= 16
+        && d.medium is string && d.medium.size() <= 100
+        && d.description is string && d.description.size() <= 4000
+        && d.type is string && d.type in ['image', 'model', 'video', 'html']
+        && d.url is string && d.url.size() >= 1 && d.url.size() <= 2048
+        && d.createdAt is string && d.createdAt.size() <= 40
+        && d.isCustom is bool
+        && d.uploaderUid == request.auth.uid;
+    }
+
+    function storageQuotaIsValid() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['totalBytes', 'fileCount'])
+        && d.totalBytes is number && d.totalBytes >= 0
+        && d.totalBytes <= MAX_QUOTA_BYTES()
+        && d.fileCount is number && d.fileCount >= 0
+        && d.fileCount <= MAX_QUOTA_FILES();
     }
 
     // Private writer data is available only to its owner with a verified email.
@@ -52,17 +160,29 @@ service cloud.firestore {
 
     // Station is public to read. Writers must use the fixed schema and stamp lastWrite.
     match /station/{bookId} {
-      allow read: if true;
+      // F4: public reads stay open, but list queries must carry a limit so a
+      // scraper can't page the whole collection cheaply. The admin dashboard
+      // (limit-less onSnapshot) is exempt via isStationAdmin(); every app
+      // list query now carries .limit(50).
+      allow get: if true;
+      allow list: if (request.query.limit != null
+                      && request.query.limit <= STATION_LIST_LIMIT())
+                   || isStationAdmin();
 
+      // F3: creates must stamp a fresh lastWrite (== request.time via
+      // serverTimestamp()), closing the create-with-stale-lastWrite throttle
+      // evasion on the very first update.
       allow create: if request.auth != null
                     && request.resource.data.ownerUid == request.auth.uid
                     && request.resource.data.isGuest == isAnonymous()
                     && stationKeysAreValid()
-                    && stationContentIsValid();
+                    && stationContentIsValid()
+                    && request.resource.data.lastWrite == request.time;
 
       allow update: if request.auth != null
                     && stationKeysAreValid()
                     && stationContentIsValid()
+                    && stationWriteThrottled()
                     && request.resource.data.ownerUid == resource.data.ownerUid
                     && request.resource.data.isGuest == existingStationIsGuest()
                     && (
@@ -77,19 +197,97 @@ service cloud.firestore {
                             && ((!isAnonymous()) || existingStationIsGuest())));
     }
 
-    // Chatroom rules: authenticated users can read and write in the shared room
+    // Chatroom: per-user send throttle via claim/consume on a throttles doc.
+    // Client flow per message: (1) standalone claim write
+    // {lastClaimAt: serverTimestamp(), nonce: <message doc id>}
+    // (rule: >=2s since previous claim); (2) batched [message create +
+    // throttle {lastSendAt: serverTimestamp()}]. The message create requires
+    // a fresh, unconsumed claim AND that the batch's consume names this
+    // message's id (double-spend guard); the claim rule enforces the 2s gap;
+    // delete is denied so the throttle can't be reset.
     match /chatrooms/{roomId} {
       allow read: if request.auth != null;
 
       match /messages/{messageId} {
-        allow read, create: if request.auth != null;
+        allow read: if request.auth != null;
+        // F1: anonymous accounts are blocked at the rule level (the client
+        // already blocks them); senderUid must match the caller; text capped
+        // at 1000 chars; strict field allowlist; fresh send-claim required.
+        allow create: if request.auth != null
+                      && !isAnonymous()
+                      && chatMessageIsValid()
+                      && chatClaimIsFresh(roomId)
+                      && chatConsumeBindsMessage(roomId, messageId);
         allow update, delete: if request.auth != null && (isStationAdmin() || resource.data.senderUid == request.auth.uid);
       }
 
+      match /throttles/{uid} {
+        // Throttle docs are per-user send accounting: owner-only read, and
+        // writes limited to the claim/consume transitions. The claim binds a
+        // nonce (the upcoming message's document id); the consume preserves
+        // it, so one claim can never be split across two messages. No delete
+        // — otherwise the 2s gap could be reset at will.
+        allow read: if request.auth != null && request.auth.uid == uid;
+        // create+update only: delete has no granting rule, so the 2s gap
+        // can never be reset by deleting the throttle doc.
+        allow create, update: if request.auth != null && request.auth.uid == uid
+          && request.resource.data.keys().hasOnly(['lastClaimAt', 'lastSendAt', 'nonce'])
+          && (
+            // Claim: stamp a fresh send slot bound to one message id,
+            // >=2s after the previous claim.
+            (request.resource.data.lastClaimAt == request.time
+             && request.resource.data.nonce is string
+             && request.resource.data.nonce.size() >= 1
+             && request.resource.data.nonce.size() <= 100
+             && (resource == null
+                 || !(resource.data.lastClaimAt is timestamp)
+                 || request.time - resource.data.lastClaimAt >= CHAT_SEND_THROTTLE())
+             && request.resource.data.lastSendAt
+                == (resource == null ? null : resource.data.lastSendAt))
+            ||
+            // Consume: mark the outstanding claim used at send time.
+            // Nonce and claim slot are preserved, not rebound.
+            (resource != null
+             && request.resource.data.lastClaimAt == resource.data.lastClaimAt
+             && request.resource.data.nonce == resource.data.nonce
+             && request.resource.data.lastSendAt == request.time)
+          );
+        allow delete: if false;
+      }
+
+      // F2: drafts hold unfinished writing — read is owner-only.
+      // (No client code uses this path yet; the rule is future-proofing.)
       match /drafts/{uid} {
-        allow read: if request.auth != null;
+        allow read: if request.auth != null && request.auth.uid == uid;
         allow write: if request.auth != null && request.auth.uid == uid;
       }
+    }
+
+    match /galleryExhibits/{exhibitId} {
+      allow read: if true;
+
+      // F6: verified non-anonymous uploaders only, ownerUid binding, strict
+      // schema allowlist with size caps on every string field.
+      allow create: if isVerifiedUser()
+                    && galleryExhibitIsValid(exhibitId);
+
+      allow update, delete: if isStationAdmin();
+    }
+
+    // S3: per-user Storage quota accounting. Written by the uploader client
+    // after each successful upload (upload-then-increment); monotonic so a
+    // user can never lower their own tally. Lifetime quota — deletes do not
+    // decrement. Readable only by the owner; storage.rules enforces the caps
+    // via firestore.get().
+    match /storageQuotas/{uid} {
+      allow read: if isVerifiedUser() && request.auth.uid == uid;
+      allow create: if isVerifiedUser() && request.auth.uid == uid
+                    && storageQuotaIsValid();
+      allow update: if isVerifiedUser() && request.auth.uid == uid
+                    && storageQuotaIsValid()
+                    && request.resource.data.totalBytes >= resource.data.totalBytes
+                    && request.resource.data.fileCount >= resource.data.fileCount;
+      allow delete: if isStationAdmin();
     }
 
     match /{document=**} {
@@ -97,4 +295,3 @@ service cloud.firestore {
     }
   }
 }
-

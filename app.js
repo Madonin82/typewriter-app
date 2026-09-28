@@ -15,6 +15,35 @@ const firebaseConfig = {
   appId: "1:1010879061490:web:83c43a410788f62d401f6b"
 };
 
+// ─── APP CHECK (reCAPTCHA Enterprise) ──────────────────────────────
+// Phase 4 of the Blaze-billing hardening. Paste the reCAPTCHA Enterprise
+// SITE key here (Firebase console → App Check → Apps → typewriter web app).
+// The client mints App Check tokens once a real key is present; ENFORCEMENT
+// stays OFF in the console until this ships and legit traffic is verified —
+// enabling enforcement before the client carries tokens locks out the app.
+// Leave as '' to skip App Check entirely (no behavior change).
+const APP_CHECK_RECAPTCHA_ENTERPRISE_KEY = '';
+
+function initAppCheck() {
+  try {
+    if (!APP_CHECK_RECAPTCHA_ENTERPRISE_KEY) return; // not configured yet
+    if (typeof firebase === 'undefined' || !firebase.appCheck) return;
+    const hostname = (typeof location !== 'undefined' && location.hostname) || '';
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      // Prints a debug token to the console; register it under
+      // Firebase console → App Check → Manage debug tokens for local dev.
+      self.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    }
+    const appCheck = firebase.appCheck();
+    appCheck.activate(
+      new firebase.appCheck.ReCaptchaEnterpriseProvider(APP_CHECK_RECAPTCHA_ENTERPRISE_KEY),
+      true // auto-refresh tokens
+    );
+  } catch (e) {
+    console.warn('[AppCheck] init skipped:', e);
+  }
+}
+
 const STATION_ADMIN_UIDS = ['vW2BVmvIxQap7mYBhzUU1l7P0VH3', 'HQe2aRANHoOFFPofQyfPTUV4LXB2'];
 
 let auth = null;
@@ -786,6 +815,7 @@ function initFirebase() {
       if (!firebase.apps.length) {
         firebase.initializeApp(firebaseConfig);
       }
+      initAppCheck(); // no-op until APP_CHECK_RECAPTCHA_ENTERPRISE_KEY is set
       auth = firebase.auth();
       db = firebase.firestore();
       if (firebase.database) {
@@ -1440,7 +1470,7 @@ function applyRemoteSnapshot(data) {
 
 function reconcileStationPublishState() {
   if (!db || !currentUser || isAnonymousUser() || !Array.isArray(state.books)) return Promise.resolve();
-  return db.collection('station').get().then(snapshot => {
+  return db.collection('station').where('ownerUid', '==', currentUser.uid).limit(50).get().then(snapshot => {
     const stationDocs = new Map(snapshot.docs.map(doc => [doc.id, doc.data()]));
     let changed = false;
     state.books.forEach(book => {
@@ -1774,7 +1804,7 @@ function stationPayloadForBook(book, overrides = {}) {
   const payload = {
     ownerUid: currentUser.uid,
     isGuest: isAnonymousUser(),
-    title: book.title || 'Untitled',
+    title: (book.title || 'Untitled').slice(0, 500),
     stationName: typeof book.stationName === 'string' ? book.stationName.trim().slice(0, 40) : '',
     isLive: Boolean(book.stationLive),
     liveDraft: '',
@@ -3618,10 +3648,10 @@ function subscribeToStationRoute() {
       renderStationDocument(doc.exists ? doc.data() : null, route.bookId);
     }, () => renderStationDocument(null, route.bookId));
   } else {
-    stationUnsubscribe = db.collection('station').orderBy('isLive', 'desc').orderBy('updatedAt', 'desc').onSnapshot(snapshot => {
+    stationUnsubscribe = db.collection('station').orderBy('isLive', 'desc').orderBy('updatedAt', 'desc').limit(50).onSnapshot(snapshot => {
       renderStationHome(snapshot.docs);
     }, () => {
-      db.collection('station').orderBy('updatedAt', 'desc').onSnapshot(snapshot => renderStationHome(snapshot.docs), () => renderStationHome([]));
+      db.collection('station').orderBy('updatedAt', 'desc').limit(50).onSnapshot(snapshot => renderStationHome(snapshot.docs), () => renderStationHome([]));
     });
   }
 }
@@ -4794,7 +4824,7 @@ async function fetchAndRenderStationBackups() {
   }
 
   try {
-    const snapshot = await db.collection('station').where('ownerUid', '==', currentUser.uid).get();
+    const snapshot = await db.collection('station').where('ownerUid', '==', currentUser.uid).limit(50).get();
     if (snapshot.empty) {
       emptyEl.classList.remove('hidden');
       listEl.classList.add('hidden');
@@ -10577,24 +10607,53 @@ function sendChatMessage() {
   clearChatTypingStatus();
 
   const roomId = currentChatRoomId || 'main';
+  const roomRef = db.collection('chatrooms').doc('main');
+  const throttleRef = roomRef.collection('throttles').doc(currentUser.uid);
+  const msgRef = roomRef.collection('messages').doc();
+  // Mirror the 1000-char rule cap client-side so legitimate long pastes
+  // never trip the security rule.
+  const cappedText = text.slice(0, 1000);
+  const now = firebase.firestore.FieldValue.serverTimestamp();
 
-  db.collection('chatrooms').doc('main').collection('messages').add({
-    text: text,
-    senderUid: currentUser.uid,
-    senderName: senderName,
-    createdAt: firebase.firestore.FieldValue.serverTimestamp()
-  }).then((docRef) => {
-    // 4. Signals: push to signals/main = {msgId, uid, ts}
-    if (rtdb && docRef && docRef.id) {
-      push(ref(rtdb, `signals/${roomId}`), {
-        msgId: docRef.id,
-        mid: docRef.id,
-        uid: currentUser.uid,
-        ts: serverTimestamp(),
-        at: serverTimestamp()
-      }).catch(err => console.warn('[RTDB Signal] Push error:', err));
+  // Throttled send (matches firestore.rules chatrooms/{roomId}/throttles):
+  // 1. claim a send slot (rule enforces >=2s since the previous claim);
+  // 2. batched [message create + claim consume] so one claim can't be
+  //    replayed for multiple messages.
+  (async () => {
+    try {
+      const snap = await throttleRef.get();
+      const prevSendAt = (snap.exists && snap.data()) ? (snap.data().lastSendAt || null) : null;
+      await throttleRef.set({ lastClaimAt: now, lastSendAt: prevSendAt, nonce: msgRef.id }, { merge: true });
+    } catch (claimErr) {
+      console.warn('[Chat] Send throttled:', claimErr && claimErr.code);
+      if (typeof showToast === 'function') showToast('Slow down a sec…');
+      chatInput.focus();
+      return;
     }
-  }).catch(err => console.warn('[Chat] Send error:', err));
+    try {
+      const batch = db.batch();
+      batch.set(msgRef, {
+        text: cappedText,
+        senderUid: currentUser.uid,
+        senderName: senderName,
+        createdAt: now
+      });
+      batch.set(throttleRef, { lastSendAt: now }, { merge: true });
+      await batch.commit();
+      // 4. Signals: push to signals/main = {msgId, uid, ts}
+      if (rtdb && msgRef && msgRef.id) {
+        push(ref(rtdb, `signals/${roomId}`), {
+          msgId: msgRef.id,
+          mid: msgRef.id,
+          uid: currentUser.uid,
+          ts: serverTimestamp(),
+          at: serverTimestamp()
+        }).catch(err => console.warn('[RTDB Signal] Push error:', err));
+      }
+    } catch (err) {
+      console.warn('[Chat] Send error:', err);
+    }
+  })();
 
   chatInput.focus();
 }
