@@ -1580,6 +1580,154 @@
             }
         }
 
+        async function captureModelThumbnail(modelUrl) {
+            if (!modelUrl || typeof THREE === 'undefined' || typeof THREE.GLTFLoader === 'undefined') {
+                return null;
+            }
+            let renderer = null;
+            let captureScene = null;
+            let pedestalGltf = null;
+            let modelGltf = null;
+            try {
+                renderer = new THREE.WebGLRenderer({
+                    antialias: true,
+                    preserveDrawingBuffer: true
+                });
+                renderer.setSize(512, 512);
+                renderer.shadowMap.enabled = true;
+                renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+                renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+                const scene = new THREE.Scene();
+                captureScene = scene;
+                scene.background = new THREE.Color(0x0a0908);
+
+                const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 100);
+                camera.position.set(0, 0, 3.2);
+
+                const ambientLight = new THREE.AmbientLight(0xfff5e6, 0.4);
+                scene.add(ambientLight);
+
+                const topDirectionalLight = new THREE.DirectionalLight(0xffeedd, 0.45);
+                topDirectionalLight.position.set(0, 10, 6);
+                scene.add(topDirectionalLight);
+
+                const spotLight = new THREE.SpotLight(0xfff6e8, 2.2);
+                spotLight.position.set(0, 3.8, 2.5);
+                spotLight.angle = Math.PI / 4.5;
+                spotLight.penumbra = 0.6;
+                scene.add(spotLight);
+
+                const loader = new THREE.GLTFLoader();
+                const loadGltf = (url) => new Promise((res, rej) => loader.load(url, res, undefined, rej));
+
+                [pedestalGltf, modelGltf] = await Promise.all([
+                    loadGltf('public/pedestal.glb'),
+                    loadGltf(modelUrl)
+                ]);
+
+                if (!pedestalGltf || !modelGltf || !pedestalGltf.scene || !modelGltf.scene) {
+                    return null;
+                }
+
+                const pedestal = pedestalGltf.scene;
+                pedestal.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+
+                const model = modelGltf.scene;
+
+                const box = new THREE.Box3().setFromObject(model);
+                const size = new THREE.Vector3();
+                box.getSize(size);
+
+                const currentHeight = size.y > 0.001 ? size.y : Math.max(size.x, size.z, 1.0);
+                const targetHeight = 1.3;
+                const scaleFactor = targetHeight / currentHeight;
+                model.scale.setScalar(scaleFactor);
+
+                const scaledBox = new THREE.Box3().setFromObject(model);
+                const scaledCenter = new THREE.Vector3();
+                scaledBox.getCenter(scaledCenter);
+
+                model.position.x = -scaledCenter.x;
+                model.position.y = -scaledCenter.y;
+                model.position.z = -scaledCenter.z;
+
+                const finalBox = new THREE.Box3().setFromObject(model);
+                const modelBaseY = finalBox.min.y;
+                const floorY = -1.5;
+                const pedestalTop = modelBaseY - 0.06;
+                const pedestalHeight = Math.max(0.2, pedestalTop - floorY);
+                const pedestalScaleY = pedestalHeight / 1.03;
+
+                pedestal.scale.set(1.0, pedestalScaleY, 1.0);
+                pedestal.position.set(0, floorY, 0);
+
+                model.traverse((child) => {
+                    if (child.isMesh) {
+                        child.castShadow = true;
+                        child.receiveShadow = true;
+                    }
+                });
+
+                const previewGroup = new THREE.Group();
+                previewGroup.position.set(0, -0.4, 0);
+                previewGroup.add(pedestal);
+                previewGroup.add(model);
+                scene.add(previewGroup);
+
+                renderer.render(scene, camera);
+
+                const dataUrl = renderer.domElement.toDataURL('image/png');
+                if (!dataUrl || dataUrl === 'data:,' || dataUrl.length < 50) {
+                    return null;
+                }
+
+                const res = await fetch(dataUrl);
+                const blob = await res.blob();
+                if (!blob || blob.size === 0) {
+                    return null;
+                }
+
+                return blob;
+            } catch (err) {
+                console.warn('captureModelThumbnail failed for', modelUrl, err);
+                return null;
+            } finally {
+                const disposeMaterial = (mat) => {
+                    if (!mat) return;
+                    for (const key of Object.keys(mat)) {
+                        const val = mat[key];
+                        if (val && typeof val === 'object' && val.isTexture) {
+                            val.dispose();
+                        }
+                    }
+                    mat.dispose();
+                };
+                const disposeNode = (node) => {
+                    if (!node) return;
+                    if (node.geometry) node.geometry.dispose();
+                    if (node.material) {
+                        if (Array.isArray(node.material)) node.material.forEach(disposeMaterial);
+                        else disposeMaterial(node.material);
+                    }
+                };
+
+                // NOTE: pedestal/model were reparented into previewGroup, so the
+                // gltf.scene roots are empty here - traverse the capture scene.
+                if (captureScene) {
+                    captureScene.traverse(disposeNode);
+                }
+                if (renderer) {
+                    renderer.dispose();
+                }
+            }
+        }
+
         async function backfillMissingThumbnails() {
             if (!isStudioAdmin(currentUser)) return;
             const btn = document.getElementById('btn-backfill-thumbs');
@@ -1675,7 +1823,7 @@
                                     const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
                                     if (blob && studioStorage) {
                                         const thumbRef = studioStorage.ref().child(`gallery/${currentUser.uid}/thumbs/${art.id}.png`);
-                                        const task = await thumbRef.put(blob);
+                                        const task = await thumbRef.put(blob, { contentType: 'image/png' });
                                         const url = await task.ref.getDownloadURL();
                                         resolve(url);
                                     } else {
@@ -1697,18 +1845,11 @@
                         });
                     } else if (art.type === 'model') {
                         try {
-                            updateThreePreview(art.url, 'model', art.title || 'Model');
-                            await new Promise(r => setTimeout(r, 800));
-                            if (previewRenderer && previewRenderer.domElement && previewScene && previewCamera) {
-                                previewRenderer.render(previewScene, previewCamera);
-                                const dataUrl = previewRenderer.domElement.toDataURL('image/png');
-                                const res = await fetch(dataUrl);
-                                const blob = await res.blob();
-                                if (blob && studioStorage) {
-                                    const thumbRef = studioStorage.ref().child(`gallery/${currentUser.uid}/thumbs/${art.id}.png`);
-                                    const task = await thumbRef.put(blob);
-                                    thumbUrl = await task.ref.getDownloadURL();
-                                }
+                            const blob = await captureModelThumbnail(art.url);
+                            if (blob && studioStorage) {
+                                const thumbRef = studioStorage.ref().child(`gallery/${currentUser.uid}/thumbs/${art.id}.png`);
+                                const task = await thumbRef.put(blob, { contentType: 'image/png' });
+                                thumbUrl = await task.ref.getDownloadURL();
                             }
                         } catch (modelErr) {
                             console.warn('3D model thumbnail snapshot failed for exhibit:', art.title || art.id, modelErr);
