@@ -221,6 +221,26 @@
     <div id="canvas-container"></div>
     <div id="css-container"></div>
 
+    <!-- ── MUSEUM PLACARD OVERLAY ── -->
+    <div id="placard-overlay" class="fixed inset-0 z-50 hidden flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+        <div class="bg-[#f8f7f4] text-zinc-900 w-full max-w-sm rounded-sm shadow-2xl border border-[#c4b5a5] overflow-hidden">
+            <div class="px-6 pt-5 pb-4">
+                <div class="flex items-start justify-between gap-4">
+                    <h2 id="placard-title" class="text-xl font-bold leading-snug"></h2>
+                    <button type="button" onclick="closePlacardOverlay()" aria-label="Close placard" class="shrink-0 text-[#948e85] hover:text-zinc-900 p-1 -m-1 rounded transition">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <p id="placard-artist" class="mt-1.5 text-sm font-medium text-[#68645e]"></p>
+                <p id="placard-meta" class="mt-0.5 text-xs italic text-[#948e85]"></p>
+            </div>
+            <div class="mx-6 border-t border-[#c4b5a5]/60"></div>
+            <div class="px-6 py-4 max-h-[40vh] overflow-y-auto">
+                <p id="placard-desc" class="text-sm leading-relaxed text-zinc-800 whitespace-pre-line"></p>
+            </div>
+        </div>
+    </div>
+
     <!-- ── ADD ARTWORK MODAL ── -->
     <div id="add-modal" class="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm hidden flex items-center justify-center p-4">
         <div class="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-fade-in text-zinc-100 flex flex-col max-h-[90vh]">
@@ -629,6 +649,7 @@
 
         // Gallery 3D object caches
         const frameObjects = [];
+        const placardMeshes = [];
         const spotLights = [];
         let backWallMesh, floorMesh, ceilingMesh;
 
@@ -1038,6 +1059,7 @@
                 }
             });
             frameObjects.length = 0;
+            placardMeshes.length = 0;
 
             spotLights.forEach(light => {
                 scene.remove(light);
@@ -1094,6 +1116,8 @@
                     // Museum Placard attached to the pedestal mount
                     const placardMesh = createPlacardMesh(art.title, art.artist, art.medium, art.year);
                     placardMesh.position.set(0, -1.45, 0.35);
+                    placardMesh.userData.placardFor = art;
+                    placardMeshes.push(placardMesh);
                     pedestalGroup.add(placardMesh);
 
                     scene.add(pedestalGroup);
@@ -1157,6 +1181,8 @@
                     // 4. Museum Placard underneath
                     const placardMesh = createPlacardMesh(art.title, art.artist, art.medium, art.year);
                     placardMesh.position.set(0, -1.45, 0.05);
+                    placardMesh.userData.placardFor = art;
+                    placardMeshes.push(placardMesh);
                     frameGroup.add(placardMesh);
 
                     scene.add(frameGroup);
@@ -1497,6 +1523,18 @@
             return null;
         }
 
+        // Raycast against the small museum placard meshes; returns the
+        // artwork object the clicked placard belongs to, or null.
+        function pickPlacard(clientX, clientY) {
+            if (placardMeshes.length === 0) return null;
+            modelPointerNDC.x = (clientX / window.innerWidth) * 2 - 1;
+            modelPointerNDC.y = -(clientY / window.innerHeight) * 2 + 1;
+            modelRaycaster.setFromCamera(modelPointerNDC, camera);
+            const hits = modelRaycaster.intersectObjects(placardMeshes, false);
+            if (hits.length === 0) return null;
+            return hits[0].object.userData.placardFor || null;
+        }
+
         function rotateInspectModel(dx, dy) {
             if (!inspectItem || !inspectItem.modelObj) return;
             inspectItem.modelObj.rotation.y += dx * 0.008;
@@ -1522,6 +1560,12 @@
         }
 
         function handleGalleryClick(clientX, clientY) {
+            // Placards get first claim: open the readable museum label.
+            const placardArt = pickPlacard(clientX, clientY);
+            if (placardArt) {
+                openPlacardOverlay(placardArt);
+                return;
+            }
             const hit = pickPedestalModel(clientX, clientY);
             if (hit) {
                 if (inspectItem === hit) exitInspectMode();
@@ -1531,20 +1575,63 @@
             }
         }
 
+        // ─── MUSEUM PLACARD OVERLAY ────────────────────────────────
+        // Visitor-facing wall label: title, artist, year, medium/style,
+        // and the full placard note. No admin controls, no URLs.
+        function openPlacardOverlay(art) {
+            const overlay = document.getElementById('placard-overlay');
+            if (!overlay || !art) return;
+            const title = (art.title && art.title.trim()) ? art.title.trim() : 'Untitled';
+            const artist = (art.artist && art.artist.trim()) ? art.artist.trim() : '';
+            const medium = (art.medium && art.medium.trim()) ? art.medium.trim() : '';
+            const year = (art.year && String(art.year).trim()) ? String(art.year).trim() : '';
+            const desc = (art.description && art.description.trim())
+                ? art.description.trim()
+                : 'No placard note yet \u2014 the artist hasn\u2019t written one.';
+
+            document.getElementById('placard-title').textContent = title;
+
+            const artistEl = document.getElementById('placard-artist');
+            artistEl.textContent = artist;
+            artistEl.style.display = artist ? '' : 'none';
+
+            let meta = '';
+            if (medium && year) meta = medium + ' \u00B7 ' + year;
+            else if (medium) meta = medium;
+            else if (year) meta = year;
+            const metaEl = document.getElementById('placard-meta');
+            metaEl.textContent = meta;
+            metaEl.style.display = meta ? '' : 'none';
+
+            document.getElementById('placard-desc').textContent = desc;
+
+            overlay.classList.remove('hidden');
+        }
+
+        function closePlacardOverlay() {
+            const overlay = document.getElementById('placard-overlay');
+            if (overlay) overlay.classList.add('hidden');
+        }
+
+        function isPlacardOverlayOpen() {
+            const overlay = document.getElementById('placard-overlay');
+            return !!overlay && !overlay.classList.contains('hidden');
+        }
+
         function updateModelHoverCursor(e) {
             if (inspectItem) return;
             if (e.target.tagName === 'BUTTON' || e.target.closest('.interactive-ui')) {
                 document.body.style.cursor = '';
                 return;
             }
-            document.body.style.cursor = pickPedestalModel(e.clientX, e.clientY) ? 'pointer' : '';
+            document.body.style.cursor = (pickPlacard(e.clientX, e.clientY) || pickPedestalModel(e.clientX, e.clientY)) ? 'pointer' : '';
         }
 
         // ─── NAVIGATION & CONTROLS ────────────────────────────────
         function setupInteractions() {
             // Drag controls
             window.addEventListener('mousedown', (e) => {
-                if (e.target.tagName === 'BUTTON' || e.target.closest('.interactive-ui') || e.target.closest('#add-modal') || e.target.closest('#curate-modal')) { downIsValid = false; return; }
+                if (e.target.tagName === 'BUTTON' || e.target.closest('.interactive-ui') || e.target.closest('#add-modal') || e.target.closest('#curate-modal') || e.target.closest('#placard-overlay')) { downIsValid = false; return; }
                 downIsValid = true;
                 downClientX = e.clientX;
                 downClientY = e.clientY;
@@ -1592,7 +1679,7 @@
             let touchStartZ = targetCameraZ;
 
             window.addEventListener('touchstart', (e) => {
-                if (e.target.tagName === 'BUTTON' || e.target.closest('.interactive-ui') || e.target.closest('#add-modal') || e.target.closest('#curate-modal') || e.target.closest('#delete-confirm-modal') || e.target.closest('#gallery-auth-modal')) return;
+                if (e.target.tagName === 'BUTTON' || e.target.closest('.interactive-ui') || e.target.closest('#add-modal') || e.target.closest('#curate-modal') || e.target.closest('#delete-confirm-modal') || e.target.closest('#gallery-auth-modal') || e.target.closest('#placard-overlay')) return;
                 
                 if (e.touches.length === 1) {
                     downIsValid = true;
@@ -1659,6 +1746,11 @@
 
             // Keyboard navigation
             window.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape' && isPlacardOverlayOpen()) {
+                    closePlacardOverlay();
+                    return;
+                }
+                if (isPlacardOverlayOpen()) return;
                 if (document.getElementById('add-modal').classList.contains('hidden') === false) return;
                 if (document.getElementById('curate-modal').classList.contains('hidden') === false) return;
                 if (document.getElementById('gallery-auth-modal').classList.contains('hidden') === false) return;
@@ -1676,6 +1768,14 @@
                     resetCamera();
                 }
             });
+
+            // Placard overlay: click the dimmed backdrop to dismiss
+            const placardOverlay = document.getElementById('placard-overlay');
+            if (placardOverlay) {
+                placardOverlay.addEventListener('click', (e) => {
+                    if (e.target === placardOverlay) closePlacardOverlay();
+                });
+            }
 
             // Drag & drop file on dropzone
             const dropzone = document.getElementById('dropzone');
