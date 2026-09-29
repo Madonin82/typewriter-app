@@ -270,9 +270,33 @@
                 </div>
 
                 <!-- Direct URL Section -->
-                <div id="section-url" class="space-y-2 hidden">
-                    <label class="block text-xs font-medium text-zinc-300">File URL or Public Path</label>
-                    <input type="text" id="artwork-url" placeholder="e.g. public/night-nook.html, model.glb, video.mp4, or https://..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                <div id="section-url" class="space-y-3 hidden">
+                    <div>
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">URL Ingest Mode</label>
+                        <div class="space-y-2 bg-zinc-950 p-2.5 rounded-xl border border-zinc-800 text-xs">
+                            <label class="flex items-center gap-2 cursor-pointer text-zinc-200">
+                                <input type="radio" name="url-ingest-mode" id="url-mode-fetch" value="fetch" checked onchange="toggleUrlModeUI()" class="text-amber-500 focus:ring-amber-500 accent-amber-500 cursor-pointer">
+                                <span>Fetch & upload to gallery Storage <span class="text-amber-400/90 text-[11px]">(permanent copy)</span></span>
+                            </label>
+                            <label class="flex items-center gap-2 cursor-pointer text-zinc-200">
+                                <input type="radio" name="url-ingest-mode" id="url-mode-link" value="link" onchange="toggleUrlModeUI()" class="text-amber-500 focus:ring-amber-500 accent-amber-500 cursor-pointer">
+                                <span>Link to URL <span class="text-zinc-500 text-[11px]">(file stays hosted elsewhere)</span></span>
+                            </label>
+                            <p id="url-link-warning" class="hidden text-[11px] text-amber-400/90 bg-amber-500/10 border border-amber-500/20 p-2 rounded-lg mt-1">
+                                Only use permanent URLs here — temporary/expiring links will break the exhibit.
+                            </p>
+                        </div>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-300 mb-1">File URL or Path</label>
+                        <input type="text" id="artwork-url" placeholder="e.g. https://raw.githubusercontent.com/.../model.glb, public/night-nook.html" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2.5 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+
+                    <div id="url-filename-container" class="space-y-1">
+                        <label class="block text-xs font-medium text-zinc-300">File Name & Extension <span class="text-zinc-500">(optional if URL has extension, e.g. model.glb)</span></label>
+                        <input type="text" id="url-filename" placeholder="e.g. save-point.mp4 (leave empty to derive from URL)" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
                 </div>
 
                 <!-- Paste Base64 Section -->
@@ -1927,34 +1951,77 @@
             }
         }
 
+        const KNOWN_EXTENSIONS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'mp4', 'webm', 'mov', 'ogv', 'm4v', 'glb', 'gltf', 'html', 'htm'];
+        const MIME_MAP = {
+            png: 'image/png',
+            jpg: 'image/jpeg',
+            jpeg: 'image/jpeg',
+            webp: 'image/webp',
+            gif: 'image/gif',
+            mp4: 'video/mp4',
+            webm: 'video/webm',
+            mov: 'video/quicktime',
+            ogv: 'video/ogg',
+            m4v: 'video/x-m4v',
+            glb: 'model/gltf-binary',
+            gltf: 'model/gltf+json',
+            html: 'text/html',
+            htm: 'text/html'
+        };
+
+        function getFileExtension(name) {
+            if (!name || typeof name !== 'string') return '';
+            const clean = name.trim().split('?')[0].split('#')[0];
+            const lastDot = clean.lastIndexOf('.');
+            if (lastDot === -1 || lastDot === clean.length - 1) return '';
+            return clean.slice(lastDot + 1).toLowerCase();
+        }
+
         function mimeFromFilename(name) {
-            const ext = (name.split('.').pop() || '').toLowerCase();
-            const map = {
-                png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
-                mp4: 'video/mp4', webm: 'video/webm', mov: 'video/quicktime', ogv: 'video/ogg', m4v: 'video/x-m4v',
-                glb: 'model/gltf-binary', gltf: 'model/gltf+json',
-                html: 'text/html', htm: 'text/html'
-            };
-            return map[ext] || 'application/octet-stream';
+            const ext = getFileExtension(name);
+            return MIME_MAP[ext] || 'application/octet-stream';
+        }
+
+        function toggleUrlModeUI() {
+            const isLink = document.getElementById('url-mode-link') && document.getElementById('url-mode-link').checked;
+            const warning = document.getElementById('url-link-warning');
+            if (warning) {
+                warning.classList.toggle('hidden', !isLink);
+            }
         }
 
         function usePastedData() {
             hideAddError();
-            const nameInput = (document.getElementById('paste-filename').value || '').trim() || 'pasted-artwork';
+            let nameInput = (document.getElementById('paste-filename').value || '').trim();
+            const ext = getFileExtension(nameInput);
+            if (!ext || !KNOWN_EXTENSIONS.includes(ext)) {
+                showAddError('Add a file extension so the gallery knows the file type — e.g. save-point.mp4');
+                document.getElementById('paste-filename').focus();
+                return;
+            }
+
             let data = (document.getElementById('paste-data').value || '').trim();
             if (!data) {
                 showAddError('Paste base64 data first.');
                 return;
             }
-            // Tolerate a full data: URL — keep only the payload after the comma.
+
+            let parsedDataMime = null;
+            // Parse MIME type from full data: URL prefix if present
             if (data.startsWith('data:')) {
+                const semiIdx = data.indexOf(';');
                 const commaIdx = data.indexOf(',');
                 if (commaIdx === -1) {
                     showAddError('That data URL looks incomplete (no comma separator).');
                     return;
                 }
+                const header = data.substring(5, semiIdx !== -1 && semiIdx < commaIdx ? semiIdx : commaIdx).trim();
+                if (header) {
+                    parsedDataMime = header.toLowerCase();
+                }
                 data = data.slice(commaIdx + 1);
             }
+
             data = data.replace(/\s+/g, '');
             let bytes;
             try {
@@ -1967,7 +2034,21 @@
                 showAddError('The pasted data decoded to zero bytes.');
                 return;
             }
-            const file = new File([bytes], nameInput, { type: mimeFromFilename(nameInput) });
+
+            let finalMime = MIME_MAP[ext];
+            if (parsedDataMime && parsedDataMime !== finalMime) {
+                // If MIME type from data URL disagrees with filename extension, MIME type wins
+                finalMime = parsedDataMime;
+                const matchingExt = Object.keys(MIME_MAP).find(k => MIME_MAP[k] === parsedDataMime);
+                if (matchingExt && matchingExt !== ext) {
+                    const baseName = nameInput.slice(0, nameInput.lastIndexOf('.'));
+                    nameInput = `${baseName}.${matchingExt}`;
+                    const nameField = document.getElementById('paste-filename');
+                    if (nameField) nameField.value = nameInput;
+                }
+            }
+
+            const file = new File([bytes], nameInput, { type: finalMime });
             // Join the exact same pipeline a picked file takes.
             setSourceTab('upload');
             processSelectedFile(file);
@@ -2009,6 +2090,11 @@
             document.getElementById('artwork-title').value = '';
             document.getElementById('artwork-artist').value = '';
             document.getElementById('artwork-url').value = '';
+            const urlName = document.getElementById('url-filename');
+            if (urlName) urlName.value = '';
+            const fetchRadio = document.getElementById('url-mode-fetch');
+            if (fetchRadio) fetchRadio.checked = true;
+            toggleUrlModeUI();
             const pasteName = document.getElementById('paste-filename');
             if (pasteName) pasteName.value = '';
             const pasteData = document.getElementById('paste-data');
@@ -2027,8 +2113,8 @@
             hideAddError();
             selectedFileObject = file;
             selectedFileName = file.name;
-            const ext = file.name.split('.').pop().toLowerCase();
-            const isHtml = ext === 'html' || ext === 'htm';
+            const ext = getFileExtension(file.name);
+            const isHtml = ext === 'html' || ext === 'htm' || file.type === 'text/html';
             const isModel = ext === 'glb' || ext === 'gltf' || file.type === 'model/gltf-binary' || file.type === 'model/gltf+json';
             const isVideo = file.type.startsWith('video/') || ['mp4', 'webm', 'mov', 'ogv', 'm4v'].includes(ext);
 
@@ -2141,6 +2227,8 @@
             const description = document.getElementById('artwork-desc').value.trim();
             const directUrl = document.getElementById('artwork-url').value.trim();
 
+            const isUrlFetchMode = (activeSourceTab === 'url') && (!document.getElementById('url-mode-link') || !document.getElementById('url-mode-link').checked);
+
             if (activeSourceTab === 'upload' && !selectedFileObject && !selectedFileBase64) {
                 showAddError('Please select a file to upload.');
                 return;
@@ -2155,10 +2243,86 @@
                 return;
             }
 
+            const btnText = document.getElementById('btn-submit-text');
+            const btnSpinner = document.getElementById('btn-submit-spinner');
+
+            const resetBtnState = () => {
+                if (btnSubmit) btnSubmit.disabled = false;
+                if (btnText) btnText.textContent = 'Mount to Gallery';
+                if (btnSpinner) btnSpinner.classList.add('hidden');
+            };
+
+            // Ingest URL file if in URL fetch mode
+            if (isUrlFetchMode) {
+                if (btnSubmit) btnSubmit.disabled = true;
+                if (btnText) btnText.textContent = 'Fetching file from URL...';
+                if (btnSpinner) btnSpinner.classList.remove('hidden');
+
+                let resp;
+                try {
+                    resp = await fetch(directUrl);
+                    if (!resp.ok) {
+                        throw new Error(`HTTP ${resp.status}`);
+                    }
+                } catch (e) {
+                    resetBtnState();
+                    showAddError("Couldn't fetch that URL from the browser — the host may block cross-site reads, or the link may have expired. Try the Paste Base64 tab instead.");
+                    return;
+                }
+
+                let blob;
+                try {
+                    blob = await resp.blob();
+                } catch (e) {
+                    resetBtnState();
+                    showAddError("Couldn't fetch that URL from the browser — the host may block cross-site reads, or the link may have expired. Try the Paste Base64 tab instead.");
+                    return;
+                }
+
+                let customName = (document.getElementById('url-filename') ? document.getElementById('url-filename').value : '').trim();
+                let derivedName = customName;
+                if (!derivedName) {
+                    try {
+                        const parsedUrl = new URL(directUrl, window.location.href);
+                        const pathSegments = parsedUrl.pathname.split('/').filter(Boolean);
+                        if (pathSegments.length > 0) {
+                            derivedName = decodeURIComponent(pathSegments[pathSegments.length - 1]);
+                        }
+                    } catch (e) {
+                        const lastPart = directUrl.split('?')[0].split('#')[0].split('/').pop();
+                        if (lastPart) derivedName = decodeURIComponent(lastPart);
+                    }
+                }
+
+                let ext = getFileExtension(derivedName);
+                if (!ext || !KNOWN_EXTENSIONS.includes(ext)) {
+                    if (blob.type) {
+                        const matchingExt = Object.keys(MIME_MAP).find(k => MIME_MAP[k] === blob.type.toLowerCase());
+                        if (matchingExt) {
+                            derivedName = (derivedName || 'artwork') + '.' + matchingExt;
+                            ext = matchingExt;
+                        }
+                    }
+                }
+
+                if (!ext || !KNOWN_EXTENSIONS.includes(ext)) {
+                    resetBtnState();
+                    showAddError('Add a file extension so the gallery knows the file type — e.g. save-point.mp4');
+                    if (document.getElementById('url-filename')) document.getElementById('url-filename').focus();
+                    return;
+                }
+
+                const finalMime = (blob.type && blob.type !== 'application/octet-stream') ? blob.type : MIME_MAP[ext];
+                const file = new File([blob], derivedName, { type: finalMime });
+
+                selectedFileObject = file;
+                selectedFileName = derivedName;
+            }
+
             const title = titleInput || (selectedFileName ? selectedFileName.replace(/\.[^/.]+$/, '').replace(/[-_]/g, ' ') : 'Untitled');
 
             let determinedType = selectedFileType;
-            if (activeSourceTab === 'url') {
+            if (activeSourceTab === 'url' && !isUrlFetchMode) {
                 const cleanUrl = directUrl.toLowerCase().split('?')[0];
                 if (cleanUrl.endsWith('.html') || cleanUrl.endsWith('.htm')) {
                     determinedType = 'html';
@@ -2169,23 +2333,27 @@
                 } else {
                     determinedType = 'image';
                 }
+            } else if (selectedFileObject) {
+                const ext = getFileExtension(selectedFileObject.name);
+                const isHtml = ext === 'html' || ext === 'htm' || selectedFileObject.type === 'text/html';
+                const isModel = ext === 'glb' || ext === 'gltf' || selectedFileObject.type === 'model/gltf-binary' || selectedFileObject.type === 'model/gltf+json';
+                const isVideo = selectedFileObject.type.startsWith('video/') || ['mp4', 'webm', 'mov', 'ogv', 'm4v'].includes(ext);
+
+                if (isHtml) determinedType = 'html';
+                else if (isModel) determinedType = 'model';
+                else if (isVideo) determinedType = 'video';
+                else determinedType = 'image';
             }
 
             if (btnSubmit) btnSubmit.disabled = true;
-            const btnText = document.getElementById('btn-submit-text');
-            const btnSpinner = document.getElementById('btn-submit-spinner');
             if (btnText) btnText.textContent = 'Mounting...';
             if (btnSpinner) btnSpinner.classList.remove('hidden');
 
-            const resetBtnState = () => {
-                if (btnSubmit) btnSubmit.disabled = false;
-                if (btnText) btnText.textContent = 'Mount to Gallery';
-                if (btnSpinner) btnSpinner.classList.add('hidden');
-            };
+            const isFileIngest = (activeSourceTab === 'upload') || isUrlFetchMode;
 
             if (isLocalDev) {
                 // Local dev flow via server.js
-                if (activeSourceTab === 'upload' && !selectedFileBase64 && selectedFileObject) {
+                if (isFileIngest && !selectedFileBase64 && selectedFileObject) {
                     try {
                         selectedFileBase64 = await new Promise((resolve, reject) => {
                             const reader = new FileReader();
@@ -2207,9 +2375,9 @@
                     medium,
                     description,
                     type: determinedType,
-                    fileBase64: activeSourceTab === 'upload' ? selectedFileBase64 : null,
-                    fileName: activeSourceTab === 'upload' ? selectedFileName : null,
-                    directUrl: activeSourceTab === 'url' ? directUrl : null
+                    fileBase64: isFileIngest ? selectedFileBase64 : null,
+                    fileName: isFileIngest ? selectedFileName : null,
+                    directUrl: (!isFileIngest && activeSourceTab === 'url') ? directUrl : null
                 };
 
                 try {
@@ -2240,9 +2408,9 @@
                 try {
                     let finalUrl = directUrl;
 
-                    if (activeSourceTab === 'upload') {
+                    if (isFileIngest) {
                         if (!selectedFileObject) {
-                            throw new Error('No file selected for upload.');
+                            throw new Error('No file available for upload.');
                         }
 
                         let defaultExt = '.png';
@@ -2275,7 +2443,7 @@
 
                     if (btnText) btnText.textContent = 'Saving Exhibit...';
                     const newArtId = 'art-' + Date.now();
-                    const uploaderUid = (currentGalleryUser && currentGalleryUser.uid) ? currentGalleryUser.uid : (firebase.auth().currentUser ? firebase.auth().currentUser.uid : '');
+                    const uploaderUid = (currentGalleryUser && currentGalleryUser.uid) ? currentGalleryUser.uid : (firebase.auth.currentUser ? firebase.auth.currentUser.uid : '');
 
                     const defaultMedium = determinedType === 'html' ? 'Interactive 3D Scene' : (determinedType === 'model' ? '3D Model' : (determinedType === 'video' ? 'Video Artwork' : 'Digital Artwork'));
 
