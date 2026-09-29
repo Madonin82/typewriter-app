@@ -1094,7 +1094,27 @@
                 }
             }
 
-            if (fileToUpload && studioStorage) {
+            // If the artwork is a local data:/blob: URL but no File could be
+            // produced (e.g. the conversion above threw), publishing now would
+            // persist a dead URL — fail loudly instead.
+            const isRemoteUrl = selectedFileBase64.startsWith('http');
+            if (!isRemoteUrl && !fileToUpload) {
+                console.warn('No uploadable file available; refusing to persist a dead data:/blob: URL.');
+                if (errEl) {
+                    errEl.textContent = 'Could not prepare the file for upload — exhibit was not published.';
+                    errEl.classList.remove('hidden');
+                }
+                return;
+            }
+
+            if (fileToUpload) {
+                if (!studioStorage) {
+                    if (errEl) {
+                        errEl.textContent = 'Storage is unavailable — exhibit was not published.';
+                        errEl.classList.remove('hidden');
+                    }
+                    return;
+                }
                 try {
                     let defaultExt = '.png';
                     if (selectedFileType === 'html') defaultExt = '.html';
@@ -1113,6 +1133,11 @@
                     finalUrl = await uploadTask.ref.getDownloadURL();
                 } catch (e) {
                     console.warn('Storage upload fallback:', e);
+                    if (errEl) {
+                        errEl.textContent = 'Upload failed: ' + (e.message || e.code || e) + ' — exhibit was not published.';
+                        errEl.classList.remove('hidden');
+                    }
+                    return;
                 }
             }
 
