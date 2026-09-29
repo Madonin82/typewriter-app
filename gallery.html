@@ -2389,7 +2389,7 @@
                     return;
                 }
 
-                const finalMime = (blob.type && blob.type !== 'application/octet-stream') ? blob.type : MIME_MAP[ext];
+                const finalMime = MIME_MAP[ext] || ((blob.type && blob.type !== 'application/octet-stream') ? blob.type : 'application/octet-stream');
                 const file = new File([blob], derivedName, { type: finalMime });
 
                 selectedFileObject = file;
