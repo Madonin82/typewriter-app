@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Artist Studio — Note to Self</title>
+    <meta name="description" content="Verified user art studio for previewing and publishing exhibits to the 3D Art Gallery.">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Inter & Courier Prime Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <!-- Official Firebase SDK (Compat) -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
+
+    <!-- Three.js & Loaders for Real-Time Preview -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/renderers/CSS3DRenderer.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            font-family: 'Inter', sans-serif;
+            background-color: #0b0a09;
+            color: #f4f4f5;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(24, 24, 27, 0.6);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(113, 113, 122, 0.4);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(161, 161, 170, 0.6);
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.25s ease-out forwards;
+        }
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.98); }
+            to { opacity: 1; transform: scale(1); }
+        }
+    </style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen flex flex-col antialiased">
+
+    <!-- ── TOP NAVIGATION BAR ── -->
+    <header class="border-b border-zinc-800/80 bg-zinc-900/80 backdrop-blur-md px-6 py-3.5 flex justify-between items-center sticky top-0 z-40">
+        <div class="flex items-center gap-3">
+            <div class="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold text-sm">🎨</div>
+            <div>
+                <h1 class="text-sm font-semibold text-zinc-100 tracking-wide">Artist Studio</h1>
+                <p id="studio-subtitle" class="text-[11px] text-zinc-400">Preview & publish exhibits to the 3D gallery</p>
+            </div>
+        </div>
+        <div class="flex items-center gap-2">
+            <div id="studio-auth-chip" class="hidden text-xs px-3 py-1.5 rounded-xl bg-zinc-800/80 border border-zinc-700/80 text-zinc-300 flex items-center gap-2">
+                <span id="studio-user-email"></span>
+                <button onclick="studioSignOut()" class="text-zinc-400 hover:text-rose-400 font-medium">Sign Out</button>
+            </div>
+            <a href="gallery.html" class="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5">
+                <span>Gallery ↗</span>
+            </a>
+            <a href="./" class="bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-zinc-300 px-3 py-1.5 rounded-xl text-xs font-medium transition flex items-center gap-1.5">
+                <span>Writer ↗</span>
+            </a>
+        </div>
+    </header>
+
+    <!-- ── MAIN CONTENT CONTAINER ── -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 lg:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- ── UNVERIFIED / GUEST GATEWAY SCREEN (Hidden by default) ── -->
+        <div id="auth-gate-screen" class="hidden lg:col-span-12 bg-zinc-900/90 border border-zinc-800 rounded-2xl p-8 text-center max-w-xl mx-auto shadow-2xl my-auto animate-fade-in">
+            <div class="w-16 h-16 bg-amber-500/10 border border-amber-500/20 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4">🔐</div>
+            <h2 id="gate-title" class="text-lg font-semibold text-zinc-100 mb-2">Verified Registered Users Only</h2>
+            <p id="gate-desc" class="text-xs text-zinc-400 mb-6 leading-relaxed">Each verified user gets their own dedicated studio page to upload, preview in 3D, and curate exhibits. Please sign in and verify your email address to access your personal studio.</p>
+            
+            <div id="gate-auth-actions" class="space-y-3">
+                <button onclick="studioGoogleSignIn()" class="w-full bg-white hover:bg-zinc-100 text-zinc-900 font-medium py-2.5 px-4 rounded-xl text-xs flex items-center justify-center gap-2.5 transition shadow cursor-pointer">
+                    <svg class="w-4 h-4" viewBox="0 0 24 24">
+                        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+                        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+                        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/>
+                        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/>
+                    </svg>
+                    <span>Sign in with Google</span>
+                </button>
+                <div id="verification-action-box" class="hidden pt-3 border-t border-zinc-800 space-y-2">
+                    <p class="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl">Your account is signed in, but your email address has not been verified yet.</p>
+                    <button onclick="sendVerificationEmail()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium py-2 px-4 rounded-xl text-xs transition">
+                        Resend Verification Email
+                    </button>
+                    <button onclick="checkEmailVerification()" class="w-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold py-2 px-4 rounded-xl text-xs transition">
+                        I've Verified — Check Status
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ── STUDIO WORKSPACE (Shown when verified) ── -->
+        <div id="studio-workspace" class="hidden lg:col-span-12 grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            <!-- Left Column: Flat 2-D Menu & Upload Options + Immediate Preview -->
+            <div class="lg:col-span-6 bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl flex flex-col space-y-4">
+                <div class="flex items-center justify-between border-b border-zinc-800/80 pb-3">
+                    <h2 class="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+                        <span>📤</span> Upload & Configure Exhibit
+                    </h2>
+                    <span id="studio-user-badge" class="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-mono">Verified Studio</span>
+                </div>
+
+                <div id="studio-error" class="hidden text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 p-2.5 rounded-xl"></div>
+
+                <!-- Source Tabs -->
+                <div>
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-zinc-400 mb-2">Artwork Source</label>
+                    <div class="grid grid-cols-3 gap-2 bg-zinc-950 p-1 rounded-xl border border-zinc-800">
+                        <button type="button" id="tab-upload" onclick="setStudioSourceTab('upload')" class="py-1.5 text-xs font-medium rounded-lg transition bg-amber-500 text-zinc-950 font-semibold shadow">
+                            📁 Upload File
+                        </button>
+                        <button type="button" id="tab-url" onclick="setStudioSourceTab('url')" class="py-1.5 text-xs font-medium rounded-lg transition text-zinc-400 hover:text-zinc-200">
+                            🔗 File URL
+                        </button>
+                        <button type="button" id="tab-paste" onclick="setStudioSourceTab('paste')" class="py-1.5 text-xs font-medium rounded-lg transition text-zinc-400 hover:text-zinc-200">
+                            📋 Base64
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Upload Section -->
+                <div id="section-upload" class="space-y-3">
+                    <div id="dropzone" class="border-2 border-dashed border-zinc-700 hover:border-amber-500/80 rounded-xl p-5 text-center cursor-pointer transition bg-zinc-950/50 hover:bg-zinc-950" onclick="document.getElementById('studio-file-input').click()">
+                        <input type="file" id="studio-file-input" class="hidden" accept="image/*,video/*,.html,.htm,.glb,.gltf" onchange="handleStudioFileSelected(event)">
+                        <div class="flex flex-col items-center">
+                            <svg class="w-8 h-8 text-amber-500/80 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.8" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/></svg>
+                            <p class="text-xs font-medium text-zinc-200">Click to upload or drag & drop</p>
+                            <p class="text-[11px] text-zinc-500 mt-0.5">Images, Videos, 3D Models (.glb), or HTML</p>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- URL Section -->
+                <div id="section-url" class="space-y-3 hidden">
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-300 mb-1">Artwork URL or Path</label>
+                        <input type="text" id="studio-url-input" placeholder="e.g. public/model.glb or https://..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-300 mb-1">File Name / Extension <span class="text-zinc-500">(e.g. room.html)</span></label>
+                        <input type="text" id="studio-url-filename" placeholder="room.html" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                    <button type="button" onclick="loadStudioUrl()" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium px-4 py-2 rounded-xl text-xs transition">
+                        Load URL for Preview
+                    </button>
+                </div>
+
+                <!-- Paste Base64 Section -->
+                <div id="section-paste" class="space-y-2 hidden">
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-300 mb-1">File Name <span class="text-zinc-500">(e.g. art.html)</span></label>
+                        <input type="text" id="studio-paste-filename" placeholder="art.html" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-300 mb-1">Base64 / HTML Data</label>
+                        <textarea id="studio-paste-data" rows="3" placeholder="Paste base64 or HTML string here..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-[11px] font-mono text-zinc-200 focus:outline-none focus:border-amber-500 transition"></textarea>
+                    </div>
+                    <button type="button" onclick="loadStudioPaste()" class="bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium px-4 py-2 rounded-xl text-xs transition">
+                        Load Data for Preview
+                    </button>
+                </div>
+
+                <!-- IMMEDIATE PREVIEW & REMOVE WINDOW (Beneath file picker / loader) -->
+                <div id="file-preview-box" class="hidden bg-zinc-950 border border-zinc-800 rounded-xl p-3.5 space-y-3 animate-fade-in">
+                    <div class="flex items-center justify-between text-xs">
+                        <div class="flex items-center gap-2.5 overflow-hidden">
+                            <span id="file-icon" class="text-lg">🖼️</span>
+                            <div class="truncate">
+                                <span id="file-name" class="font-medium text-zinc-200 block truncate"></span>
+                                <span id="file-size" class="text-zinc-500 text-[10px]"></span>
+                            </div>
+                        </div>
+                        <button type="button" onclick="clearStudioFile()" class="bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/20 px-2.5 py-1 rounded-lg text-xs font-medium transition shrink-0">Remove</button>
+                    </div>
+
+                    <!-- Instant Thumbnail / Live Preview Container -->
+                    <div id="instant-thumb-container" class="w-full h-40 bg-zinc-900 border border-zinc-800/80 rounded-lg overflow-hidden flex items-center justify-center relative">
+                        <img id="instant-img-preview" class="hidden w-full h-full object-contain" alt="Preview Thumbnail">
+                        <video id="instant-video-preview" class="hidden w-full h-full object-contain" controls muted></video>
+                        <iframe id="instant-iframe-preview" class="hidden w-full h-full border-0"></iframe>
+                        <div id="instant-placeholder" class="text-zinc-500 text-xs text-center p-2">Loading preview...</div>
+                    </div>
+                </div>
+
+                <!-- Metadata Inputs -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-300 mb-1">Title</label>
+                        <input type="text" id="exhibit-title" placeholder="Untitled Exhibit" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-300 mb-1">Artist</label>
+                        <input type="text" id="exhibit-artist" placeholder="Artist Name" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-300 mb-1">Year / Date</label>
+                        <input type="text" id="exhibit-year" placeholder="2026-09-29" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-300 mb-1">Medium / Style</label>
+                        <input type="text" id="exhibit-medium" placeholder="Digital Photograph" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-medium text-zinc-300 mb-1">Placard Note / Description</label>
+                    <textarea id="exhibit-desc" rows="2" placeholder="Description of the work..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition"></textarea>
+                </div>
+
+                <div class="pt-2 flex justify-end">
+                    <button type="button" onclick="publishExhibit()" class="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold px-6 py-2.5 rounded-xl text-xs transition shadow-lg flex items-center gap-2 cursor-pointer">
+                        <span>Mount Exhibit to Gallery</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Right Column: Three.js Live Preview & User Exhibits List -->
+            <div class="lg:col-span-6 space-y-6 flex flex-col">
+                <!-- Three.js Preview Container -->
+                <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl flex flex-col">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+                            <span>👁️</span> Gallery Lighting & 3D Studio Preview
+                        </h2>
+                        <span class="text-[10px] text-zinc-400">Interactive Studio Viewport</span>
+                    </div>
+                    <div id="preview-viewport" class="h-64 sm:h-80 rounded-xl bg-[#0a0908] border border-zinc-800 overflow-hidden relative flex items-center justify-center cursor-grab active:cursor-grabbing">
+                        <iframe id="preview-iframe" class="hidden absolute inset-0 w-full h-full border-0 z-20"></iframe>
+                        <div id="preview-placeholder" class="text-center p-4 text-zinc-500 text-xs z-10">
+                            <span class="text-3xl block mb-2">🖼️</span>
+                            Load or select an artwork file above to preview it in the gallery environment
+                        </div>
+                        <div class="absolute bottom-2 left-2 text-[10px] bg-black/70 text-zinc-300 px-2.5 py-1 rounded-md backdrop-blur-sm pointer-events-none z-30">Click & drag to rotate &middot; Scroll to zoom</div>
+                    </div>
+                    <p class="text-[11px] text-zinc-500 mt-2">Preview uses the exact same gallery wall color, floor, lighting, and pedestal scale as the 3D Art Gallery.</p>
+                </div>
+
+                <!-- My Studio Exhibits Section -->
+                <div class="bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl flex-1 flex flex-col">
+                    <div class="flex items-center justify-between mb-3 border-b border-zinc-800 pb-2">
+                        <h2 class="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+                            <span>🏛️</span> My Studio Exhibits
+                        </h2>
+                        <span id="my-exhibits-count" class="text-[11px] text-amber-400 font-mono">0 exhibits</span>
+                    </div>
+                    <div id="my-exhibits-list" class="space-y-2.5 overflow-y-auto max-h-64 pr-1">
+                        <!-- Populated dynamically -->
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Firebase Init & Studio Logic -->
+    <script>
+        const firebaseConfig = {
+            apiKey: "AIzaSyB5UvSiArIv_YnmbWyjSG0so6MJc5S1A9E",
+            authDomain: "typewriter-app-6e624.firebaseapp.com",
+            databaseURL: "https://typewriter-app-6e624-default-rtdb.firebaseio.com/",
+            projectId: "typewriter-app-6e624",
+            storageBucket: "typewriter-app-6e624.firebasestorage.app",
+            messagingSenderId: "1010879061490",
+            appId: "1:1010879061490:web:83c43a410788f62d401f6b"
+        };
+
+        const STATION_ADMIN_UIDS = ['vW2BVmvIxQap7mYBhzUU1l7P0VH3', 'HQe2aRANHoOFFPofQyfPTUV4LXB2'];
+        const ADMIN_EMAILS = ['jkeovichith@gmail.com'];
+
+        let studioAuth = null;
+        let studioDb = null;
+        let studioStorage = null;
+        let currentUser = null;
+
+        // Active selected file / preview state
+        let selectedFile = null;
+        let selectedFileBase64 = null;
+        let selectedFileName = null;
+        let selectedFileType = 'image'; // image, video, model, html
+
+        // Three.js preview instance variables
+        let previewScene, previewCamera, previewRenderer, previewMixer;
+        let previewAnimFrameId = null;
+        let previewLoadedObject = null;
+        let isPreviewDragging = false;
+        let previewPrevX = 0, previewPrevY = 0;
+
+        window.addEventListener('DOMContentLoaded', () => {
+            initFirebaseStudio();
+            initThreePreview();
+            setDefaultYear();
+        });
+
+        function setDefaultYear() {
+            const yearInput = document.getElementById('exhibit-year');
+            if (yearInput && !yearInput.value) {
+                const now = new Date();
+                const yyyy = now.getFullYear();
+                const mm = String(now.getMonth() + 1).padStart(2, '0');
+                const dd = String(now.getDate()).padStart(2, '0');
+                yearInput.value = `${yyyy}-${mm}-${dd}`;
+            }
+        }
+
+        function initFirebaseStudio() {
+            if (typeof firebase !== 'undefined' && firebase.initializeApp) {
+                if (!firebase.apps.length) {
+                    firebase.initializeApp(firebaseConfig);
+                }
+                studioAuth = firebase.auth();
+                studioDb = firebase.firestore();
+                studioStorage = firebase.storage();
+
+                studioAuth.onAuthStateChanged((user) => {
+                    currentUser = user;
+                    renderStudioAccessUI();
+                    if (user && (user.emailVerified || isStudioAdmin(user))) {
+                        loadMyExhibits();
+                    }
+                });
+            }
+        }
+
+        function isStudioAdmin(user) {
+            const u = user || currentUser;
+            if (!u || u.isAnonymous) return false;
+            if (STATION_ADMIN_UIDS.includes(u.uid)) return true;
+            if (u.email && ADMIN_EMAILS.includes(u.email.toLowerCase())) return true;
+            return false;
+        }
+
+        function renderStudioAccessUI() {
+            const gateScreen = document.getElementById('auth-gate-screen');
+            const workspace = document.getElementById('studio-workspace');
+            const authChip = document.getElementById('studio-auth-chip');
+            const userEmailSpan = document.getElementById('studio-user-email');
+            const verificationBox = document.getElementById('verification-action-box');
+            const gateDesc = document.getElementById('gate-desc');
+
+            if (!currentUser) {
+                gateScreen.classList.remove('hidden');
+                workspace.classList.add('hidden');
+                authChip.classList.add('hidden');
+                if (verificationBox) verificationBox.classList.add('hidden');
+                if (gateDesc) gateDesc.textContent = 'Each verified user gets their own dedicated studio page to upload, preview in 3D, and curate exhibits. Please sign in to access your studio.';
+                return;
+            }
+
+            const isVerified = currentUser.emailVerified === true || isStudioAdmin(currentUser);
+
+            if (!isVerified) {
+                gateScreen.classList.remove('hidden');
+                workspace.classList.add('hidden');
+                authChip.classList.remove('hidden');
+                userEmailSpan.textContent = currentUser.email;
+                if (verificationBox) verificationBox.classList.remove('hidden');
+                if (gateDesc) gateDesc.textContent = `Signed in as ${currentUser.email}. Email verification is required to access your artist studio page.`;
+                return;
+            }
+
+            // Verified user / Admin
+            gateScreen.classList.add('hidden');
+            workspace.classList.remove('hidden');
+            authChip.classList.remove('hidden');
+            userEmailSpan.textContent = currentUser.email;
+
+            // Auto-fill artist name if empty
+            const artistInput = document.getElementById('exhibit-artist');
+            if (artistInput && !artistInput.value) {
+                artistInput.value = currentUser.displayName || currentUser.email.split('@')[0];
+            }
+        }
+
+        async function studioGoogleSignIn() {
+            if (!studioAuth) return;
+            const provider = new firebase.auth.GoogleAuthProvider();
+            try {
+                await studioAuth.signInWithPopup(provider);
+            } catch (e) {
+                alert('Sign in error: ' + e.message);
+            }
+        }
+
+        async function studioSignOut() {
+            if (studioAuth) {
+                await studioAuth.signOut();
+            }
+        }
+
+        async function sendVerificationEmail() {
+            if (!currentUser) return;
+            try {
+                await currentUser.sendEmailVerification();
+                alert('Verification email sent to ' + currentUser.email + '. Please check your inbox.');
+            } catch (e) {
+                alert('Error sending verification email: ' + e.message);
+            }
+        }
+
+        async function checkEmailVerification() {
+            if (!currentUser) return;
+            try {
+                await currentUser.reload();
+                currentUser = studioAuth.currentUser;
+                renderStudioAccessUI();
+                if (currentUser.emailVerified || isStudioAdmin(currentUser)) {
+                    alert('Email verified successfully! Welcome to your studio.');
+                    loadMyExhibits();
+                } else {
+                    alert('Email is not verified yet. Please check your inbox and click the verification link.');
+                }
+            } catch (e) {
+                alert('Error checking verification: ' + e.message);
+            }
+        }
+
+        // ─── TAB NAVIGATION ────────────────────────────────────────
+        function setStudioSourceTab(tab) {
+            ['upload', 'url', 'paste'].forEach(t => {
+                const btn = document.getElementById(`tab-${t}`);
+                const sec = document.getElementById(`section-${t}`);
+                if (btn) {
+                    if (t === tab) {
+                        btn.className = 'py-1.5 text-xs font-medium rounded-lg transition bg-amber-500 text-zinc-950 font-semibold shadow';
+                    } else {
+                        btn.className = 'py-1.5 text-xs font-medium rounded-lg transition text-zinc-400 hover:text-zinc-200';
+                    }
+                }
+                if (sec) {
+                    if (t === tab) sec.classList.remove('hidden');
+                    else sec.classList.add('hidden');
+                }
+            });
+        }
+
+        // ─── FILE & PREVIEW PROCESSING ─────────────────────────────
+        function handleStudioFileSelected(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            processStudioFile(file);
+        }
+
+        function processStudioFile(file) {
+            selectedFile = file;
+            selectedFileName = file.name;
+            const ext = file.name.split('.').pop().toLowerCase();
+
+            if (['glb', 'gltf'].includes(ext)) {
+                selectedFileType = 'model';
+            } else if (['mp4', 'webm', 'mov'].includes(ext)) {
+                selectedFileType = 'video';
+            } else if (['html', 'htm'].includes(ext)) {
+                selectedFileType = 'html';
+            } else {
+                selectedFileType = 'image';
+            }
+
+            if (selectedFileType === 'html') {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    const htmlText = e.target.result;
+                    const blob = new Blob([htmlText], { type: 'text/html' });
+                    const blobUrl = URL.createObjectURL(blob);
+                    selectedFileBase64 = blobUrl;
+
+                    const titleMatch = htmlText.match(/<title>([^<]+)<\/title>/i);
+                    const titleInput = document.getElementById('exhibit-title');
+                    if (titleInput && titleMatch && titleMatch[1]) {
+                        titleInput.value = titleMatch[1].trim();
+                    } else if (titleInput && !titleInput.value) {
+                        const cleanName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+                        titleInput.value = cleanName.charAt(0).toUpperCase() + cleanName.slice(1).replace(/[-_]/g, ' ');
+                    }
+
+                    showStudioFileInfo(file.name, (file.size / (1024 * 1024)).toFixed(2) + ' MB', blobUrl);
+                    updateThreePreview(blobUrl, selectedFileType, file.name);
+                };
+                reader.readAsText(file);
+            } else {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    selectedFileBase64 = e.target.result;
+                    showStudioFileInfo(file.name, (file.size / (1024 * 1024)).toFixed(2) + ' MB', selectedFileBase64);
+                    updateThreePreview(selectedFileBase64, selectedFileType, file.name);
+                };
+                reader.readAsDataURL(file);
+
+                const titleInput = document.getElementById('exhibit-title');
+                if (titleInput && !titleInput.value) {
+                    const cleanName = file.name.substring(0, file.name.lastIndexOf('.')) || file.name;
+                    titleInput.value = cleanName.charAt(0).toUpperCase() + cleanName.slice(1).replace(/[-_]/g, ' ');
+                }
+            }
+
+            const mediumInput = document.getElementById('exhibit-medium');
+            if (mediumInput) {
+                if (selectedFileType === 'model') mediumInput.value = '3D Model (.glb)';
+                else if (selectedFileType === 'video') mediumInput.value = 'Digital Video Art';
+                else if (selectedFileType === 'html') mediumInput.value = 'Interactive 3D HTML Room';
+                else mediumInput.value = 'Digital Photograph';
+            }
+        }
+
+        function clearStudioFile() {
+            selectedFile = null;
+            selectedFileBase64 = null;
+            selectedFileName = null;
+            document.getElementById('file-preview-box').classList.add('hidden');
+            const fileInput = document.getElementById('studio-file-input');
+            if (fileInput) fileInput.value = '';
+            resetThreePreview();
+        }
+
+        function showStudioFileInfo(name, size, src) {
+            const previewBox = document.getElementById('file-preview-box');
+            const nameEl = document.getElementById('file-name');
+            const sizeEl = document.getElementById('file-size');
+            const iconEl = document.getElementById('file-icon');
+            const imgEl = document.getElementById('instant-img-preview');
+            const videoEl = document.getElementById('instant-video-preview');
+            const iframeEl = document.getElementById('instant-iframe-preview');
+            const placeholderEl = document.getElementById('instant-placeholder');
+
+            if (previewBox && nameEl && sizeEl) {
+                nameEl.textContent = name;
+                sizeEl.textContent = size;
+                iconEl.textContent = selectedFileType === 'model' ? '🗿' : (selectedFileType === 'video' ? '🎬' : (selectedFileType === 'html' ? '🌐' : '🖼️'));
+                
+                imgEl.classList.add('hidden');
+                videoEl.classList.add('hidden');
+                iframeEl.classList.add('hidden');
+                placeholderEl.classList.add('hidden');
+
+                if (selectedFileType === 'image') {
+                    imgEl.src = src;
+                    imgEl.classList.remove('hidden');
+                } else if (selectedFileType === 'video') {
+                    videoEl.src = src;
+                    videoEl.classList.remove('hidden');
+                } else if (selectedFileType === 'html') {
+                    iframeEl.src = src;
+                    iframeEl.classList.remove('hidden');
+                } else {
+                    placeholderEl.textContent = '3D Model Loaded (See Three.js Viewport)';
+                    placeholderEl.classList.remove('hidden');
+                }
+
+                previewBox.classList.remove('hidden');
+            }
+        }
+
+        function loadStudioUrl() {
+            const url = document.getElementById('studio-url-input').value.trim();
+            const filename = document.getElementById('studio-url-filename').value.trim() || url.split('/').pop() || 'artwork.jpg';
+            if (!url) {
+                alert('Please enter a valid artwork URL.');
+                return;
+            }
+            selectedFileBase64 = url;
+            selectedFileName = filename;
+            const ext = filename.split('.').pop().toLowerCase();
+            if (['glb', 'gltf'].includes(ext)) selectedFileType = 'model';
+            else if (['mp4', 'webm', 'mov'].includes(ext)) selectedFileType = 'video';
+            else if (['html', 'htm'].includes(ext)) selectedFileType = 'html';
+            else selectedFileType = 'image';
+
+            showStudioFileInfo(filename, 'Linked URL', url);
+            updateThreePreview(url, selectedFileType, filename);
+
+            const mediumInput = document.getElementById('exhibit-medium');
+            if (mediumInput) {
+                if (selectedFileType === 'model') mediumInput.value = '3D Model (.glb)';
+                else if (selectedFileType === 'video') mediumInput.value = 'Digital Video Art';
+                else if (selectedFileType === 'html') mediumInput.value = 'Interactive 3D HTML Room';
+                else mediumInput.value = 'Digital Photograph';
+            }
+        }
+
+        function loadStudioPaste() {
+            const data = document.getElementById('studio-paste-data').value.trim();
+            const filename = document.getElementById('studio-paste-filename').value.trim() || 'pasted-art.png';
+            if (!data) {
+                alert('Please paste data.');
+                return;
+            }
+
+            if (data.trim().startsWith('<') || filename.endsWith('.html') || filename.endsWith('.htm')) {
+                selectedFileType = 'html';
+                const blob = new Blob([data], { type: 'text/html' });
+                selectedFileBase64 = URL.createObjectURL(blob);
+            } else {
+                selectedFileBase64 = data.startsWith('data:') ? data : `data:image/png;base64,${data}`;
+                const ext = filename.split('.').pop().toLowerCase();
+                if (['glb', 'gltf'].includes(ext)) selectedFileType = 'model';
+                else if (['mp4', 'webm', 'mov'].includes(ext)) selectedFileType = 'video';
+                else selectedFileType = 'image';
+            }
+
+            selectedFileName = filename;
+            showStudioFileInfo(filename, 'Custom Data', selectedFileBase64);
+            updateThreePreview(selectedFileBase64, selectedFileType, filename);
+
+            const mediumInput = document.getElementById('exhibit-medium');
+            if (mediumInput) {
+                if (selectedFileType === 'model') mediumInput.value = '3D Model (.glb)';
+                else if (selectedFileType === 'video') mediumInput.value = 'Digital Video Art';
+                else if (selectedFileType === 'html') mediumInput.value = 'Interactive 3D HTML Room';
+                else mediumInput.value = 'Digital Photograph';
+            }
+        }
+
+        // ─── THREE.JS PREVIEW ENGINE (Gallery Environment) ────────
+        function initThreePreview() {
+            const container = document.getElementById('preview-viewport');
+            if (!container) return;
+
+            previewScene = new THREE.Scene();
+            previewScene.background = new THREE.Color(0x0a0908); // Gallery background
+            previewScene.fog = new THREE.FogExp2(0x0a0908, 0.035); // Gallery fog
+
+            previewCamera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
+            previewCamera.position.set(0, 0, 3.2);
+
+            previewRenderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            previewRenderer.setSize(container.clientWidth, container.clientHeight);
+            previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+            previewRenderer.shadowMap.enabled = true;
+            previewRenderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            previewRenderer.toneMapping = THREE.ACESFilmicToneMapping;
+            container.appendChild(previewRenderer.domElement);
+
+            // Gallery Lighting Setup
+            const ambientLight = new THREE.AmbientLight(0xfff5e6, 0.4);
+            previewScene.add(ambientLight);
+
+            const topDirectionalLight = new THREE.DirectionalLight(0xffeedd, 0.45);
+            topDirectionalLight.position.set(0, 10, 6);
+            previewScene.add(topDirectionalLight);
+
+            // Gallery Back Wall (Warm Plaster Texture)
+            const wallGeometry = new THREE.PlaneGeometry(30, 9);
+            const wallMaterial = new THREE.MeshStandardMaterial({
+                color: 0x1f1e1c,
+                roughness: 0.92,
+                metalness: 0.05
+            });
+            const backWall = new THREE.Mesh(wallGeometry, wallMaterial);
+            backWall.position.set(0, 0, -2.1);
+            previewScene.add(backWall);
+
+            // Dark Polished Hardwood Floor
+            const floorGeometry = new THREE.PlaneGeometry(30, 18);
+            const floorMaterial = new THREE.MeshStandardMaterial({
+                color: 0x14110e,
+                roughness: 0.35,
+                metalness: 0.25
+            });
+            const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+            floor.rotation.x = -Math.PI / 2;
+            floor.position.set(0, -1.8, 2.5);
+            floor.receiveShadow = true;
+            previewScene.add(floor);
+
+            // Overhead Spotlight
+            const spotLight = new THREE.SpotLight(0xfff6e8, 2.2);
+            spotLight.position.set(0, 3.8, 2.5);
+            spotLight.angle = Math.PI / 4.5;
+            spotLight.penumbra = 0.6;
+            previewScene.add(spotLight);
+
+            // Interaction: Click & Drag to rotate, scroll to zoom
+            container.addEventListener('pointerdown', (e) => {
+                if (e.target.tagName === 'IFRAME') return;
+                isPreviewDragging = true;
+                previewPrevX = e.clientX;
+                previewPrevY = e.clientY;
+                container.setPointerCapture(e.pointerId);
+            });
+
+            container.addEventListener('pointermove', (e) => {
+                if (!isPreviewDragging || !previewLoadedObject) return;
+                const dx = e.clientX - previewPrevX;
+                const dy = e.clientY - previewPrevY;
+                previewPrevX = e.clientX;
+                previewPrevY = e.clientY;
+
+                previewLoadedObject.rotation.y += dx * 0.01;
+                previewLoadedObject.rotation.x = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, previewLoadedObject.rotation.x + dy * 0.01));
+            });
+
+            container.addEventListener('pointerup', () => { isPreviewDragging = false; });
+            container.addEventListener('pointercancel', () => { isPreviewDragging = false; });
+
+            container.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                previewCamera.position.z = Math.max(1.5, Math.min(6.0, previewCamera.position.z + e.deltaY * 0.005));
+            }, { passive: false });
+
+            // Render loop
+            function animatePreview() {
+                previewAnimFrameId = requestAnimationFrame(animatePreview);
+                if (previewMixer) {
+                    previewMixer.update(0.016);
+                }
+                previewRenderer.render(previewScene, previewCamera);
+            }
+            animatePreview();
+
+            window.addEventListener('resize', () => {
+                if (!container) return;
+                previewCamera.aspect = container.clientWidth / container.clientHeight;
+                previewCamera.updateProjectionMatrix();
+                previewRenderer.setSize(container.clientWidth, container.clientHeight);
+            });
+        }
+
+        function resetThreePreview() {
+            if (!previewScene) return;
+            // Keep background items (ambient light, directional light, back wall, floor, spotlight) -> first 5 items
+            while(previewScene.children.length > 5) {
+                previewScene.remove(previewScene.children[5]);
+            }
+            previewMixer = null;
+            previewLoadedObject = null;
+            const placeholder = document.getElementById('preview-placeholder');
+            const iframe = document.getElementById('preview-iframe');
+            if (placeholder) placeholder.classList.remove('hidden');
+            if (iframe) {
+                iframe.src = '';
+                iframe.classList.add('hidden');
+            }
+        }
+
+        function updateThreePreview(src, type, filename) {
+            resetThreePreview();
+            const placeholder = document.getElementById('preview-placeholder');
+            const iframe = document.getElementById('preview-iframe');
+
+            if (type === 'html') {
+                if (placeholder) placeholder.classList.add('hidden');
+                if (iframe) {
+                    iframe.src = src;
+                    iframe.classList.remove('hidden');
+                }
+                return;
+            }
+
+            if (placeholder) placeholder.classList.add('hidden');
+
+            if (type === 'model') {
+                if (typeof THREE.GLTFLoader === 'undefined') return;
+                const loader = new THREE.GLTFLoader();
+
+                const previewGroup = new THREE.Group();
+                previewGroup.position.set(0, -0.4, 0);
+
+                // Load pedestal and model matching gallery
+                loader.load('public/pedestal.glb', (pedestalGltf) => {
+                    const pedestal = pedestalGltf.scene;
+                    pedestal.traverse((child) => {
+                        if (child.isMesh) {
+                            child.castShadow = true;
+                            child.receiveShadow = true;
+                        }
+                    });
+
+                    loader.load(src, (gltf) => {
+                        const model = gltf.scene;
+
+                        // Normalize and center bounding box exactly like gallery.html
+                        const box = new THREE.Box3().setFromObject(model);
+                        const size = new THREE.Vector3();
+                        box.getSize(size);
+
+                        const currentHeight = size.y > 0.001 ? size.y : Math.max(size.x, size.z, 1.0);
+                        const targetHeight = 1.3;
+                        const scaleFactor = targetHeight / currentHeight;
+                        model.scale.setScalar(scaleFactor);
+
+                        const scaledBox = new THREE.Box3().setFromObject(model);
+                        const scaledCenter = new THREE.Vector3();
+                        scaledBox.getCenter(scaledCenter);
+
+                        model.position.x = -scaledCenter.x;
+                        model.position.y = -scaledCenter.y;
+                        model.position.z = -scaledCenter.z;
+
+                        // Position pedestal beneath model base
+                        const finalBox = new THREE.Box3().setFromObject(model);
+                        const modelBaseY = finalBox.min.y;
+                        const floorY = -1.5;
+                        const pedestalTop = modelBaseY - 0.06;
+                        const pedestalHeight = Math.max(0.2, pedestalTop - floorY);
+                        const pedestalScaleY = pedestalHeight / 1.03;
+
+                        pedestal.scale.set(1.0, pedestalScaleY, 1.0);
+                        pedestal.position.set(0, floorY, 0);
+
+                        model.traverse((child) => {
+                            if (child.isMesh) {
+                                child.castShadow = true;
+                                child.receiveShadow = true;
+                            }
+                        });
+
+                        previewGroup.add(pedestal);
+                        previewGroup.add(model);
+                        previewScene.add(previewGroup);
+                        previewLoadedObject = previewGroup;
+
+                        if (gltf.animations && gltf.animations.length > 0) {
+                            previewMixer = new THREE.AnimationMixer(model);
+                            gltf.animations.forEach(clip => previewMixer.clipAction(clip).play());
+                        }
+                    }, undefined, (err) => {
+                        console.error('Preview GLB load error:', err);
+                    });
+                }, undefined, (err) => {
+                    console.error('Preview pedestal load error:', err);
+                });
+            } else if (type === 'image' || type === 'video') {
+                const frameGroup = new THREE.Group();
+                const boxGeo = new THREE.BoxGeometry(2.4, 1.6, 0.1);
+                const mat = new THREE.MeshStandardMaterial({ color: 0x1c1a18, roughness: 0.9 });
+                const box = new THREE.Mesh(boxGeo, mat);
+                frameGroup.add(box);
+
+                const texLoader = new THREE.TextureLoader();
+                if (type === 'image') {
+                    texLoader.load(src, (texture) => {
+                        const planeGeo = new THREE.PlaneGeometry(2.2, 1.4);
+                        const planeMat = new THREE.MeshBasicMaterial({ map: texture });
+                        const plane = new THREE.Mesh(planeGeo, planeMat);
+                        plane.position.set(0, 0, 0.06);
+                        frameGroup.add(plane);
+                    });
+                } else {
+                    const planeGeo = new THREE.PlaneGeometry(2.2, 1.4);
+                    const planeMat = new THREE.MeshBasicMaterial({ color: 0x222222 });
+                    const plane = new THREE.Mesh(planeGeo, planeMat);
+                    plane.position.set(0, 0, 0.06);
+                    frameGroup.add(plane);
+                }
+                previewScene.add(frameGroup);
+                previewLoadedObject = frameGroup;
+            }
+        }
+
+        // ─── PUBLISH EXHIBIT ───────────────────────────────────────
+        async function publishExhibit() {
+            if (!currentUser) return;
+            const title = document.getElementById('exhibit-title').value.trim() || 'Untitled';
+            const artist = document.getElementById('exhibit-artist').value.trim() || currentUser.email.split('@')[0];
+            const year = document.getElementById('exhibit-year').value.trim() || new Date().toISOString().split('T')[0];
+            const medium = document.getElementById('exhibit-medium').value.trim() || 'Digital Photograph';
+            const desc = document.getElementById('exhibit-desc').value.trim();
+            const errEl = document.getElementById('studio-error');
+
+            if (!selectedFileBase64) {
+                if (errEl) {
+                    errEl.textContent = 'Please select or upload an artwork file first.';
+                    errEl.classList.remove('hidden');
+                }
+                return;
+            }
+
+            let finalUrl = selectedFileBase64;
+
+            if (selectedFile && studioStorage && !selectedFileBase64.startsWith('http') && !selectedFileBase64.startsWith('blob:')) {
+                try {
+                    const storageRef = studioStorage.ref().child(`gallery_exhibits/${currentUser.uid}_${Date.now()}_${selectedFileName}`);
+                    const uploadTask = await storageRef.put(selectedFile);
+                    finalUrl = await uploadTask.ref.getDownloadURL();
+                } catch (e) {
+                    console.warn('Storage upload fallback:', e);
+                }
+            }
+
+            const exhibitId = 'art-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+            const newExhibit = {
+                id: exhibitId,
+                title: title,
+                artist: artist,
+                year: year,
+                medium: medium,
+                description: desc,
+                type: selectedFileType,
+                url: finalUrl,
+                userId: currentUser.uid,
+                userEmail: currentUser.email,
+                createdAt: new Date().toISOString()
+            };
+
+            try {
+                if (studioDb) {
+                    await studioDb.collection('galleryExhibits').doc(exhibitId).set(newExhibit);
+                }
+
+                const cached = localStorage.getItem('note_to_self_3d_gallery_manifest_v2');
+                let parsed = cached ? JSON.parse(cached) : [];
+                parsed.push(newExhibit);
+                localStorage.setItem('note_to_self_3d_gallery_manifest_v2', JSON.stringify(parsed));
+
+                alert('Exhibit successfully mounted to the gallery!');
+                loadMyExhibits();
+                clearStudioFile();
+                document.getElementById('exhibit-title').value = '';
+                document.getElementById('exhibit-desc').value = '';
+                if (errEl) errEl.classList.add('hidden');
+            } catch (e) {
+                if (errEl) {
+                    errEl.textContent = 'Failed to publish exhibit: ' + e.message;
+                    errEl.classList.remove('hidden');
+                }
+            }
+        }
+
+        // ─── LOAD MY EXHIBITS ──────────────────────────────────────
+        async function loadMyExhibits() {
+            if (!currentUser) return;
+            const container = document.getElementById('my-exhibits-list');
+            const countBadge = document.getElementById('my-exhibits-count');
+            if (!container) return;
+
+            let exhibits = [];
+            if (studioDb) {
+                try {
+                    const snapshot = await studioDb.collection('galleryExhibits')
+                        .where('userId', '==', currentUser.uid)
+                        .get();
+                    snapshot.forEach(doc => {
+                        exhibits.push(doc.data());
+                    });
+                } catch (e) {
+                    console.warn('Firestore load error:', e);
+                }
+            }
+
+            if (exhibits.length === 0) {
+                const cached = localStorage.getItem('note_to_self_3d_gallery_manifest_v2');
+                if (cached) {
+                    try {
+                        const parsed = JSON.parse(cached);
+                        exhibits = parsed.filter(a => a.userId === currentUser.uid);
+                    } catch (e) {}
+                }
+            }
+
+            countBadge.textContent = `${exhibits.length} exhibit${exhibits.length === 1 ? '' : 's'}`;
+            container.innerHTML = '';
+
+            if (exhibits.length === 0) {
+                container.innerHTML = `<p class="text-xs text-zinc-500 text-center py-6">You haven't mounted any exhibits yet. Upload above to get started!</p>`;
+                return;
+            }
+
+            exhibits.forEach(art => {
+                const item = document.createElement('div');
+                item.className = 'bg-zinc-950 border border-zinc-800/80 rounded-xl p-3 flex items-center justify-between gap-3 text-xs';
+                item.innerHTML = `
+                    <div class="flex items-center gap-3 overflow-hidden">
+                        <span class="text-lg">${art.type === 'model' ? '🗿' : (art.type === 'video' ? '🎬' : (art.type === 'html' ? '🌐' : '🖼️'))}</span>
+                        <div class="truncate">
+                            <h4 class="font-medium text-zinc-200 truncate">${art.title}</h4>
+                            <p class="text-[10px] text-zinc-500">${art.medium} &middot; ${art.year || '2026'}</p>
+                        </div>
+                    </div>
+                    <button onclick="removeMyExhibit('${art.id}')" class="text-zinc-500 hover:text-rose-400 p-1 rounded transition" title="Remove Exhibit">🗑️</button>
+                `;
+                container.appendChild(item);
+            });
+        }
+
+        async function removeMyExhibit(artId) {
+            if (!confirm('Are you sure you want to remove this exhibit from the gallery?')) return;
+            try {
+                if (studioDb) {
+                    await studioDb.collection('galleryExhibits').doc(artId).delete();
+                }
+                const cached = localStorage.getItem('note_to_self_3d_gallery_manifest_v2');
+                if (cached) {
+                    let parsed = JSON.parse(cached);
+                    parsed = parsed.filter(a => a.id !== artId);
+                    localStorage.setItem('note_to_self_3d_gallery_manifest_v2', JSON.stringify(parsed));
+                }
+                loadMyExhibits();
+            } catch (e) {
+                alert('Error removing exhibit: ' + e.message);
+            }
+        }
+    </script>
+</body>
+</html>
