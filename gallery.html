@@ -191,7 +191,7 @@
         <div class="bg-zinc-950/75 backdrop-blur-md border border-zinc-800/60 px-3.5 py-1 rounded-full text-[11px] text-zinc-400 flex items-center gap-2 shadow-lg">
             <span class="flex items-center gap-1 text-zinc-300">
                 <svg class="w-3 h-3 text-amber-400 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122"/></svg>
-                <span>Drag to stroll</span>
+                <span>Drag to look around</span>
             </span>
             <span class="text-zinc-600">·</span>
             <span class="flex items-center gap-1 text-amber-300 font-medium">
@@ -598,17 +598,21 @@
         let ARTWORKS = [];
         let scene, camera, webGLRenderer, cssRenderer;
         const galleryClock = new THREE.Clock();
-        let galleryWidth = 0;
-        let startXOffset = 0;
-        let targetCameraX = 0;
-        let currentCameraX = 0;
-        let targetCameraZ = 2.93;
-        let currentCameraZ = 2.93;
+
+        let currentCameraPos = new THREE.Vector3(-23.8, 0, -23);
+        let targetCameraPos = new THREE.Vector3(-23.8, 0, -23);
+        let currentYaw = 0;
+        let targetYaw = 0;
+        let currentPitch = 0;
+        let targetPitch = 0;
+        let viewDistance = 5.0;
+        let currentIndex = 0;
 
         // Interaction state
         let isDragging = false;
         let previousMouseX = 0;
         let touchStartX = 0;
+        let touchStartViewDist = 5.0;
 
         // 3D model inspect state (pedestal exhibits)
         let inspectItem = null;
@@ -906,30 +910,49 @@
 
         // ─── 3D MUSEUM ARCHITECTURE ──────────────────────────────
         function buildMuseumRoom() {
-            // Calculate dynamic gallery length
-            galleryWidth = Math.max(30, (ARTWORKS.length + 2) * SPACING_X);
-
             // Ambient Museum Lighting
             const ambientLight = new THREE.AmbientLight(0xfff5e6, 0.4);
             scene.add(ambientLight);
 
-            const topDirectionalLight = new THREE.DirectionalLight(0xffeedd, 0.45);
-            topDirectionalLight.position.set(0, 10, 6);
+            const hemiLight = new THREE.HemisphereLight(0xffeedd, 0x44403b, 0.5);
+            scene.add(hemiLight);
+
+            const topDirectionalLight = new THREE.DirectionalLight(0xffeedd, 0.4);
+            topDirectionalLight.position.set(0, 15, 0);
             scene.add(topDirectionalLight);
 
-            // Gallery Back Wall (Warm Plaster Texture)
-            const wallGeometry = new THREE.PlaneGeometry(galleryWidth + 20, 9);
             const wallMaterial = new THREE.MeshStandardMaterial({
                 color: 0x1f1e1c,
                 roughness: 0.92,
                 metalness: 0.05
             });
-            backWallMesh = new THREE.Mesh(wallGeometry, wallMaterial);
-            backWallMesh.position.set(0, 0, -2.1);
-            scene.add(backWallMesh);
 
-            // Dark Polished Hardwood Floor
-            const floorGeometry = new THREE.PlaneGeometry(galleryWidth + 20, 18);
+            // Four Walls (60 wide × 9 high)
+            // North wall (z = -28, faces +z)
+            const northWall = new THREE.Mesh(new THREE.PlaneGeometry(60, 9), wallMaterial);
+            northWall.position.set(0, 0, -28);
+            scene.add(northWall);
+
+            // South wall (z = 28, faces -z)
+            const southWall = new THREE.Mesh(new THREE.PlaneGeometry(60, 9), wallMaterial);
+            southWall.position.set(0, 0, 28);
+            southWall.rotation.y = Math.PI;
+            scene.add(southWall);
+
+            // East wall (x = 28, faces -x)
+            const eastWall = new THREE.Mesh(new THREE.PlaneGeometry(60, 9), wallMaterial);
+            eastWall.position.set(28, 0, 0);
+            eastWall.rotation.y = -Math.PI / 2;
+            scene.add(eastWall);
+
+            // West wall (x = -28, faces +x)
+            const westWall = new THREE.Mesh(new THREE.PlaneGeometry(60, 9), wallMaterial);
+            westWall.position.set(-28, 0, 0);
+            westWall.rotation.y = Math.PI / 2;
+            scene.add(westWall);
+
+            // Dark Polished Hardwood Floor (60 × 60)
+            const floorGeometry = new THREE.PlaneGeometry(60, 60);
             const floorMaterial = new THREE.MeshStandardMaterial({
                 color: 0x14110e,
                 roughness: 0.35,
@@ -937,36 +960,24 @@
             });
             floorMesh = new THREE.Mesh(floorGeometry, floorMaterial);
             floorMesh.rotation.x = -Math.PI / 2;
-            floorMesh.position.set(0, -3.5, 2.5);
+            floorMesh.position.set(0, -3.5, 0);
             floorMesh.receiveShadow = true;
             scene.add(floorMesh);
 
-            // Museum Architectural Ceiling
-            const ceilingGeometry = new THREE.PlaneGeometry(galleryWidth + 20, 18);
+            // Museum Architectural Ceiling (60 × 60)
+            const ceilingGeometry = new THREE.PlaneGeometry(60, 60);
             const ceilingMaterial = new THREE.MeshStandardMaterial({
                 color: 0x0f0e0d,
                 roughness: 0.95
             });
             ceilingMesh = new THREE.Mesh(ceilingGeometry, ceilingMaterial);
             ceilingMesh.rotation.x = Math.PI / 2;
-            ceilingMesh.position.set(0, 4.5, 2.5);
+            ceilingMesh.position.set(0, 4.5, 0);
             scene.add(ceilingMesh);
         }
 
         function resizeMuseumRoom() {
-            galleryWidth = Math.max(30, (ARTWORKS.length + 2) * SPACING_X);
-            if (backWallMesh) {
-                backWallMesh.geometry.dispose();
-                backWallMesh.geometry = new THREE.PlaneGeometry(galleryWidth + 20, 9);
-            }
-            if (floorMesh) {
-                floorMesh.geometry.dispose();
-                floorMesh.geometry = new THREE.PlaneGeometry(galleryWidth + 20, 18);
-            }
-            if (ceilingMesh) {
-                ceilingMesh.geometry.dispose();
-                ceilingMesh.geometry = new THREE.PlaneGeometry(galleryWidth + 20, 18);
-            }
+            // Fixed 4-wall room
         }
 
         function disposeThreeHierarchy(obj) {
@@ -1050,23 +1061,58 @@
                 return true;
             });
 
-            startXOffset = -((ARTWORKS.length - 1) * SPACING_X) / 2;
-            resizeMuseumRoom();
+            if (ARTWORKS.length > 32) {
+                console.warn('Gallery currently supports up to 32 exhibits. Displaying first 32.');
+                ARTWORKS = ARTWORKS.slice(0, 32);
+            }
 
             ARTWORKS.forEach((art, index) => {
-                const xPos = startXOffset + (index * SPACING_X);
+                const wallIndex = Math.floor(index / 8); // 0: north, 1: east, 2: south, 3: west
+                const s = index % 8;
+                const alongCoord = -23.8 + (s * 6.8);
+
+                let worldPos = new THREE.Vector3();
+                let normal = new THREE.Vector3();
+                let rotationY = 0;
+
+                if (wallIndex === 0) {
+                    // North wall (z = -28)
+                    worldPos.set(alongCoord, 0, -28);
+                    normal.set(0, 0, 1);
+                    rotationY = 0;
+                } else if (wallIndex === 1) {
+                    // East wall (x = 28)
+                    worldPos.set(28, 0, alongCoord);
+                    normal.set(-1, 0, 0);
+                    rotationY = -Math.PI / 2;
+                } else if (wallIndex === 2) {
+                    // South wall (z = 28)
+                    worldPos.set(-alongCoord, 0, 28);
+                    normal.set(0, 0, -1);
+                    rotationY = Math.PI;
+                } else {
+                    // West wall (x = -28)
+                    worldPos.set(-28, 0, -alongCoord);
+                    normal.set(1, 0, 0);
+                    rotationY = Math.PI / 2;
+                }
+
                 const isModel = art.type === 'model';
+                const wallSlotPos = worldPos.clone();
+                const modelWorldPos = isModel ? wallSlotPos.clone().addScaledVector(normal, 2.2) : wallSlotPos;
+
+                const group = new THREE.Group();
+                group.position.copy(modelWorldPos);
+                group.rotation.y = rotationY;
+                scene.add(group);
 
                 if (isModel) {
-                    // 3D Pedestal Mount Group on the floor in front of the wall (z ≈ -0.5)
-                    const pedestalGroup = new THREE.Group();
-                    pedestalGroup.position.set(xPos, 0, -0.5);
-
-                    // Overhead Spotlight retargeted at the 3D model
+                    // Overhead Spotlight retargeted at the 3D model (modelWorldPos)
                     const spotLight = new THREE.SpotLight(0xfff6e8, 2.2);
-                    spotLight.position.set(xPos, 3.8, 2.5);
+                    const spotWorldPos = modelWorldPos.clone().add(normal.clone().multiplyScalar(0.8)).setY(3.8);
+                    spotLight.position.copy(spotWorldPos);
                     const spotTarget = new THREE.Object3D();
-                    spotTarget.position.set(xPos, 0, -0.5);
+                    spotTarget.position.copy(modelWorldPos);
                     scene.add(spotTarget);
                     spotLight.target = spotTarget;
                     spotLight.angle = Math.PI / 4.5;
@@ -1074,19 +1120,20 @@
                     scene.add(spotLight);
                     spotLights.push(spotLight);
 
-                    // Museum Placard attached to the pedestal mount
+                    // Museum Placard attached to the pedestal group
                     const placardMesh = createPlacardMesh(art.title, art.artist, art.medium, art.year);
-                    placardMesh.position.set(0, -1.45, 0.35);
-                    pedestalGroup.add(placardMesh);
-
-                    scene.add(pedestalGroup);
+                    placardMesh.position.set(0, -1.45, 1.0);
+                    group.add(placardMesh);
 
                     frameObjects.push({
                         id: art.id,
                         index: index,
+                        wallIndex: wallIndex,
+                        slotIndex: s,
                         art: art,
-                        group: pedestalGroup,
-                        xPos: xPos,
+                        group: group,
+                        worldPos: modelWorldPos.clone(),
+                        normal: normal.clone(),
                         spotLight: spotLight,
                         spotTarget: spotTarget,
                         isLoaded: false,
@@ -1096,11 +1143,7 @@
                         mixer: null
                     });
                 } else {
-                    // Framed Wall Exhibit (z = -2)
-                    const frameGroup = new THREE.Group();
-                    frameGroup.position.set(xPos, 0, -2);
-
-                    // 1. Physical 3D Molding Frame (BoxGeometry) with museum matte finish
+                    // Framed Wall Exhibit at local z = 0
                     const frameWidth = 3.35;
                     const frameHeight = 2.35;
                     const frameDepth = 0.16;
@@ -1113,52 +1156,53 @@
                     });
                     const frameMesh = new THREE.Mesh(frameBoxGeo, frameMaterial);
                     frameMesh.position.set(0, 0, -0.05);
-                    frameGroup.add(frameMesh);
+                    group.add(frameMesh);
 
-                    // Inner backing recess
                     const innerGeo = new THREE.PlaneGeometry(3.02, 2.02);
                     const innerMat = new THREE.MeshBasicMaterial({ color: 0x070605 });
                     const innerMesh = new THREE.Mesh(innerGeo, innerMat);
                     innerMesh.position.set(0, 0, 0.02);
-                    frameGroup.add(innerMesh);
+                    group.add(innerMesh);
 
-                    // 2. CSS3D Artwork Object (Container for Lazy Loaded Content)
                     const { cssObject, containerDiv } = createLazyArtworkContainer(art, index);
                     cssObject.position.set(0, 0, 0.05);
                     cssObject.scale.set(0.0042, 0.0042, 0.0042);
-                    frameGroup.add(cssObject);
+                    group.add(cssObject);
 
-                    // 3. Warm Museum Overhead Spotlight
                     const spotLight = new THREE.SpotLight(0xfff6e8, 1.85);
-                    spotLight.position.set(xPos, 3.8, 2.5);
-                    spotLight.target = innerMesh;
+                    const spotWorldPos = worldPos.clone().add(normal.clone().multiplyScalar(0.5)).setY(3.8);
+                    spotLight.position.copy(spotWorldPos);
+                    const spotTarget = new THREE.Object3D();
+                    spotTarget.position.copy(worldPos);
+                    scene.add(spotTarget);
+                    spotLight.target = spotTarget;
                     spotLight.angle = Math.PI / 5;
                     spotLight.penumbra = 0.65;
                     scene.add(spotLight);
                     spotLights.push(spotLight);
 
-                    // 4. Museum Placard underneath
                     const placardMesh = createPlacardMesh(art.title, art.artist, art.medium, art.year);
                     placardMesh.position.set(0, -1.45, 0.05);
-                    frameGroup.add(placardMesh);
-
-                    scene.add(frameGroup);
+                    group.add(placardMesh);
 
                     frameObjects.push({
                         id: art.id,
                         index: index,
+                        wallIndex: wallIndex,
+                        slotIndex: s,
                         art: art,
-                        group: frameGroup,
-                        xPos: xPos,
+                        group: group,
+                        worldPos: worldPos.clone(),
+                        normal: normal.clone(),
                         containerDiv: containerDiv,
                         cssObject: cssObject,
                         spotLight: spotLight,
+                        spotTarget: spotTarget,
                         isLoaded: false
                     });
                 }
             });
 
-            // Run initial lazy hydration check
             updateLazyArtworks(true);
             updateGalleryMetaUI();
         }
@@ -1174,6 +1218,7 @@
             div.style.borderRadius = '4px';
             div.style.overflow = 'hidden';
             div.style.boxShadow = '0 20px 25px -5px rgba(0, 0, 0, 0.6)';
+            div.style.transition = 'opacity 200ms ease';
 
             // Initially populated with lightweight placeholder
             div.innerHTML = `
@@ -1376,9 +1421,8 @@
         }
 
         function updateLazyArtworks(forceAllNear = false) {
-            const camX = currentCameraX;
             frameObjects.forEach(item => {
-                const dist = Math.abs(camX - item.xPos);
+                const dist = currentCameraPos.distanceTo(item.worldPos);
                 if (dist <= LAZY_LOAD_RADIUS || forceAllNear) {
                     hydrateArtwork(item);
                 } else if (dist > LAZY_LOAD_RADIUS + 3.0) { // Hysteresis buffer to prevent thrashing
@@ -1394,7 +1438,7 @@
                     let nearestIndex = 0;
                     let nearestDist = Infinity;
                     frameObjects.forEach((item, idx) => {
-                        const d = Math.abs(camX - item.xPos);
+                        const d = currentCameraPos.distanceTo(item.worldPos);
                         if (d < nearestDist) {
                             nearestDist = d;
                             nearestIndex = idx;
@@ -1488,8 +1532,11 @@
 
         function enterInspectMode(item) {
             inspectItem = item;
-            targetCameraX = item.xPos;
-            clampCameraX();
+            targetCameraPos.copy(item.worldPos).addScaledVector(item.normal, 2.0);
+            targetCameraPos.y = 0;
+            targetYaw = Math.atan2(-item.normal.x, -item.normal.z);
+            targetPitch = 0;
+            clampCameraPos();
             const hint = document.getElementById('inspect-hint');
             if (hint) hint.classList.remove('hidden');
             document.body.style.cursor = 'grab';
@@ -1524,6 +1571,10 @@
 
         // ─── NAVIGATION & CONTROLS ────────────────────────────────
         function setupInteractions() {
+            let previousMouseY = 0;
+            let touchPrevX = 0;
+            let touchPrevY = 0;
+
             // Drag controls
             window.addEventListener('mousedown', (e) => {
                 if (e.target.tagName === 'BUTTON' || e.target.closest('.interactive-ui') || e.target.closest('#add-modal') || e.target.closest('#curate-modal')) { downIsValid = false; return; }
@@ -1538,6 +1589,7 @@
                 } else {
                     isDragging = true;
                     previousMouseX = e.clientX;
+                    previousMouseY = e.clientY;
                 }
             });
 
@@ -1552,9 +1604,12 @@
                 }
                 if (!isDragging) { updateModelHoverCursor(e); return; }
                 const deltaX = e.clientX - previousMouseX;
+                const deltaY = e.clientY - previousMouseY;
                 previousMouseX = e.clientX;
-                targetCameraX -= deltaX * 0.012;
-                clampCameraX();
+                previousMouseY = e.clientY;
+                targetYaw -= deltaX * 0.003;
+                targetPitch -= deltaY * 0.003;
+                targetPitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, targetPitch));
             });
 
             window.addEventListener('mouseup', (e) => {
@@ -1569,10 +1624,7 @@
                 downIsValid = false;
             });
 
-            // Touch support (1-finger drag pan & 2-finger pinch zoom)
-            let touchStartDist = 0;
-            let touchStartZ = targetCameraZ;
-
+            // Touch support
             window.addEventListener('touchstart', (e) => {
                 if (e.target.tagName === 'BUTTON' || e.target.closest('.interactive-ui') || e.target.closest('#add-modal') || e.target.closest('#curate-modal') || e.target.closest('#delete-confirm-modal') || e.target.closest('#gallery-auth-modal')) return;
                 
@@ -1586,14 +1638,9 @@
                         inspectPrevY = e.touches[0].clientY;
                     } else {
                         isDragging = true;
-                        touchStartX = e.touches[0].clientX;
+                        touchPrevX = e.touches[0].clientX;
+                        touchPrevY = e.touches[0].clientY;
                     }
-                } else if (e.touches.length === 2) {
-                    isDragging = false;
-                    const dx = e.touches[0].clientX - e.touches[1].clientX;
-                    const dy = e.touches[0].clientY - e.touches[1].clientY;
-                    touchStartDist = Math.hypot(dx, dy);
-                    touchStartZ = targetCameraZ;
                 }
             });
 
@@ -1604,19 +1651,14 @@
                     inspectPrevX = t.clientX;
                     inspectPrevY = t.clientY;
                 } else if (e.touches.length === 1 && isDragging) {
-                    const currentX = e.touches[0].clientX;
-                    const deltaX = currentX - touchStartX;
-                    touchStartX = currentX;
-                    targetCameraX -= deltaX * 0.015;
-                    clampCameraX();
-                } else if (e.touches.length === 2 && touchStartDist > 0) {
-                    const dx = e.touches[0].clientX - e.touches[1].clientX;
-                    const dy = e.touches[0].clientY - e.touches[1].clientY;
-                    const dist = Math.hypot(dx, dy);
-                    const scaleFactor = dist / touchStartDist;
-                    // Pinch out (scaleFactor > 1) zooms in closer to wall
-                    targetCameraZ = touchStartZ - (scaleFactor - 1) * 3.5;
-                    targetCameraZ = Math.max(-1.78, Math.min(8.5, targetCameraZ));
+                    const t = e.touches[0];
+                    const deltaX = t.clientX - touchPrevX;
+                    const deltaY = t.clientY - touchPrevY;
+                    touchPrevX = t.clientX;
+                    touchPrevY = t.clientY;
+                    targetYaw -= deltaX * 0.004;
+                    targetPitch -= deltaY * 0.004;
+                    targetPitch = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, targetPitch));
                 }
             });
 
@@ -1624,7 +1666,6 @@
                 const wasModelDrag = isModelDragging;
                 isDragging = false;
                 isModelDragging = false;
-                touchStartDist = 0;
                 if (!wasModelDrag && downIsValid && e.changedTouches.length === 1) {
                     const t = e.changedTouches[0];
                     const moved = Math.hypot(t.clientX - downClientX, t.clientY - downClientY);
@@ -1633,10 +1674,11 @@
                 downIsValid = false;
             });
 
-            // Mouse wheel zoom (allows zooming all the way up to the wall & frame at z = -1.78)
+            // Mouse wheel zoom / walk
             window.addEventListener('wheel', (e) => {
-                targetCameraZ += e.deltaY * 0.0035;
-                targetCameraZ = Math.max(-1.78, Math.min(8.5, targetCameraZ));
+                const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), targetYaw);
+                targetCameraPos.addScaledVector(forward, -e.deltaY * 0.005);
+                clampCameraPos();
             }, { passive: true });
 
             // Keyboard navigation
@@ -1644,14 +1686,19 @@
                 if (document.getElementById('add-modal').classList.contains('hidden') === false) return;
                 if (document.getElementById('curate-modal').classList.contains('hidden') === false) return;
                 if (document.getElementById('gallery-auth-modal').classList.contains('hidden') === false) return;
+
+                const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), targetYaw);
+
                 if (e.key === 'ArrowRight' || e.key === 'd') {
                     panRight();
                 } else if (e.key === 'ArrowLeft' || e.key === 'a') {
                     panLeft();
                 } else if (e.key === 'ArrowUp' || e.key === 'w') {
-                    targetCameraZ = Math.max(-1.78, targetCameraZ - 0.4);
+                    targetCameraPos.addScaledVector(forward, 0.5);
+                    clampCameraPos();
                 } else if (e.key === 'ArrowDown' || e.key === 's') {
-                    targetCameraZ = Math.min(8.5, targetCameraZ + 0.4);
+                    targetCameraPos.addScaledVector(forward, -0.5);
+                    clampCameraPos();
                 } else if (e.key === 'Escape' && inspectItem) {
                     exitInspectMode();
                 } else if (e.key === 'Home') {
@@ -1686,51 +1733,36 @@
             }
         }
 
-        function clampCameraX() {
-            if (ARTWORKS.length === 0) {
-                targetCameraX = 0;
-                return;
-            }
-            const minX = startXOffset - 1.5;
-            const maxX = startXOffset + ((ARTWORKS.length - 1) * SPACING_X) + 1.5;
-            targetCameraX = Math.max(minX, Math.min(maxX, targetCameraX));
+        function clampCameraPos() {
+            targetCameraPos.x = Math.max(-26, Math.min(26, targetCameraPos.x));
+            targetCameraPos.z = Math.max(-26, Math.min(26, targetCameraPos.z));
+            targetCameraPos.y = Math.max(-2.5, Math.min(2.5, targetCameraPos.y));
         }
 
         function resetCamera() {
-            targetCameraX = ARTWORKS.length > 0 ? startXOffset : 0;
-            targetCameraZ = 2.93;
+            currentIndex = 0;
+            gotoExhibit(0);
         }
 
         function panLeft() {
             if (ARTWORKS.length === 0) return;
-            const fractional = (targetCameraX - startXOffset) / SPACING_X;
-            let prevIndex = Math.ceil(fractional - 0.05) - 1;
-            if (prevIndex < 0) prevIndex = 0;
-            targetCameraX = startXOffset + (prevIndex * SPACING_X);
-            targetCameraZ = 2.93;
-            clampCameraX();
+            currentIndex = (currentIndex - 1 + ARTWORKS.length) % ARTWORKS.length;
+            gotoExhibit(currentIndex);
         }
 
         function panRight() {
             if (ARTWORKS.length === 0) return;
-            const fractional = (targetCameraX - startXOffset) / SPACING_X;
-            let nextIndex = Math.floor(fractional + 0.05) + 1;
-            if (nextIndex >= ARTWORKS.length) nextIndex = ARTWORKS.length - 1;
-            targetCameraX = startXOffset + (nextIndex * SPACING_X);
-            targetCameraZ = 2.93;
-            clampCameraX();
+            currentIndex = (currentIndex + 1) % ARTWORKS.length;
+            gotoExhibit(currentIndex);
         }
 
         // ─── GO-TO-EXHIBIT MENU ─────────────────────────────
-        // The center label in the bottom nav bar opens a menu listing every
-        // exhibit in hall order. Picking one moves the camera exactly the way
-        // Previous/Next do, then closes the menu.
         function getNearestExhibitIndex() {
             if (frameObjects.length === 0) return 0;
             let nearestIndex = 0;
             let nearestDist = Infinity;
             frameObjects.forEach((item, idx) => {
-                const d = Math.abs(currentCameraX - item.xPos);
+                const d = currentCameraPos.distanceTo(item.worldPos);
                 if (d < nearestDist) {
                     nearestDist = d;
                     nearestIndex = idx;
@@ -1742,9 +1774,24 @@
         function gotoExhibit(index) {
             if (ARTWORKS.length === 0) return;
             index = Math.max(0, Math.min(ARTWORKS.length - 1, index));
-            targetCameraX = startXOffset + (index * SPACING_X);
-            targetCameraZ = 2.93;
-            clampCameraX();
+            currentIndex = index;
+            const item = frameObjects[index] || (frameObjects.find(f => f.index === index) || frameObjects[0]);
+            if (item) {
+                targetCameraPos.copy(item.worldPos).addScaledVector(item.normal, 4.93);
+                targetCameraPos.y = 0;
+
+                const dx = item.worldPos.x - targetCameraPos.x;
+                const dz = item.worldPos.z - targetCameraPos.z;
+                const newTargetYaw = Math.atan2(-dx, -dz);
+
+                let diff = newTargetYaw - currentYaw;
+                while (diff < -Math.PI) diff += Math.PI * 2;
+                while (diff > Math.PI) diff -= Math.PI * 2;
+                targetYaw = currentYaw + diff;
+
+                targetPitch = 0;
+                clampCameraPos();
+            }
             closeGotoMenu();
         }
 
@@ -1810,8 +1857,6 @@
             if (label) label.setAttribute('aria-expanded', 'false');
         }
 
-        // Dismiss the menu on outside-click; also close it when the user
-        // navigates with the keyboard so the highlight never goes stale.
         document.addEventListener('click', (e) => {
             const menu = document.getElementById('goto-menu');
             if (!menu || menu.classList.contains('hidden')) return;
@@ -1832,8 +1877,7 @@
 
         function focusOnArtwork(index) {
             if (index < 0 || index >= ARTWORKS.length) return;
-            targetCameraX = startXOffset + (index * SPACING_X);
-            targetCameraZ = 2.93;
+            gotoExhibit(index);
             closeCurateModal();
         }
 
@@ -1847,21 +1891,19 @@
         function broadcastCameraParallax() {
             if (!frameObjects || frameObjects.length === 0) return;
 
-            const camX = currentCameraX;
-            const camY = (camera && camera.position) ? camera.position.y : 0;
-            const camZ = currentCameraZ;
+            const camX = currentCameraPos.x;
+            const camY = currentCameraPos.y;
+            const camZ = currentCameraPos.z;
 
             frameObjects.forEach(item => {
-                // Only send to loaded interactive 3D HTML iframes — 2D images stay flat as intended
                 if (!item.isLoaded || item.art.type !== 'html' || !item.containerDiv) return;
 
                 const iframe = item.containerDiv.querySelector('iframe');
                 if (!iframe || !iframe.contentWindow) return;
 
-                // Frame plane is located at x = item.xPos, y = 0, z = -2
-                const relX = camX - item.xPos;
-                const relY = camY - 0;
-                const relZ = Math.max(0.18, camZ - (-2));
+                const relX = camX - item.worldPos.x;
+                const relY = camY - item.worldPos.y;
+                const relZ = Math.max(0.18, currentCameraPos.distanceTo(item.worldPos));
 
                 const angleX = Math.atan2(relX, relZ);
                 const angleY = Math.atan2(relY, relZ);
@@ -1881,12 +1923,10 @@
                         camX: camX,
                         camY: camY,
                         camZ: camZ,
-                        frameX: item.xPos,
-                        frameZ: -2
+                        frameX: item.worldPos.x,
+                        frameZ: item.worldPos.z
                     }, '*');
-                } catch (e) {
-                    // Ignore cross-origin security restrictions if any external domain is used
-                }
+                } catch (e) {}
             });
         }
 
@@ -1899,21 +1939,33 @@
                 if (item.mixer && item.isLoaded) {
                     item.mixer.update(delta);
                 }
-                // Idle turntable rotation for pedestal models (pauses on the inspected one)
                 if (item.isLoaded && item.modelObj && item !== inspectItem) {
                     item.modelObj.rotation.y += delta * 0.45;
                 }
-                // Ease leftover tilt back to level when not actively dragging
                 if (item === inspectItem && !isModelDragging && item.modelObj) {
                     item.modelObj.rotation.x *= 0.95;
                 }
             });
 
             // Smooth camera damping (lerp)
-            currentCameraX += (targetCameraX - currentCameraX) * 0.08;
-            currentCameraZ += (targetCameraZ - currentCameraZ) * 0.08;
-            camera.position.x = currentCameraX;
-            camera.position.z = currentCameraZ;
+            currentCameraPos.lerp(targetCameraPos, 0.08);
+
+            let yawDiff = targetYaw - currentYaw;
+            while (yawDiff < -Math.PI) yawDiff += Math.PI * 2;
+            while (yawDiff > Math.PI) yawDiff -= Math.PI * 2;
+            currentYaw += yawDiff * 0.08;
+
+            currentPitch += (targetPitch - currentPitch) * 0.08;
+
+            if (currentCameraPos.distanceTo(targetCameraPos) < 0.02 && Math.abs(yawDiff) < 0.002 && Math.abs(targetPitch - currentPitch) < 0.002) {
+                targetYaw = currentYaw;
+                targetPitch = currentPitch;
+            }
+
+            camera.position.copy(currentCameraPos);
+            camera.rotation.order = 'YXZ';
+            camera.rotation.y = currentYaw;
+            camera.rotation.x = currentPitch;
 
             // Trigger lazy loader check
             updateLazyArtworks();
@@ -1921,10 +1973,51 @@
             // Broadcast real-time 3D parallax to loaded diorama iframes
             broadcastCameraParallax();
 
+            updateArtworkOcclusion();
+
             // Render both WebGL physical museum and CSS3D artwork layers
             webGLRenderer.render(scene, camera);
             cssRenderer.render(scene, camera);
         }
+
+// ─── CSS3D OCCLUSION CULL ─────────────────────────────────────
+// Wall art is DOM (CSS3DRenderer) composited above the WebGL canvas, so a
+// 3D model can never depth-occlude it. Each frame, raycast from the camera
+// to every wall artwork: if a model mesh is hit first, fade that art's div.
+const occlusionRaycaster = new THREE.Raycaster();
+const occlusionDir = new THREE.Vector3();
+const occlusionTarget = new THREE.Vector3();
+
+function updateArtworkOcclusion() {
+    const occluders = [];
+    for (const item of frameObjects) {
+        // Models only — pedestals are intentionally transparent, never occluders.
+        if (item.art.type === 'model' && item.modelObj) {
+            item.modelObj.traverse((child) => { if (child.isMesh) occluders.push(child); });
+        }
+    }
+    if (occluders.length === 0) return;
+
+    for (const item of frameObjects) {
+        if (!item.containerDiv) continue; // model exhibits have no wall-art div
+        item.cssObject.getWorldPosition(occlusionTarget);
+        occlusionDir.copy(occlusionTarget).sub(camera.position);
+        const distToArt = occlusionDir.length();
+        occlusionRaycaster.set(camera.position, occlusionDir.normalize());
+        occlusionRaycaster.far = distToArt;
+        const occluded = occlusionRaycaster.intersectObjects(occluders, false).length > 0;
+        const div = item.containerDiv;
+        if (occluded && div.dataset.occluded !== '1') {
+            div.dataset.occluded = '1';
+            div.style.opacity = '0';
+            div.style.pointerEvents = 'none';
+        } else if (!occluded && div.dataset.occluded !== '0') {
+            div.dataset.occluded = '0';
+            div.style.opacity = '1';
+            div.style.pointerEvents = 'auto';
+        }
+    }
+}
 
         // ─── UI META & MODAL CONTROLLERS ──────────────────────────
         function updateGalleryMetaUI() {
