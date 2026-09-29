@@ -778,48 +778,7 @@
         }
 
         // ─── INITIALIZATION & DATA SYNC ───────────────────────────
-        const DEFAULT_ARTWORKS = [
-            {
-                id: 'art-1',
-                title: 'Diorama Room',
-                artist: 'Annie',
-                year: '2026',
-                medium: 'Interactive 3D Room',
-                type: 'html',
-                url: 'public/diorama-room.html',
-                isDefault: true
-            },
-            {
-                id: 'art-2',
-                title: 'Night Nook',
-                artist: 'Jessika',
-                year: '2026',
-                medium: 'Interactive Night Scene',
-                type: 'html',
-                url: 'public/night-nook.html',
-                isDefault: true
-            },
-            {
-                id: 'art-3',
-                title: 'Night Nook 3D',
-                artist: 'Jessika',
-                year: '2026',
-                medium: 'Interactive 3D Spatial',
-                type: 'html',
-                url: 'public/night-nook-3d.html',
-                isDefault: true
-            },
-            {
-                id: 'art-4',
-                title: 'Composition Study',
-                artist: 'Gallery Archive',
-                year: '2026',
-                medium: 'Digital Art on Canvas',
-                type: 'image',
-                url: 'public/527ea5ef-5a3c-46c7-b2d1-a542186f901e.jpg',
-                isDefault: true
-            }
-        ];
+        const DEFAULT_ARTWORKS = [];
 
         async function fetchGalleryArtworks() {
             // 1. Fetch from Firestore collection 'galleryExhibits' (source of truth everywhere)
