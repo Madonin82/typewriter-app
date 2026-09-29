@@ -896,6 +896,17 @@
             // Setup Navigation Listeners
             setupInteractions();
 
+            // Handle exhibit deep link (#exhibit=<id>)
+            const hash = window.location.hash || '';
+            const match = hash.match(/#exhibit=([^&]+)/);
+            if (match && match[1]) {
+                const targetId = decodeURIComponent(match[1]);
+                const idx = ARTWORKS.findIndex(a => a && a.id === targetId);
+                if (idx >= 0) {
+                    focusOnArtwork(idx);
+                }
+            }
+
             // Hide Loader
             setTimeout(() => {
                 const loader = document.getElementById('loader');
@@ -1324,6 +1335,7 @@
                 containerDiv.appendChild(video);
             } else {
                 const iframe = document.createElement('iframe');
+                iframe.sandbox = 'allow-scripts';
                 iframe.src = art.url;
                 iframe.style.width = '100%';
                 iframe.style.height = '100%';

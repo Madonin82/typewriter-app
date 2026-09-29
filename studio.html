@@ -99,6 +99,33 @@
                     </svg>
                     <span>Sign in with Google</span>
                 </button>
+
+                <div class="flex items-center gap-3 py-1">
+                    <div class="h-px bg-zinc-800 flex-1"></div>
+                    <span class="text-[10px] text-zinc-500 uppercase tracking-wider">or</span>
+                    <div class="h-px bg-zinc-800 flex-1"></div>
+                </div>
+
+                <div class="space-y-2.5 text-left" id="studio-email-auth-form">
+                    <div>
+                        <input id="studio-auth-email" type="email" autocomplete="email" placeholder="Email address" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                    <div>
+                        <input id="studio-auth-password" type="password" autocomplete="current-password" placeholder="Password" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                    <div>
+                        <input id="studio-auth-password-confirm" type="password" autocomplete="new-password" placeholder="Confirm password" class="hidden w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 pt-1">
+                        <button type="button" id="btn-studio-email-signin" onclick="studioEmailAuth('signin')" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-100 font-semibold py-2 px-3 rounded-xl text-xs transition cursor-pointer">
+                            Sign in
+                        </button>
+                        <button type="button" id="btn-studio-email-signup" onclick="studioEmailAuth('signup')" class="w-full bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold py-2 px-3 rounded-xl text-xs transition cursor-pointer">
+                            Create account
+                        </button>
+                    </div>
+                </div>
+
                 <div id="verification-action-box" class="hidden pt-3 border-t border-zinc-800 space-y-2">
                     <p class="text-[11px] text-amber-400 bg-amber-500/10 border border-amber-500/20 p-2.5 rounded-xl">Your account is signed in, but your email address has not been verified yet.</p>
                     <button onclick="sendVerificationEmail()" class="w-full bg-zinc-800 hover:bg-zinc-700 text-zinc-200 font-medium py-2 px-4 rounded-xl text-xs transition">
@@ -275,9 +302,78 @@
                 </div>
             </div>
 
+            <!-- ── ADMIN CURATE SECTION (Rendered ONLY for admins) ── -->
+            <div id="admin-curate-section" class="hidden lg:col-span-12 bg-zinc-900 border border-zinc-800 rounded-2xl p-6 shadow-xl flex flex-col space-y-4">
+                <div class="flex items-center justify-between border-b border-zinc-800 pb-3 flex-wrap gap-2">
+                    <div class="flex items-center gap-2">
+                        <span class="text-base">👑</span>
+                        <h2 class="text-sm font-semibold text-zinc-100">Curate — All Exhibits</h2>
+                        <span id="admin-curate-count" class="text-[11px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-mono">0 exhibits</span>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <button type="button" id="btn-backfill-thumbs" onclick="backfillMissingThumbnails()" class="text-xs text-amber-400 hover:text-amber-300 bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer" title="Generate thumbnails for exhibits that don't have one">
+                            <span>⚡ Generate missing thumbnails</span>
+                        </button>
+                        <button type="button" onclick="loadAllCurateExhibits()" class="text-xs text-zinc-400 hover:text-zinc-200 bg-zinc-950 border border-zinc-800 px-2.5 py-1 rounded-lg transition flex items-center gap-1 cursor-pointer" title="Refresh all exhibits">
+                            <span>🔄 Refresh</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div id="backfill-status-line" class="hidden text-xs text-zinc-300 bg-zinc-950 border border-zinc-800 p-2.5 rounded-xl flex items-center justify-between">
+                    <span id="backfill-status-text">Processing missing thumbnails...</span>
+                    <span id="backfill-status-progress" class="font-mono text-amber-400">0/0</span>
+                </div>
+
+                <div id="admin-curate-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <!-- Populated dynamically -->
+                </div>
+            </div>
+
         </div>
 
     </main>
+
+    <!-- ── EDIT EXHIBIT MODAL ── -->
+    <div id="edit-exhibit-modal" class="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm hidden flex items-center justify-center p-4">
+        <div class="bg-zinc-900 border border-zinc-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden animate-fade-in text-zinc-100 flex flex-col p-6 space-y-4">
+            <div class="flex items-center justify-between border-b border-zinc-800 pb-3">
+                <h3 class="text-sm font-semibold text-zinc-100 flex items-center gap-2">
+                    <span>✏️</span> Edit Exhibit Details
+                </h3>
+                <button type="button" onclick="closeEditModal()" class="text-zinc-500 hover:text-zinc-300 text-lg leading-none cursor-pointer">×</button>
+            </div>
+            <input type="hidden" id="edit-art-id">
+            <div class="space-y-3 text-xs">
+                <div>
+                    <label class="block text-zinc-400 font-medium mb-1">Title</label>
+                    <input type="text" id="edit-art-title" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                </div>
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Artist</label>
+                        <input type="text" id="edit-art-artist" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Year / Date</label>
+                        <input type="text" id="edit-art-year" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-zinc-400 font-medium mb-1">Medium / Style</label>
+                    <input type="text" id="edit-art-medium" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                </div>
+                <div>
+                    <label class="block text-zinc-400 font-medium mb-1">Description / Note</label>
+                    <textarea id="edit-art-desc" rows="3" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition"></textarea>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 pt-2 border-t border-zinc-800">
+                <button type="button" onclick="closeEditModal()" class="px-4 py-2 rounded-xl text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition cursor-pointer">Cancel</button>
+                <button type="button" onclick="saveExhibitEdit()" id="btn-save-exhibit-edit" class="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold px-5 py-2 rounded-xl text-xs transition shadow cursor-pointer">Save Changes</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Firebase Init & Studio Logic -->
     <script>
@@ -396,6 +492,17 @@
             if (artistInput && !artistInput.value) {
                 artistInput.value = currentUser.displayName || currentUser.email.split('@')[0];
             }
+
+            // Admin curate section visibility
+            const curateSection = document.getElementById('admin-curate-section');
+            if (curateSection) {
+                if (isStudioAdmin(currentUser)) {
+                    curateSection.classList.remove('hidden');
+                    loadAllCurateExhibits();
+                } else {
+                    curateSection.classList.add('hidden');
+                }
+            }
         }
 
         async function studioGoogleSignIn() {
@@ -405,6 +512,70 @@
                 await studioAuth.signInWithPopup(provider);
             } catch (e) {
                 alert('Sign in error: ' + e.message);
+            }
+        }
+
+        async function studioEmailAuth(mode) {
+            if (!studioAuth) initFirebaseStudio();
+            if (!studioAuth) {
+                alert("Firebase Auth initializing...");
+                return;
+            }
+
+            const emailInput = document.getElementById('studio-auth-email');
+            const passInput = document.getElementById('studio-auth-password');
+            const confirmInput = document.getElementById('studio-auth-password-confirm');
+
+            const email = emailInput ? emailInput.value.trim() : '';
+            const password = passInput ? passInput.value : '';
+
+            if (!email || !password) {
+                alert("Enter an email address and password.");
+                return;
+            }
+
+            if (mode === 'signup') {
+                if (confirmInput && confirmInput.classList.contains('hidden')) {
+                    confirmInput.classList.remove('hidden');
+                    confirmInput.focus();
+                    alert("Please confirm your password.");
+                    return;
+                }
+                const confirmPassword = confirmInput ? confirmInput.value : '';
+                if (!confirmPassword) {
+                    alert("Please confirm your password.");
+                    return;
+                }
+                if (password !== confirmPassword) {
+                    alert("Passwords do not match.");
+                    return;
+                }
+            } else {
+                if (confirmInput) confirmInput.classList.add('hidden');
+            }
+
+            try {
+                if (mode === 'signup') {
+                    const result = await studioAuth.createUserWithEmailAndPassword(email, password);
+                    if (result.user) {
+                        await result.user.sendEmailVerification();
+                        alert(`Verification email sent to ${result.user.email}. Please verify your email to access your studio.`);
+                    }
+                } else {
+                    await studioAuth.signInWithEmailAndPassword(email, password);
+                }
+            } catch (error) {
+                console.error("Email auth error:", error);
+                const messages = {
+                    'auth/email-already-in-use': 'An account already exists for this email.',
+                    'auth/invalid-email': 'Enter a valid email address.',
+                    'auth/invalid-credential': 'Email or password is incorrect.',
+                    'auth/user-not-found': 'Email or password is incorrect.',
+                    'auth/wrong-password': 'Email or password is incorrect.',
+                    'auth/weak-password': 'Password must be at least 6 characters.'
+                };
+                const msg = messages[error.code] || error.message;
+                alert(msg);
             }
         }
 
@@ -468,6 +639,18 @@
         }
 
         function processStudioFile(file) {
+            const errEl = document.getElementById('studio-error');
+            if (file && file.size >= 50 * 1024 * 1024) {
+                if (errEl) {
+                    errEl.textContent = 'File size exceeds the 50MB limit. Please select a smaller file.';
+                    errEl.classList.remove('hidden');
+                }
+                return;
+            }
+            if (errEl) {
+                errEl.classList.add('hidden');
+            }
+
             selectedFile = file;
             selectedFileName = file.name;
             const ext = file.name.split('.').pop().toLowerCase();
@@ -648,7 +831,11 @@
             previewCamera = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
             previewCamera.position.set(0, 0, 3.2);
 
-            previewRenderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+            previewRenderer = new THREE.WebGLRenderer({
+                antialias: true,
+                powerPreference: 'high-performance',
+                preserveDrawingBuffer: true
+            });
             previewRenderer.setSize(container.clientWidth, container.clientHeight);
             previewRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
             previewRenderer.shadowMap.enabled = true;
@@ -723,11 +910,14 @@
                 previewCamera.position.z = Math.max(1.5, Math.min(6.0, previewCamera.position.z + e.deltaY * 0.005));
             }, { passive: false });
 
+            const previewClock = new THREE.Clock();
+
             // Render loop
             function animatePreview() {
                 previewAnimFrameId = requestAnimationFrame(animatePreview);
+                const delta = previewClock.getDelta();
                 if (previewMixer) {
-                    previewMixer.update(0.016);
+                    previewMixer.update(delta);
                 }
                 previewRenderer.render(previewScene, previewCamera);
             }
@@ -892,11 +1082,34 @@
             }
 
             let finalUrl = selectedFileBase64;
+            let fileToUpload = selectedFile;
 
-            if (selectedFile && studioStorage && !selectedFileBase64.startsWith('http') && !selectedFileBase64.startsWith('blob:')) {
+            if (!fileToUpload && selectedFileBase64 && !selectedFileBase64.startsWith('http')) {
                 try {
-                    const storageRef = studioStorage.ref().child(`gallery_exhibits/${currentUser.uid}_${Date.now()}_${selectedFileName}`);
-                    const uploadTask = await storageRef.put(selectedFile);
+                    const res = await fetch(selectedFileBase64);
+                    const blob = await res.blob();
+                    fileToUpload = new File([blob], selectedFileName || 'pasted-art', { type: blob.type });
+                } catch (convErr) {
+                    console.warn('Conversion to file failed:', convErr);
+                }
+            }
+
+            if (fileToUpload && studioStorage) {
+                try {
+                    let defaultExt = '.png';
+                    if (selectedFileType === 'html') defaultExt = '.html';
+                    else if (selectedFileType === 'model') defaultExt = '.glb';
+                    else if (selectedFileType === 'video') defaultExt = '.mp4';
+
+                    const rawName = selectedFileName || (fileToUpload && fileToUpload.name) || 'artwork';
+                    const lastDotIndex = rawName.lastIndexOf('.');
+                    const ext = lastDotIndex !== -1 ? rawName.slice(lastDotIndex).toLowerCase() : defaultExt;
+                    const base = lastDotIndex !== -1 ? rawName.slice(0, lastDotIndex) : rawName;
+                    const sanitizedBase = base.replace(/[^a-z0-9_-]/gi, '_').toLowerCase();
+                    const sanitizedFileName = sanitizedBase + ext;
+
+                    const storageRef = studioStorage.ref().child(`gallery/${currentUser.uid}/${Date.now()}_${sanitizedFileName}`);
+                    const uploadTask = await storageRef.put(fileToUpload);
                     finalUrl = await uploadTask.ref.getDownloadURL();
                 } catch (e) {
                     console.warn('Storage upload fallback:', e);
@@ -904,6 +1117,46 @@
             }
 
             const exhibitId = 'art-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+
+            // Thumbnail generation
+            let thumbnailUrl = null;
+            try {
+                if (selectedFileType === 'image') {
+                    thumbnailUrl = finalUrl;
+                } else if (selectedFileType === 'video') {
+                    const videoEl = document.getElementById('instant-video-preview');
+                    if (videoEl && videoEl.videoWidth && videoEl.videoHeight) {
+                        const canvas = document.createElement('canvas');
+                        canvas.width = videoEl.videoWidth;
+                        canvas.height = videoEl.videoHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(videoEl, 0, 0, canvas.width, canvas.height);
+                        const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+                        if (blob && studioStorage) {
+                            const thumbRef = studioStorage.ref().child(`gallery/${currentUser.uid}/thumbs/${exhibitId}.png`);
+                            const thumbTask = await thumbRef.put(blob);
+                            thumbnailUrl = await thumbTask.ref.getDownloadURL();
+                        }
+                    }
+                } else if (selectedFileType === 'model') {
+                    if (previewRenderer && previewRenderer.domElement) {
+                        if (previewScene && previewCamera) {
+                            previewRenderer.render(previewScene, previewCamera);
+                        }
+                        const dataUrl = previewRenderer.domElement.toDataURL('image/png');
+                        const res = await fetch(dataUrl);
+                        const blob = await res.blob();
+                        if (blob && studioStorage) {
+                            const thumbRef = studioStorage.ref().child(`gallery/${currentUser.uid}/thumbs/${exhibitId}.png`);
+                            const thumbTask = await thumbRef.put(blob);
+                            thumbnailUrl = await thumbTask.ref.getDownloadURL();
+                        }
+                    }
+                }
+            } catch (thumbErr) {
+                console.warn('Thumbnail generation failed (proceeding without thumbnail):', thumbErr);
+            }
+
             const newExhibit = {
                 id: exhibitId,
                 title: title,
@@ -913,10 +1166,13 @@
                 description: desc,
                 type: selectedFileType,
                 url: finalUrl,
-                userId: currentUser.uid,
-                userEmail: currentUser.email,
+                uploaderUid: currentUser.uid,
                 createdAt: new Date().toISOString()
             };
+
+            if (thumbnailUrl) {
+                newExhibit.thumbnailUrl = thumbnailUrl;
+            }
 
             try {
                 if (studioDb) {
@@ -930,6 +1186,9 @@
 
                 alert('Exhibit successfully mounted to the gallery!');
                 loadMyExhibits();
+                if (isStudioAdmin(currentUser)) {
+                    loadAllCurateExhibits();
+                }
                 clearStudioFile();
                 document.getElementById('exhibit-title').value = '';
                 document.getElementById('exhibit-desc').value = '';
@@ -953,10 +1212,10 @@
             if (studioDb) {
                 try {
                     const snapshot = await studioDb.collection('galleryExhibits')
-                        .where('userId', '==', currentUser.uid)
+                        .where('uploaderUid', '==', currentUser.uid)
                         .get();
                     snapshot.forEach(doc => {
-                        exhibits.push(doc.data());
+                        exhibits.push({ ...doc.data(), id: doc.id });
                     });
                 } catch (e) {
                     console.warn('Firestore load error:', e);
@@ -968,7 +1227,7 @@
                 if (cached) {
                     try {
                         const parsed = JSON.parse(cached);
-                        exhibits = parsed.filter(a => a.userId === currentUser.uid);
+                        exhibits = parsed.filter(a => a.uploaderUid === currentUser.uid);
                     } catch (e) {}
                 }
             }
@@ -981,18 +1240,20 @@
                 return;
             }
 
+            const isAdmin = isStudioAdmin();
             exhibits.forEach(art => {
                 const item = document.createElement('div');
                 item.className = 'bg-zinc-950 border border-zinc-800/80 rounded-xl p-3 flex items-center justify-between gap-3 text-xs';
+                const removeBtnHtml = isAdmin ? `<button onclick="removeMyExhibit('${escapeHtml(art.id)}')" class="text-zinc-500 hover:text-rose-400 p-1 rounded transition cursor-pointer" title="Remove Exhibit">🗑️</button>` : '';
                 item.innerHTML = `
                     <div class="flex items-center gap-3 overflow-hidden">
-                        <span class="text-lg">${art.type === 'model' ? '🗿' : (art.type === 'video' ? '🎬' : (art.type === 'html' ? '🌐' : '🖼️'))}</span>
+                        <span class="text-lg">${escapeHtml(getTypeIcon(art.type))}</span>
                         <div class="truncate">
-                            <h4 class="font-medium text-zinc-200 truncate">${art.title}</h4>
-                            <p class="text-[10px] text-zinc-500">${art.medium} &middot; ${art.year || '2026'}</p>
+                            <h4 class="font-medium text-zinc-200 truncate">${escapeHtml(art.title || 'Untitled')}</h4>
+                            <p class="text-[10px] text-zinc-500">${escapeHtml(art.medium || 'Exhibit')} &middot; ${escapeHtml(art.year || '2026')}</p>
                         </div>
                     </div>
-                    <button onclick="removeMyExhibit('${art.id}')" class="text-zinc-500 hover:text-rose-400 p-1 rounded transition" title="Remove Exhibit">🗑️</button>
+                    ${removeBtnHtml}
                 `;
                 container.appendChild(item);
             });
@@ -1011,9 +1272,388 @@
                     localStorage.setItem('note_to_self_3d_gallery_manifest_v2', JSON.stringify(parsed));
                 }
                 loadMyExhibits();
+                if (isStudioAdmin(currentUser)) {
+                    loadAllCurateExhibits();
+                }
             } catch (e) {
                 alert('Error removing exhibit: ' + e.message);
             }
+        }
+
+        // ─── ADMIN CURATION & EDIT CONTROLLERS ──────────────────────
+        let allCurateExhibits = [];
+
+        function getTypeBadge(type) {
+            if (type === 'video') return '🎬 Video';
+            if (type === 'model') return '🗿 3D Model';
+            if (type === 'html') return '🌐 HTML 3D';
+            return '🖼️ Image';
+        }
+
+        function getTypeIcon(type) {
+            if (type === 'video') return '🎬';
+            if (type === 'model') return '🗿';
+            if (type === 'html') return '🌐';
+            return '🖼️';
+        }
+
+        function escapeHtml(str) {
+            if (!str) return '';
+            return String(str)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#039;');
+        }
+
+        async function loadAllCurateExhibits() {
+            if (!isStudioAdmin(currentUser)) return;
+            const grid = document.getElementById('admin-curate-grid');
+            const countBadge = document.getElementById('admin-curate-count');
+            if (!grid) return;
+
+            let exhibits = [];
+            if (studioDb) {
+                try {
+                    const snapshot = await studioDb.collection('galleryExhibits').orderBy('createdAt', 'asc').get();
+                    snapshot.forEach(doc => {
+                        exhibits.push({ ...doc.data(), id: doc.id });
+                    });
+                } catch (e) {
+                    console.warn('Firestore curate load error (falling back to unordered get):', e);
+                    try {
+                        const snapshot = await studioDb.collection('galleryExhibits').get();
+                        snapshot.forEach(doc => {
+                            exhibits.push({ ...doc.data(), id: doc.id });
+                        });
+                        exhibits.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+                    } catch (err2) {
+                        console.warn('Fallback get failed:', err2);
+                    }
+                }
+            }
+
+            if (exhibits.length === 0) {
+                const cached = localStorage.getItem('note_to_self_3d_gallery_manifest_v2');
+                if (cached) {
+                    try {
+                        exhibits = JSON.parse(cached);
+                        exhibits.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+                    } catch (e) {}
+                }
+            }
+
+            if (countBadge) countBadge.textContent = `${exhibits.length} exhibit${exhibits.length === 1 ? '' : 's'}`;
+            grid.innerHTML = '';
+
+            if (exhibits.length === 0) {
+                grid.innerHTML = `<div class="col-span-full text-center py-10 text-zinc-500 text-xs">No exhibits mounted in the gallery.</div>`;
+                return;
+            }
+
+            allCurateExhibits = exhibits;
+
+            exhibits.forEach(art => {
+                const card = document.createElement('div');
+                card.className = 'bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col hover:border-zinc-700 transition shadow-lg';
+                
+                const typeBadge = getTypeBadge(art.type);
+                const typeIcon = getTypeIcon(art.type);
+                const title = art.title || 'Untitled';
+                const artist = art.artist || 'Unknown';
+                const medium = art.medium || 'Exhibit';
+                const yearStr = art.year ? ` (${art.year})` : '';
+                const desc = art.description || '';
+                const thumb = art.thumbnailUrl || (art.type === 'image' ? art.url : '');
+
+                let thumbHtml = '';
+                if (thumb) {
+                    thumbHtml = `<div class="relative aspect-video w-full bg-zinc-900 overflow-hidden">
+                        <img src="${escapeHtml(thumb)}" alt="${escapeHtml(title)}" class="w-full h-full object-cover" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'w-full h-full bg-zinc-900 flex flex-col items-center justify-center text-zinc-500 gap-1.5\\'><span class=\\'text-2xl\\'>${escapeHtml(typeIcon)}</span><span class=\\'text-[10px] font-medium text-zinc-400\\'>${escapeHtml(typeBadge)}</span></div>';">
+                    </div>`;
+                } else {
+                    thumbHtml = `<div class="aspect-video w-full bg-zinc-900 flex flex-col items-center justify-center text-zinc-500 gap-1.5">
+                        <span class="text-2xl">${escapeHtml(typeIcon)}</span>
+                        <span class="text-[10px] font-medium text-zinc-400">${escapeHtml(typeBadge)}</span>
+                    </div>`;
+                }
+
+                card.innerHTML = `
+                    ${thumbHtml}
+                    <div class="p-4 flex-1 flex flex-col justify-between space-y-3">
+                        <div class="space-y-1.5">
+                            <div class="flex items-start justify-between gap-2">
+                                <h3 class="font-semibold text-zinc-100 text-xs truncate flex-1" title="${escapeHtml(title)}">${escapeHtml(title)}</h3>
+                                <span class="text-[10px] bg-zinc-800/90 text-zinc-300 px-1.5 py-0.5 rounded font-mono shrink-0">${escapeHtml(typeBadge)}</span>
+                            </div>
+                            <p class="text-[11px] text-zinc-400 truncate">${escapeHtml(artist)} &middot; ${escapeHtml(medium)}${escapeHtml(yearStr)}</p>
+                            <p class="text-[11px] text-zinc-400 line-clamp-3 leading-relaxed pt-1">${escapeHtml(desc)}</p>
+                        </div>
+                        <div class="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs">
+                            <a href="gallery.html#exhibit=${encodeURIComponent(art.id)}" target="_blank" class="text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1 transition cursor-pointer">
+                                Go to ↗
+                            </a>
+                            <div class="flex items-center gap-2">
+                                <button type="button" onclick="openEditModal('${escapeHtml(art.id)}')" class="text-zinc-400 hover:text-zinc-200 px-2 py-1 rounded bg-zinc-900 border border-zinc-800 transition cursor-pointer" title="Edit Exhibit">
+                                    Edit ✏️
+                                </button>
+                                <button type="button" onclick="removeMyExhibit('${escapeHtml(art.id)}')" class="text-rose-400 hover:text-rose-300 px-2 py-1 rounded bg-rose-500/10 border border-rose-500/20 transition cursor-pointer" title="Remove Exhibit">
+                                    Remove 🗑️
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                grid.appendChild(card);
+            });
+        }
+
+        function openEditModal(artId) {
+            const art = allCurateExhibits.find(a => a.id === artId);
+            if (!art) return;
+            document.getElementById('edit-art-id').value = art.id;
+            document.getElementById('edit-art-title').value = art.title || '';
+            document.getElementById('edit-art-artist').value = art.artist || '';
+            document.getElementById('edit-art-year').value = art.year || '';
+            document.getElementById('edit-art-medium').value = art.medium || '';
+            document.getElementById('edit-art-desc').value = art.description || '';
+            document.getElementById('edit-exhibit-modal').classList.remove('hidden');
+        }
+
+        function closeEditModal() {
+            document.getElementById('edit-exhibit-modal').classList.add('hidden');
+        }
+
+        async function saveExhibitEdit() {
+            const artId = document.getElementById('edit-art-id').value;
+            if (!artId) return;
+            const title = document.getElementById('edit-art-title').value.trim() || 'Untitled';
+            const artist = document.getElementById('edit-art-artist').value.trim() || 'Unknown';
+            const year = document.getElementById('edit-art-year').value.trim();
+            const medium = document.getElementById('edit-art-medium').value.trim() || 'Exhibit';
+            const desc = document.getElementById('edit-art-desc').value.trim();
+
+            const saveBtn = document.getElementById('btn-save-exhibit-edit');
+            if (saveBtn) {
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving...';
+            }
+
+            try {
+                const updateData = {
+                    title,
+                    artist,
+                    year,
+                    medium,
+                    description: desc
+                };
+
+                if (studioDb) {
+                    await studioDb.collection('galleryExhibits').doc(artId).update(updateData);
+                }
+
+                const cached = localStorage.getItem('note_to_self_3d_gallery_manifest_v2');
+                if (cached) {
+                    let parsed = JSON.parse(cached);
+                    const idx = parsed.findIndex(a => a.id === artId);
+                    if (idx !== -1) {
+                        parsed[idx] = { ...parsed[idx], ...updateData };
+                        localStorage.setItem('note_to_self_3d_gallery_manifest_v2', JSON.stringify(parsed));
+                    }
+                }
+
+                closeEditModal();
+                loadAllCurateExhibits();
+                loadMyExhibits();
+                alert('Exhibit updated successfully!');
+            } catch (e) {
+                alert('Error updating exhibit: ' + e.message);
+            } finally {
+                if (saveBtn) {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Save Changes';
+                }
+            }
+        }
+
+        async function backfillMissingThumbnails() {
+            if (!isStudioAdmin(currentUser)) return;
+            const btn = document.getElementById('btn-backfill-thumbs');
+            const statusLine = document.getElementById('backfill-status-line');
+            const statusText = document.getElementById('backfill-status-text');
+            const statusProgress = document.getElementById('backfill-status-progress');
+
+            if (btn) {
+                btn.disabled = true;
+                btn.classList.add('opacity-50', 'pointer-events-none');
+            }
+            if (statusLine) statusLine.classList.remove('hidden');
+            if (statusText) statusText.textContent = 'Fetching exhibits from database...';
+            if (statusProgress) statusProgress.textContent = '';
+
+            let exhibits = [];
+            if (studioDb) {
+                try {
+                    const snapshot = await studioDb.collection('galleryExhibits').get();
+                    snapshot.forEach(doc => {
+                        exhibits.push({ ...doc.data(), id: doc.id });
+                    });
+                } catch (e) {
+                    console.warn('Firestore load error during backfill:', e);
+                }
+            }
+
+            if (exhibits.length === 0) {
+                const cached = localStorage.getItem('note_to_self_3d_gallery_manifest_v2');
+                if (cached) {
+                    try {
+                        exhibits = JSON.parse(cached);
+                    } catch (e) {}
+                }
+            }
+
+            // Filter client-side to exhibits with no thumbnailUrl (excluding html)
+            const missing = exhibits.filter(a => !a.thumbnailUrl && a.type !== 'html');
+
+            if (missing.length === 0) {
+                if (statusText) statusText.textContent = 'All exhibits already have thumbnails!';
+                setTimeout(() => {
+                    if (statusLine) statusLine.classList.add('hidden');
+                    if (btn) {
+                        btn.disabled = false;
+                        btn.classList.remove('opacity-50', 'pointer-events-none');
+                    }
+                }, 2000);
+                return;
+            }
+
+            let successCount = 0;
+
+            for (let i = 0; i < missing.length; i++) {
+                const art = missing[i];
+                const progressStr = `${i + 1} of ${missing.length}…`;
+                if (statusText) statusText.textContent = `Generating thumbnail for "${art.title || 'Exhibit'}" (${art.type || 'image'})`;
+                if (statusProgress) statusProgress.textContent = progressStr;
+
+                let thumbUrl = null;
+                try {
+                    if (art.type === 'image') {
+                        thumbUrl = art.url;
+                    } else if (art.type === 'video') {
+                        thumbUrl = await new Promise((resolve) => {
+                            const video = document.createElement('video');
+                            video.crossOrigin = 'anonymous';
+                            video.preload = 'auto';
+                            video.muted = true;
+                            const timeout = setTimeout(() => {
+                                console.warn('Video thumbnail timeout for exhibit:', art.title || art.id);
+                                resolve(null);
+                            }, 8000);
+
+                            video.onloadeddata = () => {
+                                try {
+                                    video.currentTime = 0.5;
+                                } catch (seekErr) {
+                                    clearTimeout(timeout);
+                                    console.warn('Video seek failed for exhibit:', art.title || art.id, seekErr);
+                                    resolve(null);
+                                }
+                            };
+
+                            video.onseeked = async () => {
+                                clearTimeout(timeout);
+                                try {
+                                    const canvas = document.createElement('canvas');
+                                    canvas.width = video.videoWidth || 640;
+                                    canvas.height = video.videoHeight || 360;
+                                    const ctx = canvas.getContext('2d');
+                                    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                                    const blob = await new Promise(res => canvas.toBlob(res, 'image/png'));
+                                    if (blob && studioStorage) {
+                                        const thumbRef = studioStorage.ref().child(`gallery/${currentUser.uid}/thumbs/${art.id}.png`);
+                                        const task = await thumbRef.put(blob);
+                                        const url = await task.ref.getDownloadURL();
+                                        resolve(url);
+                                    } else {
+                                        resolve(null);
+                                    }
+                                } catch (canvasErr) {
+                                    console.warn('Canvas capture failed (likely CORS tainted) for exhibit:', art.title || art.id, canvasErr);
+                                    resolve(null);
+                                }
+                            };
+
+                            video.onerror = (e) => {
+                                clearTimeout(timeout);
+                                console.warn('Video loading failed for exhibit:', art.title || art.id, e);
+                                resolve(null);
+                            };
+
+                            video.src = art.url;
+                        });
+                    } else if (art.type === 'model') {
+                        try {
+                            updateThreePreview(art.url, 'model', art.title || 'Model');
+                            await new Promise(r => setTimeout(r, 800));
+                            if (previewRenderer && previewRenderer.domElement && previewScene && previewCamera) {
+                                previewRenderer.render(previewScene, previewCamera);
+                                const dataUrl = previewRenderer.domElement.toDataURL('image/png');
+                                const res = await fetch(dataUrl);
+                                const blob = await res.blob();
+                                if (blob && studioStorage) {
+                                    const thumbRef = studioStorage.ref().child(`gallery/${currentUser.uid}/thumbs/${art.id}.png`);
+                                    const task = await thumbRef.put(blob);
+                                    thumbUrl = await task.ref.getDownloadURL();
+                                }
+                            }
+                        } catch (modelErr) {
+                            console.warn('3D model thumbnail snapshot failed for exhibit:', art.title || art.id, modelErr);
+                        }
+                    }
+
+                    if (thumbUrl) {
+                        if (studioDb) {
+                            await studioDb.collection('galleryExhibits').doc(art.id).update({ thumbnailUrl: thumbUrl });
+                        }
+                        art.thumbnailUrl = thumbUrl;
+                        successCount++;
+                    }
+                } catch (err) {
+                    console.warn(`Failed to backfill thumbnail for exhibit "${art.title || art.id}":`, err);
+                }
+            }
+
+            // Sync with local cache
+            const cached = localStorage.getItem('note_to_self_3d_gallery_manifest_v2');
+            if (cached) {
+                try {
+                    let parsed = JSON.parse(cached);
+                    parsed = parsed.map(item => {
+                        const match = exhibits.find(a => a.id === item.id);
+                        return match ? { ...item, thumbnailUrl: match.thumbnailUrl || item.thumbnailUrl } : item;
+                    });
+                    localStorage.setItem('note_to_self_3d_gallery_manifest_v2', JSON.stringify(parsed));
+                } catch (e) {}
+            }
+
+            const failedCount = missing.length - successCount;
+            if (statusText) statusText.textContent = `Done: ${successCount} thumbnails created, ${failedCount} skipped/failed`;
+            if (statusProgress) statusProgress.textContent = '';
+
+            if (btn) {
+                btn.disabled = false;
+                btn.classList.remove('opacity-50', 'pointer-events-none');
+            }
+
+            setTimeout(() => {
+                if (statusLine) statusLine.classList.add('hidden');
+            }, 6000);
+
+            // Re-render the curate card grid and user exhibits list once after the batch
+            await loadAllCurateExhibits();
+            loadMyExhibits();
+            resetThreePreview();
         }
     </script>
 </body>
