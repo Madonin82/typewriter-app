@@ -2520,7 +2520,11 @@
 
                     if (btnText) btnText.textContent = 'Saving Exhibit...';
                     const newArtId = 'art-' + Date.now();
-                    const uploaderUid = (currentGalleryUser && currentGalleryUser.uid) ? currentGalleryUser.uid : (firebase.auth.currentUser ? firebase.auth.currentUser.uid : '');
+                    const activeUser = (currentGalleryUser && currentGalleryUser.uid) ? currentGalleryUser : (firebase.auth && typeof firebase.auth === 'function' ? firebase.auth().currentUser : (firebase.auth ? firebase.auth.currentUser : null));
+                    const uploaderUid = (activeUser && activeUser.uid) ? activeUser.uid : '';
+                    const uploaderName = (activeUser && activeUser.displayName)
+                        ? activeUser.displayName
+                        : (activeUser && activeUser.email ? activeUser.email.split('@')[0] : 'Unknown');
 
                     const defaultMedium = determinedType === 'html' ? 'Interactive 3D Scene' : (determinedType === 'model' ? '3D Model' : (determinedType === 'video' ? 'Video Artwork' : 'Digital Artwork'));
 
@@ -2535,10 +2539,22 @@
                         url: finalUrl,
                         createdAt: new Date().toISOString(),
                         isCustom: true,
-                        uploaderUid: uploaderUid
+                        uploaderUid: uploaderUid,
+                        uploaderName: uploaderName
                     };
 
                     await firebase.firestore().collection('galleryExhibits').doc(newArtId).set(newArtwork);
+                    if (uploaderUid) {
+                        try {
+                            await firebase.firestore().collection('userDirectory').doc(uploaderUid).set({
+                                displayName: (activeUser && activeUser.displayName) || (activeUser && activeUser.email ? activeUser.email.split('@')[0] : '') || '',
+                                email: (activeUser && activeUser.email) || '',
+                                updatedAt: new Date().toISOString()
+                            }, { merge: true });
+                        } catch (dirErr) {
+                            console.warn('Failed to update userDirectory:', dirErr);
+                        }
+                    }
                     ARTWORKS.push(newArtwork);
                 } catch (err) {
                     console.error('Save artwork error:', err);

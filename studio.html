@@ -364,6 +364,10 @@
                     <input type="text" id="edit-art-medium" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
                 </div>
                 <div>
+                    <label class="block text-zinc-400 font-medium mb-1">Uploaded by</label>
+                    <div id="edit-art-uploader" class="w-full bg-zinc-950/70 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-400 font-mono select-text"></div>
+                </div>
+                <div>
                     <label class="block text-zinc-400 font-medium mb-1">Description / Note</label>
                     <textarea id="edit-art-desc" rows="3" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition"></textarea>
                 </div>
@@ -1192,6 +1196,7 @@
                 type: selectedFileType,
                 url: finalUrl,
                 uploaderUid: currentUser.uid,
+                uploaderName: currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : '') || 'Unknown',
                 createdAt: new Date().toISOString()
             };
 
@@ -1202,6 +1207,15 @@
             try {
                 if (studioDb) {
                     await studioDb.collection('galleryExhibits').doc(exhibitId).set(newExhibit);
+                    try {
+                        await studioDb.collection('userDirectory').doc(currentUser.uid).set({
+                            displayName: currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : '') || '',
+                            email: currentUser.email || '',
+                            updatedAt: new Date().toISOString()
+                        }, { merge: true });
+                    } catch (dirErr) {
+                        console.warn('Failed to update userDirectory:', dirErr);
+                    }
                 }
 
                 const cached = localStorage.getItem('note_to_self_3d_gallery_manifest_v2');
@@ -1332,6 +1346,34 @@
                 .replace(/'/g, '&#039;');
         }
 
+        const KNOWN_UPLOADER_NAMES = {
+            'vW2BVmvIxQap7mYBhzUU1l7P0VH3': 'Jimmy',
+            'HQe2aRANHoOFFPofQyfPTUV4LXB2': 'Jimmy',
+            'duK8YC4f1ocbO8uBPHhNd5PDbJ42': 'Annie',
+            'Dq4l0vvqvXVCqgcqbw8G4airUyA2': 'Jessika'
+        };
+        let userDirectoryCache = {};
+
+        function getUploaderLabel(art) {
+            if (!art) return 'Unknown';
+            let dirLabel = '';
+            const dirUser = art.uploaderUid ? userDirectoryCache[art.uploaderUid] : null;
+            if (dirUser) {
+                if (dirUser.displayName && dirUser.email) {
+                    dirLabel = `${dirUser.displayName} (${dirUser.email})`;
+                } else if (dirUser.displayName) {
+                    dirLabel = dirUser.displayName;
+                } else if (dirUser.email) {
+                    dirLabel = dirUser.email;
+                }
+            }
+
+            return dirLabel
+                || art.uploaderName
+                || (art.uploaderUid && KNOWN_UPLOADER_NAMES[art.uploaderUid])
+                || (art.uploaderUid ? `${art.uploaderUid.slice(0, 8)}...` : 'Unknown');
+        }
+
         async function loadAllCurateExhibits() {
             if (!isStudioAdmin(currentUser)) return;
             const grid = document.getElementById('admin-curate-grid');
@@ -1379,6 +1421,25 @@
 
             allCurateExhibits = exhibits;
 
+            // Collect unique uploaderUids and fetch their userDirectory docs in one batch
+            const uploaderUids = [...new Set(exhibits.map(e => e.uploaderUid).filter(Boolean))];
+            if (studioDb && uploaderUids.length > 0) {
+                try {
+                    await Promise.all(uploaderUids.map(async (uid) => {
+                        try {
+                            const userDoc = await studioDb.collection('userDirectory').doc(uid).get();
+                            if (userDoc.exists) {
+                                userDirectoryCache[uid] = userDoc.data();
+                            }
+                        } catch (e) {
+                            console.warn('Failed to fetch userDirectory for', uid, e);
+                        }
+                    }));
+                } catch (err) {
+                    console.warn('User directory batch fetch error:', err);
+                }
+            }
+
             exhibits.forEach(art => {
                 const card = document.createElement('div');
                 card.className = 'bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden flex flex-col hover:border-zinc-700 transition shadow-lg';
@@ -1391,6 +1452,8 @@
                 const yearStr = art.year ? ` (${art.year})` : '';
                 const desc = art.description || '';
                 const thumb = art.thumbnailUrl || (art.type === 'image' ? art.url : '');
+
+                const uploaderLabel = getUploaderLabel(art);
 
                 let thumbHtml = '';
                 if (thumb) {
@@ -1414,6 +1477,7 @@
                             </div>
                             <p class="text-[11px] text-zinc-400 truncate">${escapeHtml(artist)} &middot; ${escapeHtml(medium)}${escapeHtml(yearStr)}</p>
                             <p class="text-[11px] text-zinc-400 line-clamp-3 leading-relaxed pt-1">${escapeHtml(desc)}</p>
+                            <p class="text-[10px] text-zinc-500 pt-1">Uploaded by ${escapeHtml(uploaderLabel)}</p>
                         </div>
                         <div class="pt-2 border-t border-zinc-800/80 flex items-center justify-between text-xs">
                             <a href="gallery.html#exhibit=${encodeURIComponent(art.id)}" target="_blank" class="text-amber-400 hover:text-amber-300 font-medium flex items-center gap-1 transition cursor-pointer">
@@ -1434,7 +1498,7 @@
             });
         }
 
-        function openEditModal(artId) {
+        async function openEditModal(artId) {
             const art = allCurateExhibits.find(a => a.id === artId);
             if (!art) return;
             document.getElementById('edit-art-id').value = art.id;
@@ -1443,6 +1507,20 @@
             document.getElementById('edit-art-year').value = art.year || '';
             document.getElementById('edit-art-medium').value = art.medium || '';
             document.getElementById('edit-art-desc').value = art.description || '';
+            
+            const uploaderEl = document.getElementById('edit-art-uploader');
+            if (uploaderEl) {
+                if (art.uploaderUid && !userDirectoryCache[art.uploaderUid] && studioDb) {
+                    try {
+                        const userDoc = await studioDb.collection('userDirectory').doc(art.uploaderUid).get();
+                        if (userDoc.exists) {
+                            userDirectoryCache[art.uploaderUid] = userDoc.data();
+                        }
+                    } catch (e) {}
+                }
+                uploaderEl.textContent = getUploaderLabel(art);
+            }
+
             document.getElementById('edit-exhibit-modal').classList.remove('hidden');
         }
 

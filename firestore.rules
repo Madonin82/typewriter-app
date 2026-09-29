@@ -97,9 +97,15 @@ service cloud.firestore {
 
       allow create: if isVerifiedUser()
                     && request.resource.data.uploaderUid == request.auth.uid
-                    && request.resource.data.url is string;
+                    && request.resource.data.url is string
+                    && (!('uploaderName' in request.resource.data) || request.resource.data.uploaderName is string);
 
       allow update, delete: if isStationAdmin();
+    }
+
+    match /userDirectory/{uid} {
+      allow read: if isStationAdmin();
+      allow write: if request.auth != null && request.auth.uid == uid;
     }
 
     match /{document=**} {
