@@ -1,0 +1,21 @@
+# Local Firebase CLI state (cache, hosting deploys)
+.firebase/
+firebase-debug.log
+firestore-debug.log
+ui-debug.log
+
+# Real env files (never commit secrets; .env.example stays tracked)
+.env
+.env.local
+.env.*.local
+
+# Dependencies
+node_modules/
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
