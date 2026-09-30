@@ -375,25 +375,51 @@ function vrLocomotion(dt) {
   const f = new THREE.Vector3(-Math.sin(yawNow), 0, -Math.cos(yawNow));
   const r = new THREE.Vector3(-f.z, 0, f.x);
   const dz = v => Math.abs(v) < 0.2 ? 0 : v;
+  let xrActive = false; // did an XR controller drive us this frame?
   for (const src of session.inputSources) {
     const gp = src.gamepad;
-    if (!gp || gp.axes.length < 4) continue;
-    const sx = gp.axes[2], sy = gp.axes[3];
+    // NOTE: each Touch controller exposes only its OWN stick as axes [x, y]
+    // (length 2) — not 4 like a desktop gamepad. Requiring 4 skipped everything.
+    if (!gp || gp.axes.length < 2) continue;
+    const sx = gp.axes[0], sy = gp.axes[1];
     if (src.handedness === 'left') {
       // left stick: smooth walk (Y forward/back, X strafe)
       const mx = dz(sx), my = dz(sy);
       if (mx || my) {
         rig.position.addScaledVector(f, -my * 2.2 * dt);
         rig.position.addScaledVector(r, mx * 2.2 * dt);
+        xrActive = true;
       }
     } else if (src.handedness === 'right') {
       // right stick: flick left/right to snap-turn 45 degrees
       if (Math.abs(sx) > 0.7 && snapArmed) {
         rig.rotation.y -= Math.sign(sx) * Math.PI / 4;
         snapArmed = false;
+        xrActive = true;
       } else if (Math.abs(sx) < 0.3) {
         snapArmed = true;
       }
+    }
+  }
+  // fallback: plain Bluetooth/USB gamepads are NOT XR input sources, so poll
+  // them separately (e.g. a Switch Pro paired to the headset or the PC).
+  // Skipped when an XR controller already drove this frame to avoid double input.
+  if (!xrActive && navigator.getGamepads) {
+    for (const gp of navigator.getGamepads()) {
+      if (!gp || !gp.connected || gp.axes.length < 2) continue;
+      const mx = dz(gp.axes[0] || 0), my = dz(gp.axes[1] || 0);
+      if (mx || my) {
+        rig.position.addScaledVector(f, -my * 2.2 * dt);
+        rig.position.addScaledVector(r, mx * 2.2 * dt);
+      }
+      const rx = gp.axes[2] || 0; // right stick X: snap turn
+      if (Math.abs(rx) > 0.7 && snapArmed) {
+        rig.rotation.y -= Math.sign(rx) * Math.PI / 4;
+        snapArmed = false;
+      } else if (Math.abs(rx) < 0.3) {
+        snapArmed = true;
+      }
+      break; // first usable pad wins
     }
   }
   rig.position.x = THREE.MathUtils.clamp(rig.position.x, -6.2, 6.2);
