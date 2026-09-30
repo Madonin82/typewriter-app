@@ -8,6 +8,8 @@ A writing app for drafting books. You write in short chunks, commit them, and ke
 
 **3D Art Gallery (beta):** https://madonin82.github.io/typewriter-app/gallery.html
 
+**VR Gallery:** https://madonin82.github.io/typewriter-app/vr-gallery.html — walk the gallery in a Quest headset. There's a sleeping cat. You can pet it.
+
 ## Writing
 
 - Draft in a small text buffer (200 characters max), then press Enter to commit. Committed text is permanent.
@@ -44,7 +46,18 @@ A 3D museum wall for AI-made art, at `gallery.html` — linked from the write me
 
 - Every piece hangs in its own frame as a **live** artwork: interactive scenes stay fully clickable inside their frames — orbiting, buttons, and audio keep working.
 - Drag or scroll sideways to walk down the wall; the 3D pieces shift perspective as you pass (the gallery syncs its camera into each frame for a parallax effect).
-- **Curator**: hang your own pieces without touching code — upload an image or a self-contained HTML file, or link a URL, from the curator panel inside the gallery.
+- **Curator**: hang your own pieces without touching code — upload an image, a 3D model, a video, or a self-contained HTML file, or paste a URL, from the curator panel inside the gallery.
+- Click a 3D piece to inspect it up close on a slow turntable; animations play on their own.
+- Click any placard to read the full wall label — title, artist, year, medium, description.
+- Jump straight to any exhibit from the Go-to menu, or share a link that opens on a specific piece (`#exhibit=<id>`).
+
+## VR Gallery
+
+A WebXR walkthrough of the gallery for Meta Quest, at `vr-gallery.html`. Open it in the Quest browser and step inside.
+
+- Walk the room with teleport or smooth locomotion; pieces sit on pedestals and hang on walls at human scale.
+- Animated pieces stand in their rest pose for now (autoplay is a regular-gallery feature).
+- The cat is asleep in the corner. Pet it and it purrs.
 
 ## Chat
 
