@@ -46,7 +46,8 @@
   <div id="loading">HANGING THE ART…</div>
   <button id="enter2d" style="display:none">STEP INSIDE</button>
   <p class="hint" id="ctrlhint">on quest: open this page in the browser &amp; tap ENTER VR<br>
-  point a controller and pull the trigger to walk there &middot; point at the cat and pull to pet</p>
+  point a controller and pull the trigger to walk there &middot; point at the cat and pull to pet<br>
+  left thumbstick walks &middot; flick the right thumbstick to snap-turn</p>
 </div>
 <div id="toast"></div>
 <script type="module">
@@ -360,6 +361,41 @@ for (let i = 0; i < 2; i++) {
   controllers.push(c);
 }
 
+/* ================= VR thumbstick: walk + snap turn ================= */
+let snapArmed = true;
+function vrLocomotion(dt) {
+  if (!renderer.xr.isPresenting) return;
+  const session = renderer.xr.getSession();
+  if (!session) return;
+  const yawNow = rig.rotation.y;
+  const f = new THREE.Vector3(-Math.sin(yawNow), 0, -Math.cos(yawNow));
+  const r = new THREE.Vector3(-f.z, 0, f.x);
+  const dz = v => Math.abs(v) < 0.2 ? 0 : v;
+  for (const src of session.inputSources) {
+    const gp = src.gamepad;
+    if (!gp || gp.axes.length < 4) continue;
+    const sx = gp.axes[2], sy = gp.axes[3];
+    if (src.handedness === 'left') {
+      // left stick: smooth walk (Y forward/back, X strafe)
+      const mx = dz(sx), my = dz(sy);
+      if (mx || my) {
+        rig.position.addScaledVector(f, -my * 2.2 * dt);
+        rig.position.addScaledVector(r, mx * 2.2 * dt);
+      }
+    } else if (src.handedness === 'right') {
+      // right stick: flick left/right to snap-turn 45 degrees
+      if (Math.abs(sx) > 0.7 && snapArmed) {
+        rig.rotation.y -= Math.sign(sx) * Math.PI / 4;
+        snapArmed = false;
+      } else if (Math.abs(sx) < 0.3) {
+        snapArmed = true;
+      }
+    }
+  }
+  rig.position.x = THREE.MathUtils.clamp(rig.position.x, -6.2, 6.2);
+  rig.position.z = THREE.MathUtils.clamp(rig.position.z, -4.2, 4.2);
+}
+
 /* ================= desktop fallback controls ================= */
 let yaw = 0, pitch = 0, dragging = false, moved = 0, lastX = 0, lastY = 0;
 const keys = {};
@@ -382,16 +418,43 @@ window.addEventListener('mousemove', e => {
 });
 window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
 window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+let padPetArmed = true;
 function desktopMove(dt) {
   if (renderer.xr.isPresenting) return;
+  // gamepad (standard mapping: left stick walk, right stick look, A pet)
+  let gx = 0, gz = 0, lx = 0, ly = 0, petBtn = false;
+  if (navigator.getGamepads) {
+    for (const gp of navigator.getGamepads()) {
+      if (!gp || !gp.connected) continue;
+      const dz = v => Math.abs(v) < 0.16 ? 0 : v;
+      gx = dz(gp.axes[0] || 0); gz = dz(gp.axes[1] || 0);
+      lx = dz(gp.axes[2] || 0); ly = dz(gp.axes[3] || 0);
+      petBtn = !!(gp.buttons[0] && gp.buttons[0].pressed);
+      break;
+    }
+  }
+  yaw -= lx * 2.4 * dt; pitch -= ly * 2.4 * dt;
+  pitch = THREE.MathUtils.clamp(pitch, -1.2, 1.2);
+  if (petBtn && padPetArmed) {
+    padPetArmed = false;
+    ensureAudio();
+    raycaster.setFromCamera({ x: 0, y: 0 }, camera);
+    if (raycaster.intersectObject(catGroup, true).length) petCat();
+  } else if (!petBtn) {
+    padPetArmed = true;
+  }
   rig.rotation.y = yaw; camera.rotation.x = pitch;
   const sp = 2.2 * dt;
   const f = new THREE.Vector3(-Math.sin(yaw), 0, -Math.cos(yaw));
   const r = new THREE.Vector3(-f.z, 0, f.x);
-  if (keys['w'] || keys['arrowup']) rig.position.addScaledVector(f, sp);
-  if (keys['s'] || keys['arrowdown']) rig.position.addScaledVector(f, -sp);
-  if (keys['a'] || keys['arrowleft']) rig.position.addScaledVector(r, -sp);
-  if (keys['d'] || keys['arrowright']) rig.position.addScaledVector(r, sp);
+  let mf = 0, ms = 0;
+  if (keys['w'] || keys['arrowup']) mf += 1;
+  if (keys['s'] || keys['arrowdown']) mf -= 1;
+  if (keys['d'] || keys['arrowright']) ms += 1;
+  if (keys['a'] || keys['arrowleft']) ms -= 1;
+  mf += -gz; ms += gx; // gamepad left stick
+  rig.position.addScaledVector(f, mf * sp);
+  rig.position.addScaledVector(r, ms * sp);
   rig.position.x = THREE.MathUtils.clamp(rig.position.x, -6.2, 6.2);
   rig.position.z = THREE.MathUtils.clamp(rig.position.z, -4.2, 4.2);
 }
@@ -435,7 +498,8 @@ async function build() {
   }
   if (!('xr' in navigator)) {
     document.getElementById('ctrlhint').innerHTML =
-      'no webxr on this device \u2014 drag to look, WASD to walk, click the cat to pet';
+      'no webxr on this device \u2014 drag to look, WASD to walk, click the cat to pet<br>' +
+      'gamepad: left stick walks, right stick looks, A pets (press any button once to wake it)';
   }
 }
 build().catch(err => {
@@ -450,6 +514,7 @@ renderer.setAnimationLoop(() => {
   const dt = Math.min(clock.getDelta(), 0.05);
   const t = clock.elapsedTime;
   desktopMove(dt);
+  vrLocomotion(dt);
   // breathing
   if (catBody) {
     const b = 1 + 0.055 * Math.sin(t * 2.1);
