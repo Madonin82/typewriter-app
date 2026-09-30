@@ -56,7 +56,7 @@ A 3D museum wall for AI-made art, at `gallery.html` — linked from the write me
 A WebXR walkthrough of the gallery for Meta Quest, at `vr-gallery.html`. Open it in the Quest browser and step inside.
 
 - Walk the room with teleport or smooth locomotion; pieces sit on pedestals and hang on walls at human scale.
-- Animated pieces play in place.
+- Animated pieces stand in their rest pose for now (autoplay is a regular-gallery feature).
 - The cat is asleep in the corner. Pet it and it purrs.
 
 ## Chat
