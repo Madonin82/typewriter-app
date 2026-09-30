@@ -42,7 +42,7 @@
 <div id="app"></div>
 <div id="overlay">
   <h1>THE GALLERY</h1>
-  <p>an evening space for jessika's work.<br>walk the room. look closely. pet the cat.</p>
+  <p>an evening space for jessika's work.<br>walk the room. look closely. pet the cat. take the couch.</p>
   <div id="loading">HANGING THE ART…</div>
   <button id="enter2d" style="display:none">STEP INSIDE</button>
   <p class="hint" id="ctrlhint">on quest: open this page in the browser &amp; tap ENTER VR<br>
@@ -145,6 +145,10 @@ function b64ToBuffer(b64) {
 const gltfLoader = new GLTFLoader();
 function loadGLB(b64) {
   return new Promise((res, rej) => gltfLoader.parse(b64ToBuffer(b64), '', res, rej));
+}
+// repo-hosted asset (not inlined): vr-assets/sofa.glb
+function loadGLBUrl(url) {
+  return new Promise((res, rej) => gltfLoader.load(url, res, undefined, rej));
 }
 // fit a model on a pedestal top, scaled to target height, base at y=1.0
 function mountOnPedestal(obj, h, x, z, ry = 0) {
@@ -487,6 +491,13 @@ async function build() {
   // framed prints on the back wall
   jobs.push(loadTex(ASSETS.nightdesk).then(t => framedPrint(t, 1.5, 1.0, -2.8, 2.05, -4.93, 'Night Desk')));
   jobs.push(loadTex(ASSETS.eyesclosed).then(t => framedPrint(t, 1.1, 1.4, 2.8, 2.05, -4.93, 'Eyes Closed')));
+  // emerald viewing couch against the front wall (repo asset, loaded by URL)
+  jobs.push(loadGLBUrl('vr-assets/sofa.glb').then(gltf => {
+    const sofa = gltf.scene;
+    sofa.scale.setScalar(0.33);      // ~2m wide at real-world scale
+    sofa.position.set(0, 0, 3.9);    // against the front wall, facing the art
+    scene.add(sofa);
+  }).catch(err => console.warn('couch failed to load:', err)));
   await Promise.all(jobs);
 
   document.getElementById('loading').style.display = 'none';
