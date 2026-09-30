@@ -496,6 +496,7 @@ async function build() {
     const sofa = gltf.scene;
     sofa.scale.setScalar(0.33);      // ~2m wide at real-world scale
     sofa.position.set(0, 0, 3.9);    // against the front wall, facing the art
+    sofa.rotation.y = Math.PI;       // seat faces the pedestals, not the wall
     scene.add(sofa);
   }).catch(err => console.warn('couch failed to load:', err)));
   await Promise.all(jobs);
