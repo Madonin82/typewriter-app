@@ -110,6 +110,7 @@ import {
   ITEMS, WALLS, LayoutStore, cellToWorld, worldToCell, footprintCenterWorld,
   rotatedFootprint, cubeKey, buildOccupancy, occupiedCubes, inBounds, validateMove,
 } from './vr-room/layout-store.js';
+import { layoutPlacard, resolvePlacardFields } from './vr-room/placard.js';
 
 /* ================= room identity + admin ================= */
 // This page's room. Annie's room reuses every file with ROOM_ID='annie'.
@@ -296,6 +297,61 @@ function plaque(text, w = 0.62) {
   return new THREE.Mesh(new THREE.PlaneGeometry(w, w/4),
     new THREE.MeshStandardMaterial({ map:t, roughness:0.8 }));
 }
+// Legacy one-line plaque — kept for props (cat table sign), not exhibits.
+// Museum placard sourced from the exhibit catalogue (same fields and order as
+// the 2D directory cards: Title / Artist — Year / Medium). Static texture is
+// drawn once at mount — zero per-frame cost. The live-HTML streaming path is
+// untouched.
+function exhibitPlacard(item, exhibits, w = 0.62) {
+  const fields = resolvePlacardFields(item, exhibits);
+  // The room can never break over a plaque: fall back to the legacy renderer.
+  if (!fields) return plaque(item.plaque || item.label || '', w);
+  const c = document.createElement('canvas'); c.width = 1024; c.height = 512;
+  const g2 = c.getContext('2d');
+  g2.fillStyle = '#14100b'; g2.fillRect(0, 0, 1024, 512);
+  g2.strokeStyle = '#8a7355'; g2.lineWidth = 8; g2.strokeRect(10, 10, 1004, 492);
+  const measure = (text, px, smallCaps) => {
+    g2.font = px + 'px Georgia';
+    const t2 = smallCaps ? text.toUpperCase() : text;
+    return g2.measureText(t2).width + (smallCaps ? text.length * 2 : 0);
+  };
+  const plan = layoutPlacard(fields, measure);
+  g2.fillStyle = '#e8dcc8'; g2.textAlign = 'center'; g2.textBaseline = 'middle';
+  for (const ln of plan.lines) {
+    g2.font = ln.px + 'px Georgia';
+    g2.letterSpacing = ln.smallCaps ? '2px' : '0px';
+    g2.fillText(ln.smallCaps ? ln.text.toUpperCase() : ln.text, 512, ln.y);
+  }
+  g2.letterSpacing = '0px';
+  const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, w/2),
+    new THREE.MeshStandardMaterial({
+      map: t, roughness: 0.8,
+      // slight emissive so placards read in the room's dim light
+      emissive: 0xffffff, emissiveMap: t, emissiveIntensity: 0.22,
+    }));
+}
+/* ---- exhibit catalogue: one-time galleryExhibits fetch -> lookup map ---- */
+// Any failure degrades to the hardcoded plaque strings — the room loads fine
+// offline or with bad credentials. No exhibit documents are ever modified.
+let exhibitCatalogPromise = null;
+function exhibitCatalog() {
+  if (!exhibitCatalogPromise) {
+    exhibitCatalogPromise = (async () => {
+      try {
+        if (!firebase.apps.length) firebase.initializeApp(FIREBASE_CONFIG);
+        const snap = await firebase.firestore().collection('galleryExhibits').get();
+        const m = new Map();
+        snap.forEach(d => m.set(d.id, d.data()));
+        return m;
+      } catch (e) {
+        console.warn('[room] exhibit catalogue unavailable — hardcoded plaques:', e && e.message);
+        return new Map();
+      }
+    })();
+  }
+  return exhibitCatalogPromise;
+}
 // fit a model on a pedestal top, scaled to target height, base at surfaceY
 function mountOnPedestal(obj, h, surfaceY) {
   const box = new THREE.Box3().setFromObject(obj);
@@ -415,6 +471,7 @@ async function buildItem(itemId, placement) {
   const item = ITEMS[itemId];
   const g = new THREE.Group();
   const c = footprintCenterWorld(itemId, placement);
+  const exhibits = await exhibitCatalog(); // cached one-time fetch; empty map = hardcoded plaques
   if (item.kind === 'pedestal') {
     const p = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.0, 0.7), pedMat);
     p.position.y = 0.5;
@@ -426,8 +483,9 @@ async function buildItem(itemId, placement) {
       g.add(model);
       playModelAnimations(model, animations, placement.id, item.turntable !== false);
     } catch (e) { console.warn('[room] model failed:', item.asset, e); }
-    const pl = plaque(item.plaque, 0.5);
+    const pl = exhibitPlacard(item, exhibits, 0.5);
     pl.position.set(0, 0.62, 0.45);
+    pl.rotation.x = -Math.PI / 6; // tip the face up ~30° toward a standing viewer
     g.add(pl);
     g.position.set(c.x, c.y, c.z);
   } else if (itemId === 'cat-table') {
@@ -475,7 +533,7 @@ async function buildItem(itemId, placement) {
       p.position.z = 0.035;
       g.add(p);
     }
-    const pl = plaque(item.plaque, 0.5);
+    const pl = exhibitPlacard(item, exhibits, 0.5);
     pl.position.set(0, -ph/2 - 0.28, 0.04);
     g.add(pl);
     // hang at the cube column's center height, slightly off the wall face
@@ -527,7 +585,7 @@ async function buildItem(itemId, placement) {
         }
       } catch (e) { console.warn('[room] live canvas unreachable:', item.asset, e); }
     });
-    const pl = plaque(item.plaque, 0.5);
+    const pl = exhibitPlacard(item, exhibits, 0.5);
     pl.position.set(0, -ph/2 - 0.28, 0.04);
     g.add(pl);
     // hang at the cube column's center height, slightly off the wall face
@@ -1414,6 +1472,9 @@ async function init() {
   }
   store = new LayoutStore(backend, ROOM_ID);
   store.onChange(() => { applyLayout(store.placements); updateSeedButton(); });
+  // Museum placards read the same galleryExhibits catalogue as the 2D
+  // directory — fetch once up front so the first paint has catalogue text.
+  await exhibitCatalog();
   try {
     await store.start();
   } catch (e) {
