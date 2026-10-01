@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <link rel="icon" href="data:," />
+  <title>Murmuration (self-portrait)</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #141b33; }
+    body { font-family: Georgia, "Times New Roman", serif; user-select: none; -webkit-user-select: none; }
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+    .note {
+      position: fixed; top: max(16px, env(safe-area-inset-top)); left: clamp(16px, 4vw, 44px);
+      color: #f6e8d4; text-shadow: 0 2px 14px rgba(0,0,0,.55); pointer-events: none;
+    }
+    .note .t { margin: 0 0 6px; font: 600 11px/1.2 ui-monospace, Menlo, monospace; letter-spacing: .16em; opacity: .7; }
+    .note .s { margin: 0; font-size: clamp(17px, 2.4vw, 27px); font-style: italic; opacity: .88; }
+  </style>
+</head>
+<body>
+  <canvas id="c"></canvas>
+  <div class="note">
+    <div class="t">6:01 A.M. — FIRST LIGHT</div>
+    <div class="s">no single bird knows the shape it is making</div>
+  </div>
+  <script>
+  (function () {
+    "use strict";
+    var canvas = document.getElementById("c");
+    var ctx = canvas.getContext("2d");
+    var W = 0, H = 0, DPR = 1;
+    var sky = null, ridgeFar = null, ridgeNear = null;
+    var TAU = Math.PI * 2;
+
+    // Gallery camera parallax: gentle, eased, clamped.
+    var parX = 0, parY = 0, parXT = 0, parYT = 0, parActive = false;
+    window.addEventListener("message", function (e) {
+      var d = e.data;
+      if (!d || d.type !== "GALLERY_CAMERA_PARALLAX") return;
+      parActive = true;
+      parXT = Math.max(-0.3, Math.min(0.3, (d.normX || 0) * 0.35));
+      parYT = Math.max(-0.18, Math.min(0.18, -(d.normY || 0) * 0.22));
+    }, { passive: true });
+
+    function mulberry(seed) {
+      var a = seed >>> 0;
+      return function () {
+        a |= 0; a = (a + 0x6D2B79F5) | 0;
+        var t = Math.imul(a ^ (a >>> 15), 1 | a);
+        t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+        return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+      };
+    }
+
+    function makeRidge(seed, baseFrac, amp, color) {
+      var rnd = mulberry(seed);
+      var c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(W * DPR));
+      c.height = Math.max(1, Math.round(H * DPR));
+      var g = c.getContext("2d");
+      g.scale(DPR, DPR);
+      var base = H * baseFrac;
+      var pts = [];
+      var x;
+      for (x = 0; x <= W + 40; x += 24) {
+        pts.push([x - 20, base - (rnd() * amp + rnd() * amp * 0.5)]);
+      }
+      g.beginPath();
+      g.moveTo(-20, H + 20);
+      for (var i = 0; i < pts.length; i++) {
+        var p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[Math.min(pts.length - 1, i + 1)];
+        g.quadraticCurveTo(p1[0], p1[1], (p1[0] + p2[0]) / 2, (p1[1] + p2[1]) / 2);
+      }
+      g.lineTo(W + 20, H + 20);
+      g.closePath();
+      g.fillStyle = color;
+      g.fill();
+      return c;
+    }
+
+    function rebuild() {
+      sky = document.createElement("canvas");
+      sky.width = Math.max(1, Math.round(W * DPR));
+      sky.height = Math.max(1, Math.round(H * DPR));
+      var g = sky.getContext("2d");
+      g.scale(DPR, DPR);
+      var grad = g.createLinearGradient(0, 0, 0, H);
+      grad.addColorStop(0.00, "#1c2650");
+      grad.addColorStop(0.34, "#4b3a6e");
+      grad.addColorStop(0.58, "#a05a6b");
+      grad.addColorStop(0.74, "#e08a5e");
+      grad.addColorStop(0.86, "#f7b96f");
+      grad.addColorStop(1.00, "#f9d9a0");
+      g.fillStyle = grad;
+      g.fillRect(0, 0, W, H);
+      ridgeFar = makeRidge(1234, 0.82, H * 0.10, "#5c3f56");
+      ridgeNear = makeRidge(987, 0.92, H * 0.07, "#33263b");
+    }
+
+    function resize() {
+      DPR = Math.min(2, window.devicePixelRatio || 1);
+      W = window.innerWidth; H = window.innerHeight;
+      canvas.width = Math.round(W * DPR);
+      canvas.height = Math.round(H * DPR);
+      rebuild();
+      buildFlock();
+    }
+
+    // ---- The flock: one self, many parts. ----
+    var birds = [], N = 0;
+    var MAXV = 150, MINV = 55;
+    var PER = 62, PER2 = PER * PER, SEP = 30, SEP2 = SEP * SEP;
+
+    function buildFlock() {
+      N = Math.round(Math.min(380, Math.max(220, (W * H) / 9500)));
+      birds = [];
+      var rnd = mulberry(4242);
+      for (var i = 0; i < N; i++) {
+        var a = rnd() * TAU, s = 60 + rnd() * 90;
+        birds.push({
+          x: W * (0.25 + rnd() * 0.35), y: H * (0.25 + rnd() * 0.3),
+          vx: Math.cos(a) * s, vy: Math.sin(a) * s,
+          flap: rnd() * TAU, sz: 5 + rnd() * 4, ph: rnd() * TAU,
+          al: 0.55 + rnd() * 0.4
+        });
+      }
+    }
+
+    var simT = 0;
+    var gust = { active: false, x: 0, y: 0, life: 0, next: 9 };
+
+    function step(dt) {
+      simT += dt;
+      var i, j, b;
+
+      // The flock's slow wandering heart — where "the shape" wants to be.
+      var tx = W * (0.5 + 0.30 * Math.sin(simT * 0.10) + 0.12 * Math.sin(simT * 0.043 + 1.7));
+      var ty = H * (0.40 + 0.19 * Math.sin(simT * 0.071 + 0.6) + 0.08 * Math.sin(simT * 0.19));
+
+      // Startle gusts: something spooks the murmuration now and then.
+      if (!gust.active && simT > gust.next) {
+        gust.active = true; gust.life = 1.6;
+        gust.x = W * (0.2 + Math.random() * 0.6);
+        gust.y = H * (0.2 + Math.random() * 0.45);
+      }
+      if (gust.active) {
+        gust.life -= dt;
+        if (gust.life <= 0) { gust.active = false; gust.next = simT + 12 + Math.random() * 12; }
+      }
+
+      var n = birds.length;
+      var anx = new Float64Array(n), any = new Float64Array(n);
+      var avx = new Float64Array(n), avy = new Float64Array(n);
+      var anx2 = new Float64Array(n), any2 = new Float64Array(n); // separation
+      var an = new Int32Array(n);
+
+      for (i = 0; i < n; i++) {
+        var bi = birds[i];
+        for (j = i + 1; j < n; j++) {
+          var bj = birds[j];
+          var dx = bj.x - bi.x, dy = bj.y - bi.y;
+          var d2 = dx * dx + dy * dy;
+          if (d2 > PER2 || d2 < 0.0001) continue;
+          anx[i] += bj.x; any[i] += bj.y;
+          anx[j] += bi.x; any[j] += bi.y;
+          avx[i] += bj.vx; avy[i] += bj.vy;
+          avx[j] += bi.vx; avy[j] += bi.vy;
+          an[i]++; an[j]++;
+          if (d2 < SEP2) {
+            var d = Math.sqrt(d2), push = (SEP - d) / SEP * 700 / d;
+            anx2[i] -= dx * push; any2[i] -= dy * push;
+            anx2[j] += dx * push; any2[j] += dy * push;
+          }
+        }
+      }
+
+      var m = 70; // soft sky margins
+      for (i = 0; i < n; i++) {
+        b = birds[i];
+        var fx = anx2[i], fy = any2[i]; // separation already in px/s^2
+
+        if (an[i] > 0) {
+          // Cohesion: toward the neighbors' center.
+          fx += (anx[i] / an[i] - b.x) * 1.2;
+          fy += (any[i] / an[i] - b.y) * 1.2;
+          // Alignment: toward the neighbors' average heading.
+          fx += (avx[i] / an[i] - b.vx) * 0.8;
+          fy += (avy[i] / an[i] - b.vy) * 0.8;
+        }
+
+        // The heart pulls everyone, always.
+        var hx = tx - b.x, hy = ty - b.y;
+        var hd = Math.sqrt(hx * hx + hy * hy) || 1;
+        fx += hx / hd * 120; fy += hy / hd * 120;
+
+        // Wander: each bird hums its own note.
+        fx += Math.sin(simT * 1.7 + b.ph) * 50;
+        fy += Math.cos(simT * 1.3 + b.ph * 1.7) * 50;
+
+        // Gusts scatter.
+        if (gust.active) {
+          var gx = b.x - gust.x, gy = b.y - gust.y;
+          var gd = Math.sqrt(gx * gx + gy * gy) || 1;
+          if (gd < 260) { var gs = (260 - gd) / 260 * 1200; fx += gx / gd * gs; fy += gy / gd * gs; }
+        }
+
+        // Soft sky bounds.
+        if (b.x < m) fx += (m - b.x) * 8;
+        if (b.x > W - m) fx -= (b.x - (W - m)) * 8;
+        if (b.y < m * 0.6) fy += (m * 0.6 - b.y) * 8;
+        if (b.y > H * 0.86) fy -= (b.y - H * 0.86) * 8;
+
+        b.vx += fx * dt;
+        b.vy += fy * dt;
+
+        // Clamp speed.
+        var sp = Math.sqrt(b.vx * b.vx + b.vy * b.vy) || 1;
+        if (sp > MAXV) { b.vx = b.vx / sp * MAXV; b.vy = b.vy / sp * MAXV; }
+        else if (sp < MINV) { b.vx = b.vx / sp * MINV; b.vy = b.vy / sp * MINV; }
+
+        b.x += b.vx * dt; b.y += b.vy * dt;
+        b.flap += dt * (10 + sp * 0.045);
+
+        // Hard wrap as a last resort (never visible long).
+        if (b.x < -40) b.x = W + 40; if (b.x > W + 40) b.x = -40;
+        if (b.y < -40) b.y = -40; if (b.y > H + 40) b.y = H + 40;
+      }
+    }
+
+    function draw() {
+      parX += (parXT - parX) * 0.06;
+      parY += (parYT - parY) * 0.06;
+      ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+      // Sky (barely moves), sun, ridges, birds — layered for depth.
+      var ox = parActive ? parX * 260 : 0;
+      var oy = parActive ? parY * 150 : 0;
+
+      ctx.drawImage(sky, ox * 0.15 - 30, oy * 0.15 - 20, W + 60, H + 40);
+
+      // Sun, low and warm.
+      var sx = W * 0.66 + ox * 0.45, sy = H * 0.72 + oy * 0.45;
+      var glow = ctx.createRadialGradient(sx, sy, 0, sx, sy, 130);
+      glow.addColorStop(0, "rgba(255,236,200,.95)");
+      glow.addColorStop(0.25, "rgba(255,214,150,.55)");
+      glow.addColorStop(1, "rgba(255,200,130,0)");
+      ctx.fillStyle = glow;
+      ctx.fillRect(sx - 130, sy - 130, 260, 260);
+      ctx.fillStyle = "#fff3d8";
+      ctx.beginPath(); ctx.arc(sx, sy, 34, 0, TAU); ctx.fill();
+
+      ctx.drawImage(ridgeFar, ox * 0.7 - 30, oy * 0.5 - 10, W + 60, H + 20);
+      ctx.drawImage(ridgeNear, ox * 1.0 - 40, oy * 0.7 - 10, W + 80, H + 20);
+
+      // Birds.
+      ctx.lineWidth = 1.6;
+      ctx.lineCap = "round";
+      for (var i = 0; i < birds.length; i++) {
+        var b = birds[i];
+        var ang = Math.atan2(b.vy, b.vx);
+        var wing = Math.sin(b.flap) * b.sz * 0.75;
+        var c = Math.cos(ang), s = Math.sin(ang);
+        function P(lx, ly) { return [b.x + ox + lx * c - ly * s, b.y + oy + lx * s + ly * c]; }
+        var a0 = P(-b.sz, -2 - wing), a1 = P(0, 1.5), a2 = P(b.sz, -2 - wing);
+        ctx.strokeStyle = "rgba(24,20,34," + b.al.toFixed(2) + ")";
+        ctx.beginPath();
+        ctx.moveTo(a0[0], a0[1]); ctx.lineTo(a1[0], a1[1]); ctx.lineTo(a2[0], a2[1]);
+        ctx.stroke();
+      }
+    }
+
+    var last = performance.now(), running = true;
+    function frame(now) {
+      if (!running) return;
+      var dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      step(dt);
+      draw();
+      requestAnimationFrame(frame);
+    }
+
+    document.addEventListener("visibilitychange", function () {
+      if (document.hidden) { running = false; }
+      else { running = true; last = performance.now(); requestAnimationFrame(frame); }
+    });
+
+    window.addEventListener("resize", resize);
+    resize();
+    requestAnimationFrame(frame);
+  })();
+  </script>
+</body>
+</html>

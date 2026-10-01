@@ -318,6 +318,9 @@ const live = { catBody:null, catHead:null, tailTip:null, heart:null, catGroup:nu
 // Entries: { mixer, model, placementId, turntable }. Rebuilt with the layout.
 const animatedPieces = [];
 function playModelAnimations(model, animations, placementId, turntable) {
+// Live HTML wall pieces (mirrors the 2D gallery's wall scenes).
+// Entries: { iframe, tex }. Rebuilt with the layout.
+const liveCanvases = [];
   if (!animations.length) return;
   const mixer = new THREE.AnimationMixer(model);
   animations.forEach(clip => mixer.clipAction(clip).play());
@@ -472,6 +475,52 @@ async function buildItem(itemId, placement) {
     if (w.fixed === 'x') pos.x = (w.fixedCell === 0 ? -ROOM.w/2 : ROOM.w/2) + (w.fixedCell === 0 ? off : -off);
     g.position.set(pos.x, y, pos.z);
     g.rotation.y = w.yawDeg * Math.PI / 180;
+  } else if (item.assetKind === 'html') {
+    // Live wall piece: the piece's own page renders in a same-origin iframe
+    // parked offscreen, and its <canvas> is streamed onto the wall as a
+    // CanvasTexture. The piece autoplays on its own — no interaction needed.
+    // (Mirrors the 2D gallery, where HTML scenes hang on the wall.)
+    const w = WALLS[placement.wall || item.wall];
+    const pw = item.printSize.w, ph = item.printSize.h;
+    const f = new THREE.Mesh(new THREE.BoxGeometry(pw + 0.12, ph + 0.12, 0.06), frameMat);
+    g.add(f);
+    const p = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph),
+      new THREE.MeshBasicMaterial({ toneMapped: false }));
+    p.position.z = 0.035;
+    g.add(p);
+    // Offscreen but still rendered: display:none would flip the piece's
+    // document to hidden and pause its own animation loop.
+    const iframe = document.createElement('iframe');
+    iframe.width = 1280; iframe.height = 800; // matches printSize aspect
+    iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;height:800px;border:0;';
+    iframe.src = item.asset;
+    document.body.appendChild(iframe);
+    const entry = { iframe, tex: null };
+    liveCanvases.push(entry);
+    iframe.addEventListener('load', () => {
+      if (!liveCanvases.includes(entry)) return; // layout rebuilt meanwhile
+      try {
+        const canvas = iframe.contentDocument.querySelector('canvas');
+        if (canvas) {
+          const tex = new THREE.CanvasTexture(canvas);
+          tex.colorSpace = THREE.SRGBColorSpace;
+          p.material.map = tex;
+          p.material.needsUpdate = true;
+          entry.tex = tex;
+        }
+      } catch (e) { console.warn('[room] live canvas unreachable:', item.asset, e); }
+    });
+    const pl = plaque(item.plaque, 0.5);
+    pl.position.set(0, -ph/2 - 0.28, 0.04);
+    g.add(pl);
+    // hang at the cube column's center height, slightly off the wall face
+    const y = placement.cell.y * CELL + ph / 2;
+    const off = 0.07; // frame half-depth + a whisper of air
+    const pos = { x: c.x, z: c.z };
+    if (w.fixed === 'z') pos.z = (w.fixedCell === 0 ? -ROOM.d/2 : ROOM.d/2) + (w.fixedCell === 0 ? off : -off);
+    if (w.fixed === 'x') pos.x = (w.fixedCell === 0 ? -ROOM.w/2 : ROOM.w/2) + (w.fixedCell === 0 ? off : -off);
+    g.position.set(pos.x, y, pos.z);
+    g.rotation.y = w.yawDeg * Math.PI / 180;
   }
   if (!placement.wall) g.rotation.y = (placement.rotY || 0) * Math.PI / 180;
   g.userData.placementId = placement.id;
@@ -498,6 +547,8 @@ async function applyLayout(placements) {
   layoutSignature = sig;
   while (roomGroup.children.length) roomGroup.remove(roomGroup.children[0]);
   animatedPieces.length = 0; // mixers reference removed models; rebuilt below
+  for (const c of liveCanvases) c.iframe.remove();
+  liveCanvases.length = 0; // iframes re-created with the layout
   const occ = new Map(); // cube key -> id, as we place
   for (const [id, p] of placements) {
     const item = ITEMS[p.item];
@@ -1318,6 +1369,8 @@ function animate() {
       a.model.rotation.y += dt * 0.45;
     }
   }
+  // Stream live HTML wall pieces onto their wall textures.
+  for (const c of liveCanvases) if (c.tex) c.tex.needsUpdate = true;
   renderer.render(scene, camera);
 }
 
