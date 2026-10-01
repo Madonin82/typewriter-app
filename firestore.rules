@@ -108,6 +108,42 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
 
+    // Cloud exports: a signed-in writer stores a compiled manuscript in
+    // Storage under /exports/{uid}/ and records it here, so the Admin page
+    // can list it and the writer (human or AI agent) can share the
+    // download link without an admin request. Entries are immutable and
+    // disposable: owners and station admins can delete them, which (with
+    // the Storage delete) retires the link.
+    match /exports/{exportId} {
+      allow read: if isStationAdmin()
+                  || (isVerifiedUser() && resource.data.ownerUid == request.auth.uid);
+
+      allow create: if isVerifiedUser()
+                    && request.resource.data.ownerUid == request.auth.uid
+                    && request.resource.data.keys().hasOnly([
+                      'ownerUid', 'bookId', 'bookTitle', 'format', 'fileName',
+                      'sizeBytes', 'storagePath', 'downloadUrl', 'createdAt'
+                    ])
+                    && request.resource.data.bookId is string
+                    && request.resource.data.bookTitle is string
+                    && request.resource.data.bookTitle.size() <= 500
+                    && request.resource.data.format in ['txt', 'md']
+                    && request.resource.data.fileName is string
+                    && request.resource.data.fileName.size() <= 200
+                    && request.resource.data.sizeBytes is number
+                    && request.resource.data.sizeBytes <= 52428800
+                    && request.resource.data.storagePath is string
+                    && request.resource.data.storagePath.matches('exports/' + request.auth.uid + '/.*')
+                    && request.resource.data.downloadUrl is string
+                    && request.resource.data.downloadUrl.size() <= 2048
+                    && request.resource.data.createdAt is timestamp;
+
+      allow update: if false;
+
+      allow delete: if isStationAdmin()
+                    || (isVerifiedUser() && resource.data.ownerUid == request.auth.uid);
+    }
+
     // VR room layouts: public to read, room admins only to write.
     // Room admins are the station admins for now; if that ever needs to
     // differ, add a separate isRoomAdmin() with its own UID list here.
