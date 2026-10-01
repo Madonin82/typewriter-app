@@ -284,7 +284,7 @@ export function seedLayout() {
   const tableCell = placements.get('cat-table').cell;
   placements.set('cat', P('cat', { x: tableCell.x + 1, y: 2, z: tableCell.z }, -29,
     { parent: 'cat-table' }));
-  placements.set('sofa', P('sofa', seedCell(0, 3.9, 4, 2), 180));
+  placements.set('sofa', P('sofa', seedCell(-4, 3.9, 4, 2), 180)); // clear of the spawn at (0, 4.2)
   // wall prints live in the wall-adjacent cube row
   placements.set('print-nightdesk',
     P('print-nightdesk', { x: 7, y: 3, z: 0 }, 0, { wall: 'back' }));
