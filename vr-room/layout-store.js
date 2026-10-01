@@ -55,6 +55,8 @@ export const WALLS = {
 };
 
 export const ITEMS = {
+  // Pedestal pieces get the idle turntable (0.45 rad/s, pauses while grabbed)
+  // unless the item sets `turntable: false` — for pieces meant to stay still.
   'pedestal-beacon': {
     kind: 'pedestal', label: 'Beacon', plaque: 'Beacon',
     asset: 'vr-assets/beacon.glb', assetKind: 'glb',
