@@ -50,6 +50,16 @@
   #hud button.active { background:#5e4a2c; border-color:#c9a86a; }
   #hud .uid { font-size:10px; color:#7a6c58; word-break:break-all; margin-top:6px; }
   #hud .note { font-size:11px; color:#a89880; margin-top:4px; line-height:1.5; }
+  #crosshair {
+    position:fixed; left:50%; top:50%; width:6px; height:6px; margin:-3px 0 0 -3px;
+    border-radius:50%; background:rgba(232,220,200,0.9); z-index:14;
+    pointer-events:none; display:none; box-shadow:0 0 4px rgba(0,0,0,0.8);
+  }
+  #lookhint {
+    position:fixed; bottom:24px; left:50%; transform:translateX(-50%);
+    color:#a89880; font-size:13px; letter-spacing:0.05em; z-index:14;
+    pointer-events:none; display:none; text-shadow:0 1px 3px #000;
+  }
 </style>
 <script type="importmap">
 { "imports": {
@@ -70,11 +80,14 @@
   <div id="loading">HANGING THE ART…</div>
   <button id="enter2d" style="display:none">STEP INSIDE</button>
   <p class="hint" id="ctrlhint">on quest: open this page in the browser &amp; tap ENTER VR<br>
-  point a controller and pull the trigger to walk there &middot; point at the cat and pull to pet<br>
-  left thumbstick walks &middot; flick the right thumbstick to snap-turn</p>
+  push the right thumbstick up to aim a teleport arc, release to step there &middot; point at the cat and pull the trigger to pet<br>
+  left thumbstick walks &middot; flick the right thumbstick left/right to snap-turn<br>
+  gamepad on desktop: left stick walks, right stick looks</p>
   <button id="adminlink" title="room admin sign-in">admin</button>
 </div>
 <div id="toast"></div>
+<div id="crosshair"></div>
+<div id="lookhint">click to look around &middot; left-click interacts &middot; Esc for cursor</div>
 <div id="hud">
   <div class="row">
     <button id="hud-build">BUILD: OFF</button>
@@ -91,6 +104,7 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { SkeletonUtils } from 'three/addons/utils/SkeletonUtils.js';
 import {
   CELL, ROOM_CELLS, ROT_SNAP_DEG, PLAYER_RADIUS_M, PLAYER_HEIGHT_CELLS,
   ITEMS, WALLS, LayoutStore, cellToWorld, worldToCell, footprintCenterWorld,
@@ -126,13 +140,36 @@ renderer.toneMappingExposure = 1.05;
 app.appendChild(renderer.domElement);
 const vrButton = VRButton.createButton(renderer);
 document.body.appendChild(vrButton);
-// Clearer connection state than three's default "VR NOT SUPPORTED".
-if (!('xr' in navigator)) {
-  vrButton.textContent = 'HEADSET NOT DETECTED';
-  vrButton.title = 'Connect a headset and reopen this page to enter VR';
-} else {
-  vrButton.title = 'Headset connected — VR ready';
+// three's VRButton labels the button asynchronously from its own
+// isSessionSupported() check, overwriting anything set here — and its
+// "VR NOT SUPPORTED" copy is wrong on desktops where WebXR exists but no
+// headset is active. Normalize to our connection states and re-apply
+// whenever three rewrites the label. (setVrCopy only writes on change,
+// so the observer can't loop.)
+function setVrCopy(text, title) {
+  if (vrButton.textContent !== text) vrButton.textContent = text;
+  if (vrButton.title !== title) vrButton.title = title;
 }
+function refreshVrCopy() {
+  if (renderer.xr.isPresenting) {
+    setVrCopy('EXIT VR', 'Leave the headset session');
+    return;
+  }
+  if (!('xr' in navigator) || !navigator.xr.isSessionSupported) {
+    setVrCopy('HEADSET NOT DETECTED', 'Connect a headset and reopen this page to enter VR');
+    return;
+  }
+  navigator.xr.isSessionSupported('immersive-vr').then(supported => {
+    if (renderer.xr.isPresenting) return;
+    if (supported) setVrCopy('ENTER VR', 'Headset connected — VR ready');
+    else setVrCopy('HEADSET NOT DETECTED', 'Connect a headset and reopen this page to enter VR');
+  }).catch(() => {
+    if (!renderer.xr.isPresenting)
+      setVrCopy('HEADSET NOT DETECTED', 'Connect a headset and reopen this page to enter VR');
+  });
+}
+refreshVrCopy();
+new MutationObserver(refreshVrCopy).observe(vrButton, { childList: true, characterData: true, subtree: true });
 
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x0b0908);
@@ -225,7 +262,14 @@ function loadModel(url) {
     modelCache.set(url, new Promise((res, rej) =>
       gltfLoader.load(url, gltf => res(gltf.scene), undefined, rej)));
   }
-  return modelCache.get(url).then(scene => scene.clone(true));
+  return modelCache.get(url).then(scene => {
+    // Plain .clone() shares the source skeleton between clones, which
+    // collapses skinned models (e.g. woman.glb) into a heap — SkeletonUtils
+    // re-binds the clone to its own bones.
+    return scene.getObjectByProperty('isSkinnedMesh', true)
+      ? SkeletonUtils.clone(scene)
+      : scene.clone(true);
+  });
 }
 const texLoader = new THREE.TextureLoader();
 const texCache = new Map();
@@ -557,6 +601,10 @@ for (let i = 0; i < 2; i++) {
   rig.add(c);
   controllers.push(c);
 }
+controllers.forEach(c => {
+  c.addEventListener('connected', e => { c.userData.handedness = e.data.handedness; });
+  c.addEventListener('disconnected', () => { c.userData.handedness = null; });
+});
 
 /* ================= pet the cat ================= */
 let petting = false, petTime = 0;
@@ -601,7 +649,63 @@ function tryTeleport(point) {
   rig.position.set(w.x, 0, w.z);
 }
 
-/* ================= trigger: build grab > cat > sofa > floor ================= */
+/* ---- teleport arc (right stick up): projectile sim + landing ring ---- */
+let teleAim = null; // { landing: Vector3 } while the stick is held up
+const ARC_POINTS = 28;
+const arcGeo = new THREE.BufferGeometry();
+arcGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(ARC_POINTS * 3), 3));
+const arcLine = new THREE.Line(arcGeo,
+  new THREE.LineBasicMaterial({ color: 0xe8dcc8, transparent: true, opacity: 0.9 }));
+arcLine.visible = false;
+arcLine.frustumCulled = false;
+scene.add(arcLine);
+const teleRing = new THREE.Mesh(
+  new THREE.RingGeometry(0.16, 0.22, 40),
+  new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9, side: THREE.DoubleSide }));
+teleRing.rotation.x = -Math.PI / 2;
+teleRing.visible = false;
+scene.add(teleRing);
+function rightController() {
+  return controllers.find(c => c.userData.handedness === 'right') || null;
+}
+function updateTeleportAim(controller) {
+  // true projectile sim from the controller's aim: tilt up = far, down = near
+  const origin = new THREE.Vector3().setFromMatrixPosition(controller.matrixWorld);
+  const dir = new THREE.Vector3(0, 0, -1).applyQuaternion(
+    new THREE.Quaternion().setFromRotationMatrix(
+      new THREE.Matrix4().extractRotation(controller.matrixWorld)));
+  const p = origin.clone();
+  const v = dir.multiplyScalar(4.2); v.y += 1.6;
+  const pos = arcGeo.attributes.position;
+  const dt = 1 / 40;
+  let landing = null;
+  for (let i = 0; i < ARC_POINTS; i++) {
+    pos.setXYZ(i, p.x, p.y, p.z);
+    v.y -= 9.8 * dt;
+    p.addScaledVector(v, dt);
+    if (p.y <= 0.02 && !landing) {
+      landing = new THREE.Vector3(p.x, 0.02, p.z);
+      for (let j = i + 1; j < ARC_POINTS; j++) pos.setXYZ(j, p.x, 0.02, p.z);
+      break;
+    }
+  }
+  pos.needsUpdate = true;
+  if (!landing) landing = new THREE.Vector3(p.x, 0.02, p.z);
+  // show the ring where tryTeleport would actually land (nearest free cell)
+  const alt = findNearestFreeCell(worldToCell({ x: landing.x, y: 0, z: landing.z }));
+  const w = alt ? cellToWorld(alt) : { x: landing.x, z: landing.z };
+  teleRing.position.set(w.x, 0.02, w.z);
+  teleAim = { landing: new THREE.Vector3(w.x, 0, w.z) };
+  arcLine.visible = true;
+  teleRing.visible = true;
+}
+function clearTeleportAim() {
+  teleAim = null;
+  arcLine.visible = false;
+  teleRing.visible = false;
+}
+
+/* ================= trigger: build grab > cat > sofa ================= */
 function onSelectStart(controller) {
   const ray = rayFromController(controller);
   if (buildMode) {
@@ -616,17 +720,17 @@ function onSelectStart(controller) {
       return;
     }
   }
-  const floorHits = ray.intersectObject(floor);
-  if (floorHits.length && !seated) tryTeleport(floorHits[0].point);
+  // floor teleport moved to the right-stick-up arc; the trigger no longer teleports
 }
 controllers.forEach(c => c.addEventListener('selectstart', () => onSelectStart(c)));
 
 /* ================= locomotion with collision ================= */
 const snapState = { cool: 0 };
-function handleSnapTurn() {
+const snapEdge = {}; // handedness -> last right-stick X (edge-triggered flicks)
+function handleSnapTurn(dir) {
   if (snapState.cool > 0) return;
   snapState.cool = 0.35;
-  rig.rotation.y += Math.PI / 4;
+  rig.rotation.y += dir * Math.PI / 4;
   yawObj.yaw = rig.rotation.y; // keep mouse-look in sync
 }
 // grab state is declared in the build-mode section below
@@ -635,6 +739,7 @@ function vrLocomotion(dt) {
   if (!session) return;
   for (const src of session.inputSources) {
     if (!src.gamepad) continue;
+    if (grabbing && teleAim) clearTeleportAim(); // a grab cancels teleport aim
     const gp = src.gamepad;
     const ax = gp.axes, btn = gp.buttons;
     // both grips together toggles build mode (admin only)
@@ -642,19 +747,37 @@ function vrLocomotion(dt) {
       if (btn[1].pressed) gripDown.add(src.handedness);
       else gripDown.delete(src.handedness);
     }
-    // right stick X: in build mode with a grab -> rotate the item, else snap-turn
+    // right stick X: in build mode with a grab -> rotate the item, else
+    // snap-turn in the flick direction (edge-triggered; suppressed while aiming)
     const rx = ax[2] !== undefined ? ax[2] : ax[0];
+    const hand = src.handedness || 'none';
     if (grabbing && grabbing.hand === src.handedness) {
       if (rx > 0.7 && grabbing.lastRx <= 0.7) rotateGrabbed(1);
       else if (rx < -0.7 && grabbing.lastRx >= -0.7) rotateGrabbed(-1);
       grabbing.lastRx = rx;
-    } else if (rx > 0.7 || rx < -0.7) {
-      handleSnapTurn();
+    } else {
+      const lastRx = snapEdge[hand] || 0;
+      if (!teleAim && rx > 0.7 && lastRx <= 0.7) handleSnapTurn(-1); // flick right -> turn right
+      else if (!teleAim && rx < -0.7 && lastRx >= -0.7) handleSnapTurn(1); // flick left -> turn left
+      snapEdge[hand] = rx;
     }
-    // left stick walks (right stick too when nothing grabbed)
+    // right stick up: teleport arc — aim with the controller, release to go
+    const ry = ax[1] || 0;
+    if (src.handedness === 'right' && !(grabbing && grabbing.hand === 'right') && !seated) {
+      if (ry < -0.7) {
+        const rc = rightController();
+        if (rc) updateTeleportAim(rc);
+      } else if (teleAim && ry > -0.5) {
+        const dest = teleAim.landing.clone();
+        clearTeleportAim();
+        tryTeleport(dest);
+      }
+    } else if (teleAim && src.handedness === 'right') {
+      clearTeleportAim();
+    }
+    // left stick walks (smooth locomotion); the right stick never walks
     const walkX = ax[0] || 0, walkZ = ax[1] || 0;
-    const isLeft = src.handedness === 'left';
-    const doWalk = isLeft || (!grabbing && src.handedness !== 'left');
+    const doWalk = src.handedness !== 'right';
     if (doWalk && (Math.abs(walkX) > 0.15 || Math.abs(walkZ) > 0.15) && !seated) {
       const speed = 1.6;
       const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(rig.quaternion);
@@ -689,7 +812,7 @@ function gamepadFallback(dt) {
   for (const p of pads) if (p && p.connected && p.axes.length >= 2) { gp = p; break; }
   if (!gp) { gpPrev = null; return; }
   const b = i => gp.buttons[i] && gp.buttons[i].pressed;
-  if (b(9) && !(gpPrev && gpPrev[9])) handleSnapTurn();
+  if (b(9) && !(gpPrev && gpPrev[9])) handleSnapTurn(1);
   const ax = gp.axes[0] || 0, az = gp.axes[1] || 0;
   if ((Math.abs(ax) > 0.15 || Math.abs(az) > 0.15) && !seated) {
     const speed = 1.6;
@@ -702,6 +825,14 @@ function gamepadFallback(dt) {
       Math.max(-6.2, Math.min(6.2, rig.position.x + dx)),
       Math.max(-4.2, Math.min(4.2, rig.position.z + dz)));
     rig.position.x = nx; rig.position.z = nz;
+  }
+  // right stick looks (non-inverted): right = look right, up = look up
+  const lx = gp.axes[2] || 0, ly = gp.axes[3] || 0;
+  if (Math.abs(lx) > 0.15 || Math.abs(ly) > 0.15) {
+    const rate = 2.2;
+    yawObj.yaw -= lx * rate * dt;
+    rig.rotation.y = yawObj.yaw;
+    camera.rotation.x = Math.max(-1.2, Math.min(1.2, camera.rotation.x - ly * rate * dt));
   }
   gpPrev = gp.buttons.map(x => x.pressed);
 }
@@ -721,8 +852,8 @@ function desktopMove(dt) {
   if (renderer.xr.isPresenting) return;
   if (seated && (keys['KeyW'] || keys['KeyA'] || keys['KeyS'] || keys['KeyD'])) standUp();
   let mx = 0, mz = 0;
-  if (keys['KeyW'] || keys['ArrowUp']) mz -= 1;
-  if (keys['KeyS'] || keys['ArrowDown']) mz += 1;
+  if (keys['KeyW'] || keys['ArrowUp']) mz += 1;
+  if (keys['KeyS'] || keys['ArrowDown']) mz -= 1;
   if (keys['KeyA'] || keys['ArrowLeft']) mx -= 1;
   if (keys['KeyD'] || keys['ArrowRight']) mx += 1;
   if ((mx || mz) && !seated) {
@@ -739,20 +870,60 @@ function desktopMove(dt) {
     rig.position.x = nx; rig.position.z = nz;
   }
 }
-// mouse look + click-to-teleport / pet / sit / build-grab
+// mouse: pointer-lock free look + left-click interact (pet / sit / teleport);
+// build mode keeps the old hold-drag look + grab
 let dragging3d = false, lastMX = 0, lastMY = 0, downPos = null;
 const dom = renderer.domElement;
+const crosshairEl = document.getElementById('crosshair');
+const lookhintEl = document.getElementById('lookhint');
+const isLocked = () => document.pointerLockElement === dom;
+function updateLookUI() {
+  const locked = isLocked();
+  const showHint = !locked && !renderer.xr.isPresenting
+    && document.getElementById('overlay').classList.contains('hidden')
+    && !(buildMode && isAdmin);
+  crosshairEl.style.display = locked ? 'block' : 'none';
+  lookhintEl.style.display = showHint ? 'block' : 'none';
+}
+document.addEventListener('pointerlockchange', updateLookUI);
+function doClickInteract(nx, ny) {
+  const ray = rayFromCameraNDC(nx, ny);
+  const hit = hitPlaceable(ray);
+  if (hit) {
+    const p = store.placements.get(hit.id);
+    if (p && p.item === 'cat' && !buildMode) { startPet(); return; }
+    if (p && p.item === 'sofa' && !buildMode) {
+      if (seated) standUp(); else sitDown({ ...p, item: 'sofa' });
+      return;
+    }
+  }
+  const floorHits = ray.intersectObject(floor);
+  if (floorHits.length && !seated && !buildMode) tryTeleport(floorHits[0].point);
+}
 dom.addEventListener('mousedown', e => {
   if (e.button !== 0) return;
-  downPos = { x: e.clientX, y: e.clientY };
   if (buildMode && isAdmin) {
+    downPos = { x: e.clientX, y: e.clientY };
     const ray = rayFromCameraNDC((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
     if (tryGrab(ray, null)) return; // grab, don't look
+    dragging3d = true; lastMX = e.clientX; lastMY = e.clientY;
+    return;
   }
-  dragging3d = true; lastMX = e.clientX; lastMY = e.clientY;
+  if (!isLocked()) {
+    // first click captures the mouse for free look; it is not an interaction
+    try { const r = dom.requestPointerLock(); if (r && r.catch) r.catch(() => {}); } catch (_) {}
+    return;
+  }
+  doClickInteract(0, 0); // crosshair ray while locked
 });
 window.addEventListener('mousemove', e => {
   if (grabbing && grabbing.mouse) dragUpdate(e.clientX, e.clientY);
+  if (isLocked()) {
+    yawObj.yaw -= e.movementX * 0.0032;
+    rig.rotation.y = yawObj.yaw;
+    camera.rotation.x = Math.max(-1.2, Math.min(1.2, camera.rotation.x - e.movementY * 0.0032));
+    return;
+  }
   if (!dragging3d) return;
   const dx = e.clientX - lastMX, dy = e.clientY - lastMY;
   lastMX = e.clientX; lastMY = e.clientY;
@@ -767,18 +938,7 @@ window.addEventListener('mouseup', e => {
   const moved = Math.hypot(e.clientX - downPos.x, e.clientY - downPos.y);
   downPos = null;
   if (moved > 6 || e.target !== dom) return;
-  const ray = rayFromCameraNDC((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
-  const hit = hitPlaceable(ray);
-  if (hit) {
-    const p = store.placements.get(hit.id);
-    if (p && p.item === 'cat' && !buildMode) { startPet(); return; }
-    if (p && p.item === 'sofa' && !buildMode) {
-      if (seated) standUp(); else sitDown({ ...p, item: 'sofa' });
-      return;
-    }
-  }
-  const floorHits = ray.intersectObject(floor);
-  if (floorHits.length && !seated && !buildMode) tryTeleport(floorHits[0].point);
+  doClickInteract((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1);
 });
 window.addEventListener('resize', () => {
   camera.aspect = window.innerWidth / window.innerHeight;
@@ -837,6 +997,7 @@ function toggleBuildMode() {
   if (b) { b.textContent = 'BUILD: ' + (buildMode ? 'ON' : 'OFF'); b.classList.toggle('active', buildMode); }
   updateStatusPanel();
   toast(buildMode ? 'build mode on — point at something and grab it' : 'build mode off');
+  if (typeof updateLookUI === 'function') updateLookUI();
 }
 
 function tryGrab(ray, controller) {
@@ -991,8 +1152,10 @@ controllers.forEach(c => c.addEventListener('selectend', () => {
 renderer.xr.addEventListener('sessionstart', () => {
   document.getElementById('overlay').classList.add('hidden');
   if (buildMode) panel.visible = true;
+  refreshVrCopy();
+  updateLookUI();
 });
-renderer.xr.addEventListener('sessionend', () => { panel.visible = false; });
+renderer.xr.addEventListener('sessionend', () => { panel.visible = false; refreshVrCopy(); updateLookUI(); clearTeleportAim(); });
 
 /* ================= admin auth + HUD ================= */
 let auth = null, rtdb = null, presenceTimer = null, myUid = null;
@@ -1156,11 +1319,11 @@ async function init() {
   document.getElementById('loading').style.display = 'none';
   const enter = document.getElementById('enter2d');
   enter.style.display = '';
-  enter.onclick = () => document.getElementById('overlay').classList.add('hidden');
+  enter.onclick = () => { document.getElementById('overlay').classList.add('hidden'); updateLookUI(); };
   if (!('xr' in navigator)) {
     document.getElementById('ctrlhint').innerHTML =
-      'desktop: WASD / arrows to walk, drag to look, click the floor to step there<br>' +
-      'click the cat to pet it, the couch to sit<br>' +
+      'desktop: WASD / arrows to walk, click once then move the mouse to look, click to interact<br>' +
+      'click the cat to pet it, the couch to sit, the floor to step there<br>' +
       'headset not detected — connect a headset and reopen this page to enter VR';
   }
 }
