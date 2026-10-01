@@ -992,14 +992,9 @@
                 card.className = 'group text-left rounded-2xl overflow-hidden border border-stone-300/70 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition cursor-pointer';
 
                 const thumb = (() => {
-                    // Stored thumbnails win when present: posters captured in
-                    // Curate, or thumbnailUrl backfilled for videos. iOS WebKit
-                    // never paints a <video preload="metadata"> first frame
-                    // until playback, so a stored image is the only thumbnail
-                    // an iOS video card gets.
-                    const storedThumb = art.poster || art.thumbnailUrl;
-                    if (storedThumb) {
-                        return `<img src="${escHtml(storedThumb)}" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror="this.remove()">`;
+                    // Stored poster wins when present (models / live HTML pieces).
+                    if (art.poster) {
+                        return `<img src="${escHtml(art.poster)}" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror="this.remove()">`;
                     }
                     if (!art.url) return '';
                     if (art.type === 'image') {
@@ -2829,7 +2824,7 @@
                             </button>
                             ${(art.type === 'model' || art.type === 'html') ? `
                             <button type="button" onclick="capturePosterFor('${art.id}', this)" class="px-2.5 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 rounded-lg text-xs font-medium transition cursor-pointer" title="Capture a thumbnail poster from this piece for the directory">
-                                ${art.poster ? 'Poster ✓' : 'Poster 📸'}
+                                ${art.poster ? 'Poster ✓ ↻' : 'Poster 📸'}
                             </button>` : ''}
                             <button type="button" onclick="openEditModal('${art.id}')" class="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-lg text-xs font-medium transition cursor-pointer" title="Edit exhibit details">
                                 Edit ✏️
@@ -2873,7 +2868,7 @@
             if (!isGalleryAdmin(currentGalleryUser)) { openAuthModal(); return; }
             if (btn) { btn.disabled = true; btn.dataset.label = btn.textContent.trim(); btn.textContent = 'Working…'; }
             const done = (ok, msg) => {
-                if (btn) { btn.disabled = false; btn.textContent = ok ? 'Poster ✓' : (btn.dataset.label || 'Poster 📸'); }
+                if (btn) { btn.disabled = false; btn.textContent = ok ? 'Poster ✓ ↻' : (btn.dataset.label || 'Poster 📸'); }
                 if (!ok && msg) alert(msg);
             };
             (async () => {
@@ -2959,13 +2954,39 @@
             });
         }
 
+        // Cheap content check for HTML poster captures: sample a grid of
+        // pixels on the capture canvas and count ones that differ clearly
+        // from the #171412 fill. A blank or black frame fails — the capture
+        // rejects loudly instead of uploading a black poster.
+        function posterFrameHasContent(ctx, W, H) {
+            const FILL = [23, 20, 18];
+            try {
+                const px = ctx.getImageData(0, 0, W, H).data;
+                let lit = 0;
+                for (let y = 0; y < H; y += 32) {
+                    for (let x = 0; x < W; x += 32) {
+                        const o = (y * W + x) * 4;
+                        const d = Math.max(
+                            Math.abs(px[o] - FILL[0]),
+                            Math.abs(px[o + 1] - FILL[1]),
+                            Math.abs(px[o + 2] - FILL[2]));
+                        if (d > 40 && ++lit >= 8) return true;
+                    }
+                }
+                return false;
+            } catch (e) { return false; }
+        }
+
         // Snapshot one frame of a live HTML piece. The piece HTML is fetched
         // and injected via srcdoc — so the iframe stays same-origin and its
         // <canvas> is reachable no matter where the file is hosted — then its
-        // largest canvas is blitted to a 2D capture canvas over ~45 frames
-        // (mirrors the VR room's live-wall streaming, minus the GPU texture).
-        // Parked offscreen, never display:none: hiding the iframe would pause
-        // the piece's own animation loop.
+        // largest canvas is blitted to a 2D capture canvas, sampling on the
+        // piece's own rAF ticks (mirrors the VR room's live-wall streaming,
+        // minus the GPU texture). The iframe sits at on-screen geometry with
+        // opacity:0 — never display:none, visibility:hidden, or parked
+        // offscreen. Anything that takes it out of the painted area
+        // throttles/pauses its rAF loop, its canvas never draws, and every
+        // sampled frame comes out black.
         function captureHtmlPoster(url) {
             return new Promise((resolve, reject) => {
                 if (!url) { reject(new Error('This exhibit has no piece URL.')); return; }
@@ -2976,44 +2997,64 @@
                     if (!/<canvas/i.test(htmlText)) { resolve(null); return; }
                     const W = 960, H = 600;
                     const iframe = document.createElement('iframe');
-                    iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:' + W + 'px;height:' + H + 'px;border:0;';
+                    iframe.style.cssText = 'position:fixed;left:0;top:0;width:' + W + 'px;height:' + H + 'px;border:0;opacity:0;pointer-events:none;z-index:-1;';
                     iframe.setAttribute('aria-hidden', 'true');
                     iframe.srcdoc = htmlText;
                     const cleanup = () => { try { iframe.remove(); } catch (e) {} };
                     const timer = setTimeout(() => { cleanup(); reject(new Error('Piece timed out while loading.')); }, 30000);
                     iframe.addEventListener('load', () => {
-                        // Let the piece's own loop run a moment, then sample frames.
-                        setTimeout(() => {
+                        let win = null;
+                        try { win = iframe.contentWindow; } catch (e) { win = null; }
+                        if (!win || typeof win.requestAnimationFrame !== 'function') {
+                            clearTimeout(timer); cleanup();
+                            reject(new Error('Piece frame is not reachable.')); return;
+                        }
+                        // Drive sampling off the piece's own rAF ticks so we
+                        // draw after it has actually rendered a frame — the
+                        // page's rAF and the iframe's are not the same clock.
+                        const raf = win.requestAnimationFrame.bind(win);
+                        const cap = document.createElement('canvas');
+                        cap.width = W; cap.height = H;
+                        const ctx = cap.getContext('2d');
+                        // Warm-up: let the piece's loop run a few ticks so its
+                        // canvas holds a real frame before we start sampling.
+                        let warm = 0;
+                        const warmup = () => { if (++warm >= 20) sample(); else raf(warmup); };
+                        let ticks = 0, sawCanvas = false;
+                        const MAX_TICKS = 600; // ~10s at 60fps, then fail loudly
+                        const sample = () => {
+                            let piece = null;
                             try {
-                                const canvases = Array.from(iframe.contentDocument.querySelectorAll('canvas'));
-                                if (!canvases.length) { clearTimeout(timer); cleanup(); resolve(null); return; }
-                                // Largest canvas = the main stage (skips tiny overlays).
-                                const piece = canvases.sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
-                                const cap = document.createElement('canvas');
-                                cap.width = W; cap.height = H;
-                                const ctx = cap.getContext('2d');
-                                ctx.fillStyle = '#171412'; ctx.fillRect(0, 0, W, H);
-                                let frames = 0, sawFrame = false;
-                                const pump = () => {
-                                    try {
-                                        const sw = piece.width, sh = piece.height;
-                                        if (sw > 0 && sh > 0) {
-                                            sawFrame = true;
-                                            const s = Math.max(W / sw, H / sh);
-                                            const dw = sw * s, dh = sh * s;
-                                            ctx.drawImage(piece, (W - dw) / 2, (H - dh) / 2, dw, dh);
-                                        }
-                                    } catch (e) {}
-                                    if (++frames >= 45) {
-                                        clearTimeout(timer); cleanup();
-                                        resolve(sawFrame ? cap.toDataURL('image/jpeg', 0.85) : null);
-                                    } else {
-                                        requestAnimationFrame(pump);
-                                    }
-                                };
-                                requestAnimationFrame(pump);
-                            } catch (e) { clearTimeout(timer); cleanup(); reject(e); }
-                        }, 2000);
+                                const all = Array.from(iframe.contentDocument.querySelectorAll('canvas'));
+                                if (all.length) {
+                                    // Largest canvas = the main stage (skips tiny overlays).
+                                    piece = all.sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
+                                }
+                            } catch (e) {}
+                            try {
+                                if (piece && piece.width > 0 && piece.height > 0) {
+                                    sawCanvas = true;
+                                    ctx.fillStyle = '#171412'; ctx.fillRect(0, 0, W, H);
+                                    const s = Math.max(W / piece.width, H / piece.height);
+                                    const dw = piece.width * s, dh = piece.height * s;
+                                    ctx.drawImage(piece, (W - dw) / 2, (H - dh) / 2, dw, dh);
+                                }
+                            } catch (e) {}
+                            if (++ticks % 5 === 0 && posterFrameHasContent(ctx, W, H)) {
+                                clearTimeout(timer); cleanup();
+                                resolve(cap.toDataURL('image/jpeg', 0.85));
+                                return;
+                            }
+                            if (ticks >= MAX_TICKS) {
+                                clearTimeout(timer); cleanup();
+                                reject(new Error(sawCanvas
+                                    ? 'Piece rendered only blank frames — poster not saved.'
+                                    : 'No drawable canvas found in the piece.'));
+                                return;
+                            }
+                            raf(sample);
+                        };
+                        raf(warmup);
                     });
                     iframe.addEventListener('error', () => { clearTimeout(timer); cleanup(); reject(new Error('Piece iframe failed to load.')); });
                     document.body.appendChild(iframe);
