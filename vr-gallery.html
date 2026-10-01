@@ -415,7 +415,7 @@ async function buildItem(itemId, placement) {
       mountOnPedestal(model, item.modelHeight, item.surfaceY);
       model.rotation.y = (item.modelYawDeg || 0) * Math.PI / 180;
       g.add(model);
-      playModelAnimations(model, animations, placement.id, true);
+      playModelAnimations(model, animations, placement.id, item.turntable !== false);
     } catch (e) { console.warn('[room] model failed:', item.asset, e); }
     const pl = plaque(item.plaque, 0.5);
     pl.position.set(0, 0.62, 0.45);
