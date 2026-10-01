@@ -991,9 +991,19 @@
                 card.setAttribute('aria-label', `Enter the hall at ${title}`);
                 card.className = 'group text-left rounded-2xl overflow-hidden border border-stone-300/70 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition cursor-pointer';
 
-                const thumb = (art.type === 'image' && art.url)
-                    ? `<img src="${escHtml(art.url)}" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror="this.remove()">`
-                    : '';
+                const thumb = (() => {
+                    if (!art.url) return '';
+                    if (art.type === 'image') {
+                        return `<img src="${escHtml(art.url)}" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror="this.remove()">`;
+                    }
+                    if (art.type === 'video') {
+                        // Muted metadata-only load: the browser paints the first
+                        // frame as the card thumbnail for free. On failure the
+                        // element removes itself, falling back to the glyph placard.
+                        return `<video muted preload="metadata" playsinline src="${escHtml(art.url)}" class="absolute inset-0 w-full h-full object-cover" onerror="this.remove()"></video>`;
+                    }
+                    return '';
+                })();
 
                 card.innerHTML = `
                     <div class="relative aspect-[16/10] bg-stone-200 dark:bg-zinc-800 overflow-hidden">
