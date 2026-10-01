@@ -992,9 +992,14 @@
                 card.className = 'group text-left rounded-2xl overflow-hidden border border-stone-300/70 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition cursor-pointer';
 
                 const thumb = (() => {
-                    // Stored poster wins when present (models / live HTML pieces).
-                    if (art.poster) {
-                        return `<img src="${escHtml(art.poster)}" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror="this.remove()">`;
+                    // Stored thumbnails win when present: posters captured in
+                    // Curate, or thumbnailUrl backfilled for videos. iOS WebKit
+                    // never paints a <video preload="metadata"> first frame
+                    // until playback, so a stored image is the only thumbnail
+                    // an iOS video card gets.
+                    const storedThumb = art.poster || art.thumbnailUrl;
+                    if (storedThumb) {
+                        return `<img src="${escHtml(storedThumb)}" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror="this.remove()">`;
                     }
                     if (!art.url) return '';
                     if (art.type === 'image') {
