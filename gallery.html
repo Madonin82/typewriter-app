@@ -992,6 +992,10 @@
                 card.className = 'group text-left rounded-2xl overflow-hidden border border-stone-300/70 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition cursor-pointer';
 
                 const thumb = (() => {
+                    // Stored poster wins when present (models / live HTML pieces).
+                    if (art.poster) {
+                        return `<img src="${escHtml(art.poster)}" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror="this.remove()">`;
+                    }
                     if (!art.url) return '';
                     if (art.type === 'image') {
                         return `<img src="${escHtml(art.url)}" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror="this.remove()">`;
@@ -2818,6 +2822,10 @@
                             <button type="button" onclick="curateViewExhibit('${art.id}', ${idx})" class="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium transition cursor-pointer" title="Fly camera to this exhibit">
                                 View ↗
                             </button>
+                            ${(art.type === 'model' || art.type === 'html') ? `
+                            <button type="button" onclick="capturePosterFor('${art.id}', this)" class="px-2.5 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 rounded-lg text-xs font-medium transition cursor-pointer" title="Capture a thumbnail poster from this piece for the directory">
+                                ${art.poster ? 'Poster ✓' : 'Poster 📸'}
+                            </button>` : ''}
                             <button type="button" onclick="openEditModal('${art.id}')" class="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-lg text-xs font-medium transition cursor-pointer" title="Edit exhibit details">
                                 Edit ✏️
                             </button>
@@ -2846,6 +2854,180 @@
             }
             closeCurateModal();
             enterHallAt(artId);
+        }
+
+        // ─── EXHIBIT POSTERS (stored thumbnails for model / live-HTML cards) ───
+        // A poster is pure metadata: one small JPEG in Storage plus a `poster`
+        // URL field on the exhibit doc. The artwork itself never changes and the
+        // exhibit list stays append-only. Cards prefer the poster and fall back
+        // to the placard when there isn't one. Captured on demand from Curate
+        // (admin only), so future exhibits get posters the same self-serve way.
+        function capturePosterFor(artId, btn) {
+            const art = ARTWORKS.find(a => a && a.id === artId);
+            if (!art) return;
+            if (!isGalleryAdmin(currentGalleryUser)) { openAuthModal(); return; }
+            if (btn) { btn.disabled = true; btn.dataset.label = btn.textContent.trim(); btn.textContent = 'Working…'; }
+            const done = (ok, msg) => {
+                if (btn) { btn.disabled = false; btn.textContent = ok ? 'Poster ✓' : (btn.dataset.label || 'Poster 📸'); }
+                if (!ok && msg) alert(msg);
+            };
+            (async () => {
+                try {
+                    if (btn) btn.textContent = 'Capturing…';
+                    const dataUrl = art.type === 'model'
+                        ? await renderModelPoster(art.url)
+                        : await captureHtmlPoster(art.url);
+                    if (!dataUrl) throw new Error('No frame could be grabbed from this piece — the placard stays.');
+                    if (btn) btn.textContent = 'Uploading…';
+                    const posterUrl = await uploadPosterBlob(artId, dataUrl);
+                    await firebase.firestore().collection('galleryExhibits').doc(artId).set({ poster: posterUrl }, { merge: true });
+                    art.poster = posterUrl;
+                    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(ARTWORKS)); } catch (e) {}
+                    // Posters only affect directory cards; the hall mounts the live piece.
+                    if (!hallStarted) { renderDirectory(); updateGalleryMetaUI(); }
+                    done(true);
+                } catch (err) {
+                    console.warn('Poster capture failed:', err);
+                    done(false, 'Poster capture failed: ' + (err && err.message ? err.message : err));
+                }
+            })();
+        }
+
+        // Render a 3D model once, offscreen, and snapshot it — same normalize
+        // (height ~1.3, centered) and 3/4 framing the hall uses on its pedestals.
+        function renderModelPoster(url) {
+            return new Promise((resolve, reject) => {
+                if (typeof THREE === 'undefined' || !THREE.GLTFLoader) {
+                    reject(new Error('3D engine not loaded.')); return;
+                }
+                if (!url) { reject(new Error('This exhibit has no model URL.')); return; }
+                const W = 960, H = 600;
+                let renderer;
+                try {
+                    renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true, alpha: true });
+                } catch (e) { reject(e); return; }
+                renderer.setSize(W, H);
+                if (THREE.sRGBEncoding !== undefined) renderer.outputEncoding = THREE.sRGBEncoding;
+                const scene = new THREE.Scene();
+                scene.background = new THREE.Color(0x171412);
+                const camera = new THREE.PerspectiveCamera(40, W / H, 0.1, 100);
+                scene.add(new THREE.HemisphereLight(0xfff5e6, 0x1a1512, 0.9));
+                const key = new THREE.DirectionalLight(0xffeedd, 1.1);
+                key.position.set(3, 5, 4);
+                scene.add(key);
+                const fill = new THREE.DirectionalLight(0x88aaff, 0.35);
+                fill.position.set(-4, 2, -3);
+                scene.add(fill);
+                const cleanup = () => { try { renderer.dispose(); } catch (e) {} };
+                const timer = setTimeout(() => { cleanup(); reject(new Error('Model load timed out.')); }, 30000);
+                let settled = false;
+                new THREE.GLTFLoader().load(url, (gltf) => {
+                    if (settled) return; settled = true; clearTimeout(timer);
+                    try {
+                        const model = gltf.scene;
+                        const box = new THREE.Box3().setFromObject(model);
+                        const size = new THREE.Vector3(); box.getSize(size);
+                        const currentHeight = size.y > 0.001 ? size.y : Math.max(size.x, size.z, 1.0);
+                        model.scale.setScalar(1.3 / currentHeight);
+                        const sbox = new THREE.Box3().setFromObject(model);
+                        const center = new THREE.Vector3(); sbox.getCenter(center);
+                        model.position.sub(center);
+                        scene.add(model);
+                        // Nudge animations forward so the poster isn't always the rest pose.
+                        if (gltf.animations && gltf.animations.length) {
+                            const mixer = new THREE.AnimationMixer(model);
+                            gltf.animations.forEach(clip => mixer.clipAction(clip).play());
+                            mixer.update(0.5);
+                        }
+                        const fbox = new THREE.Box3().setFromObject(model);
+                        const sphere = fbox.getBoundingSphere(new THREE.Sphere());
+                        const dist = (sphere.radius / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2))) * 1.25;
+                        const dir = new THREE.Vector3(1, 0.55, 1.35).normalize();
+                        camera.position.copy(sphere.center).addScaledVector(dir, dist);
+                        camera.lookAt(sphere.center);
+                        renderer.render(scene, camera);
+                        const dataUrl = renderer.domElement.toDataURL('image/jpeg', 0.85);
+                        cleanup();
+                        resolve(dataUrl);
+                    } catch (e) { cleanup(); reject(e); }
+                }, undefined, () => { if (!settled) { settled = true; clearTimeout(timer); cleanup(); reject(new Error('Model failed to load.')); } });
+            });
+        }
+
+        // Snapshot one frame of a live HTML piece. The piece HTML is fetched
+        // and injected via srcdoc — so the iframe stays same-origin and its
+        // <canvas> is reachable no matter where the file is hosted — then its
+        // largest canvas is blitted to a 2D capture canvas over ~45 frames
+        // (mirrors the VR room's live-wall streaming, minus the GPU texture).
+        // Parked offscreen, never display:none: hiding the iframe would pause
+        // the piece's own animation loop.
+        function captureHtmlPoster(url) {
+            return new Promise((resolve, reject) => {
+                if (!url) { reject(new Error('This exhibit has no piece URL.')); return; }
+                fetch(url, { mode: 'cors' }).then((res) => {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.text();
+                }).then((htmlText) => {
+                    if (!/<canvas/i.test(htmlText)) { resolve(null); return; }
+                    const W = 960, H = 600;
+                    const iframe = document.createElement('iframe');
+                    iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:' + W + 'px;height:' + H + 'px;border:0;';
+                    iframe.setAttribute('aria-hidden', 'true');
+                    iframe.srcdoc = htmlText;
+                    const cleanup = () => { try { iframe.remove(); } catch (e) {} };
+                    const timer = setTimeout(() => { cleanup(); reject(new Error('Piece timed out while loading.')); }, 30000);
+                    iframe.addEventListener('load', () => {
+                        // Let the piece's own loop run a moment, then sample frames.
+                        setTimeout(() => {
+                            try {
+                                const canvases = Array.from(iframe.contentDocument.querySelectorAll('canvas'));
+                                if (!canvases.length) { clearTimeout(timer); cleanup(); resolve(null); return; }
+                                // Largest canvas = the main stage (skips tiny overlays).
+                                const piece = canvases.sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
+                                const cap = document.createElement('canvas');
+                                cap.width = W; cap.height = H;
+                                const ctx = cap.getContext('2d');
+                                ctx.fillStyle = '#171412'; ctx.fillRect(0, 0, W, H);
+                                let frames = 0, sawFrame = false;
+                                const pump = () => {
+                                    try {
+                                        const sw = piece.width, sh = piece.height;
+                                        if (sw > 0 && sh > 0) {
+                                            sawFrame = true;
+                                            const s = Math.max(W / sw, H / sh);
+                                            const dw = sw * s, dh = sh * s;
+                                            ctx.drawImage(piece, (W - dw) / 2, (H - dh) / 2, dw, dh);
+                                        }
+                                    } catch (e) {}
+                                    if (++frames >= 45) {
+                                        clearTimeout(timer); cleanup();
+                                        resolve(sawFrame ? cap.toDataURL('image/jpeg', 0.85) : null);
+                                    } else {
+                                        requestAnimationFrame(pump);
+                                    }
+                                };
+                                requestAnimationFrame(pump);
+                            } catch (e) { clearTimeout(timer); cleanup(); reject(e); }
+                        }, 2000);
+                    });
+                    iframe.addEventListener('error', () => { clearTimeout(timer); cleanup(); reject(new Error('Piece iframe failed to load.')); });
+                    document.body.appendChild(iframe);
+                }).catch((e) => reject(new Error('Could not fetch the piece HTML (' + (e && e.message ? e.message : e) + ').')));
+            });
+        }
+
+        // Upload a poster JPEG to Storage under the gallery prefix the admin
+        // can already write to, and return its download URL.
+        async function uploadPosterBlob(artId, dataUrl) {
+            const blob = await (await fetch(dataUrl)).blob();
+            const uploader = (currentGalleryUser && currentGalleryUser.uid)
+                ? currentGalleryUser
+                : (firebase.auth ? firebase.auth().currentUser : null);
+            if (!uploader || !uploader.uid) throw new Error('You must be signed in to upload.');
+            const storageRef = firebase.storage()
+                .ref('gallery/' + uploader.uid + '/posters/' + artId + '_' + Date.now() + '.jpg');
+            await storageRef.put(blob, { contentType: 'image/jpeg' });
+            return await storageRef.getDownloadURL();
         }
 
         function openEditModal(artId) {
