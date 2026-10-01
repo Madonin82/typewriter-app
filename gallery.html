@@ -169,8 +169,8 @@
         </div>
     </div>
 
-    <!-- ── BOTTOM NAVIGATION HUD ── -->
-    <div class="ui-layer bottom-4 left-1/2 -translate-x-1/2 pointer-events-none flex flex-col items-center gap-2">
+    <!-- ── BOTTOM NAVIGATION HUD (hall only — revealed on entry) ── -->
+    <div id="hall-hud" class="hidden ui-layer bottom-4 left-1/2 -translate-x-1/2 pointer-events-none flex flex-col items-center gap-2">
         <!-- Go-to-exhibit menu (pops upward from the nav bar) -->
         <div id="goto-menu" class="interactive-ui hidden w-72 max-w-[85vw] bg-zinc-900/90 backdrop-blur-md border border-zinc-800/90 rounded-2xl shadow-2xl overflow-hidden">
             <div class="px-4 py-2.5 border-b border-zinc-800/80 text-[11px] font-semibold text-zinc-400 uppercase tracking-wider">Go to exhibit</div>
@@ -208,6 +208,41 @@
             <span class="flex items-center gap-1 text-zinc-400">
                 <span>⌨️ Keys: ← → / W S</span>
             </span>
+        </div>
+    </div>
+
+    <!-- ── FRONT DOOR: public exhibit directory ── -->
+    <!-- Same URL as the hall. Renders from the same galleryExhibits data the
+         hall uses (no duplicated catalogue). The 3D hall only initializes
+         once the visitor picks an exhibit or walks in — a cold visit never
+         pays for sixteen exhibits' worth of lazy-loading up front. -->
+    <div id="directory-overlay" class="fixed inset-0 z-20 overflow-y-auto bg-[#f4efe3] text-stone-900 dark:bg-zinc-950 dark:text-zinc-100">
+        <div class="max-w-6xl mx-auto px-4 sm:px-6 pt-28 sm:pt-32 pb-16">
+            <header class="mb-6 sm:mb-8">
+                <p class="text-[11px] font-semibold tracking-[0.28em] uppercase text-amber-700 dark:text-amber-500">3D Art Gallery</p>
+                <h1 class="mt-2 text-3xl sm:text-4xl font-bold tracking-tight">The Lobby</h1>
+                <p id="directory-count" class="mt-2 text-sm font-medium text-stone-600 dark:text-zinc-400"></p>
+                <p class="mt-1 text-sm text-stone-500 dark:text-zinc-500">Choose a piece to step right up to it — or take the full stroll.</p>
+            </header>
+
+            <button type="button" onclick="walkHall()" class="group w-full text-left rounded-2xl border border-amber-600/30 dark:border-amber-500/30 bg-gradient-to-r from-amber-600/10 via-amber-600/5 to-transparent dark:from-amber-500/15 dark:via-amber-500/5 dark:to-transparent p-5 sm:p-6 flex items-center justify-between gap-4 hover:border-amber-600/60 dark:hover:border-amber-500/60 transition cursor-pointer">
+                <div>
+                    <div class="text-base sm:text-lg font-semibold">Walk the hall</div>
+                    <div class="text-xs sm:text-sm text-stone-500 dark:text-zinc-400 mt-1">Start at the first exhibit and stroll the whole museum at your own pace.</div>
+                </div>
+                <div class="text-2xl text-amber-700 dark:text-amber-400 group-hover:translate-x-1.5 transition-transform" aria-hidden="true">→</div>
+            </button>
+
+            <div id="directory-empty" class="hidden mt-6 rounded-2xl border border-stone-300 dark:border-zinc-800 bg-white/60 dark:bg-zinc-900/60 p-10 text-center">
+                <div class="text-4xl mb-3" aria-hidden="true">🏛️</div>
+                <p class="text-sm font-medium">The hall is being hung — check back soon.</p>
+            </div>
+
+            <div id="directory-grid" class="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5"></div>
+
+            <footer class="mt-12 text-center text-xs text-stone-400 dark:text-zinc-600">
+                A quiet room for loud pictures.
+            </footer>
         </div>
     </div>
 
@@ -836,10 +871,154 @@
             localStorage.setItem(STORAGE_KEY, JSON.stringify(ARTWORKS));
         }
 
-        async function initGallery() {
+        // ─── FRONT DOOR (public exhibit directory) ──────────────────
+        // gallery.html lands here first: a museum-lobby card list rendered
+        // from the same galleryExhibits data the hall uses. The 3D hall only
+        // initializes once the visitor picks an exhibit (or arrives on a
+        // #exhibit=<id> deep link), so a cold visit never triggers the
+        // hall's lazy-loading before anyone has chosen what to see.
+        let hallStarted = false;
+
+        function getDeepLinkIndex() {
+            const hash = window.location.hash || '';
+            const match = hash.match(/#exhibit=([^&]+)/);
+            if (match && match[1]) {
+                const idx = ARTWORKS.findIndex(a => a && a.id === decodeURIComponent(match[1]));
+                return idx >= 0 ? idx : -1;
+            }
+            return -1;
+        }
+
+        function hideLoader() {
+            setTimeout(() => {
+                const loader = document.getElementById('loader');
+                if (loader) {
+                    loader.style.opacity = '0';
+                    setTimeout(() => loader.remove(), 700);
+                }
+            }, 500);
+        }
+
+        async function initFrontDoor() {
             initGalleryAuth();
             await fetchGalleryArtworks();
             updateGalleryMetaUI();
+
+            // Deep link? Straight into the hall at that piece — directory skipped.
+            if (getDeepLinkIndex() >= 0) {
+                enterHall();
+                return;
+            }
+            renderDirectory();
+            hideLoader();
+        }
+
+        function enterHall() {
+            if (hallStarted) return;
+            hallStarted = true;
+            const overlay = document.getElementById('directory-overlay');
+            if (overlay) overlay.classList.add('hidden');
+            const hud = document.getElementById('hall-hud');
+            if (hud) hud.classList.remove('hidden');
+            startHall();
+        }
+
+        function enterHallAt(artId) {
+            if (hallStarted || !artId) return;
+            window.location.hash = '#exhibit=' + encodeURIComponent(artId);
+            enterHall();
+        }
+
+        function walkHall() {
+            if (hallStarted) return;
+            try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+            enterHall();
+        }
+
+        function exhibitTypeBadge(type) {
+            if (type === 'html') return '🌐 HTML 3D';
+            if (type === 'model') return '🗿 3D Model';
+            if (type === 'video') return '🎬 Video';
+            return '🖼️ Image';
+        }
+
+        function exhibitTypeGlyph(type) {
+            if (type === 'html') return '🌐';
+            if (type === 'model') return '🗿';
+            if (type === 'video') return '🎬';
+            return '🖼️';
+        }
+
+        // Escape untrusted exhibit strings (Firestore/localStorage) before they
+        // are interpolated into directory HTML or attribute values.
+        function escHtml(value) {
+            return String(value == null ? '' : value)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function renderDirectory() {
+            const overlay = document.getElementById('directory-overlay');            if (!overlay) return;
+            const grid = document.getElementById('directory-grid');
+            const empty = document.getElementById('directory-empty');
+            const countLine = document.getElementById('directory-count');
+            grid.innerHTML = '';
+
+            if (countLine) {
+                countLine.textContent = ARTWORKS.length
+                    ? `${ARTWORKS.length} exhibit${ARTWORKS.length === 1 ? '' : 's'} on view`
+                    : 'The hall is being hung — check back soon';
+            }
+
+            if (ARTWORKS.length === 0) {
+                empty.classList.remove('hidden');
+                return;
+            }
+            empty.classList.add('hidden');
+
+            ARTWORKS.forEach((art, idx) => {
+                const title = escHtml(art.title || 'Untitled');
+                const artist = escHtml(art.artist || 'Unknown Artist');
+                const medium = escHtml(art.medium || 'Mixed Media');
+                const year = art.year ? ` (${escHtml(art.year)})` : '';
+                const glyph = exhibitTypeGlyph(art.type);
+
+                const card = document.createElement('button');
+                card.type = 'button';
+                card.setAttribute('aria-label', `Enter the hall at ${title}`);
+                card.className = 'group text-left rounded-2xl overflow-hidden border border-stone-300/70 dark:border-zinc-800 bg-white dark:bg-zinc-900 shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition cursor-pointer';
+
+                const thumb = (art.type === 'image' && art.url)
+                    ? `<img src="${escHtml(art.url)}" alt="" loading="lazy" class="absolute inset-0 w-full h-full object-cover" onerror="this.remove()">`
+                    : '';
+
+                card.innerHTML = `
+                    <div class="relative aspect-[16/10] bg-stone-200 dark:bg-zinc-800 overflow-hidden">
+                        <div class="absolute inset-0 flex items-center justify-center text-5xl" aria-hidden="true">${glyph}</div>
+                        ${thumb}
+                        <span class="absolute top-2 left-2 text-[10px] font-mono bg-black/55 text-white/90 px-2 py-0.5 rounded-full">#${idx + 1}</span>
+                    </div>
+                    <div class="p-4">
+                        <div class="flex items-center justify-between gap-2">
+                            <h3 class="text-sm font-semibold truncate">${title}</h3>
+                            <span class="text-[10px] bg-stone-100 dark:bg-zinc-800 text-stone-500 dark:text-zinc-400 px-1.5 py-0.5 rounded shrink-0">${exhibitTypeBadge(art.type)}</span>
+                        </div>
+                        <p class="text-xs text-stone-500 dark:text-zinc-400 truncate mt-1">${artist} &middot; <span class="italic">${medium}${year}</span></p>
+                        <p class="mt-2 text-[11px] font-medium text-amber-700 dark:text-amber-400 opacity-0 group-hover:opacity-100 transition">Step up to this piece &rarr;</p>
+                    </div>`;
+                card.addEventListener('click', () => enterHallAt(art.id));
+                grid.appendChild(card);
+            });
+        }
+
+        async function startHall() {
+            // Deterministic camera state: reproduces today's cold-load entry
+            // even if lobby-side curator actions nudged the targets earlier.
+            targetCameraX = 0; currentCameraX = 0;
+            targetCameraZ = 2.93; currentCameraZ = 2.93;
 
             const containerWebGL = document.getElementById('canvas-container');
             const containerCSS = document.getElementById('css-container');
@@ -877,24 +1056,13 @@
             setupInteractions();
 
             // Handle exhibit deep link (#exhibit=<id>)
-            const hash = window.location.hash || '';
-            const match = hash.match(/#exhibit=([^&]+)/);
-            if (match && match[1]) {
-                const targetId = decodeURIComponent(match[1]);
-                const idx = ARTWORKS.findIndex(a => a && a.id === targetId);
-                if (idx >= 0) {
-                    focusOnArtwork(idx);
-                }
+            const deepIdx = getDeepLinkIndex();
+            if (deepIdx >= 0) {
+                focusOnArtwork(deepIdx);
             }
 
             // Hide Loader
-            setTimeout(() => {
-                const loader = document.getElementById('loader');
-                if (loader) {
-                    loader.style.opacity = '0';
-                    setTimeout(() => loader.remove(), 700);
-                }
-            }, 500);
+            hideLoader();
 
             // Start Render & Lazy Evaluation Loop
             window.addEventListener('resize', onWindowResize);
@@ -1038,6 +1206,15 @@
 
         // ─── ARTWORK FRAMES & SCENE REBUILD ──────────────────────
         function rebuildArtworkScene() {
+            // Lobby state: the 3D hall isn't up yet, so "sync the visible
+            // exhibit list with ARTWORKS" just means re-rendering the
+            // directory cards. Admin add/edit/delete flows call this and
+            // keep working untouched from either state.
+            if (!hallStarted) {
+                renderDirectory();
+                updateGalleryMetaUI();
+                return;
+            }
             cleanupCurrentScene();
 
             // Deduplicate artworks
@@ -2580,7 +2757,7 @@
 
             // Smoothly pan camera directly to the newly mounted artwork at the end
             setTimeout(() => {
-                focusOnArtwork(ARTWORKS.length - 1);
+                if (hallStarted) focusOnArtwork(ARTWORKS.length - 1);
             }, 200);
         }
 
@@ -2628,7 +2805,7 @@
                             </div>
                         </div>
                         <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
-                            <button type="button" onclick="focusOnArtwork(${idx})" class="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium transition cursor-pointer" title="Fly camera to this exhibit">
+                            <button type="button" onclick="curateViewExhibit('${art.id}', ${idx})" class="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium transition cursor-pointer" title="Fly camera to this exhibit">
                                 View ↗
                             </button>
                             <button type="button" onclick="openEditModal('${art.id}')" class="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-lg text-xs font-medium transition cursor-pointer" title="Edit exhibit details">
@@ -2648,6 +2825,17 @@
 
         function closeCurateModal() {
             document.getElementById('curate-modal').classList.add('hidden');
+        }
+
+        // Curate "View" button: pans the hall camera when the hall is up,
+        // otherwise enters the hall at that exhibit straight from the lobby.
+        function curateViewExhibit(artId, idx) {
+            if (hallStarted) {
+                focusOnArtwork(idx);
+                return;
+            }
+            closeCurateModal();
+            enterHallAt(artId);
         }
 
         function openEditModal(artId) {
@@ -2846,7 +3034,7 @@
         }
 
         // Initialize gallery when DOM is ready
-        window.onload = initGallery;
+        window.onload = initFrontDoor;
     </script>
 </body>
 </html>
