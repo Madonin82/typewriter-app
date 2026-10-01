@@ -419,6 +419,11 @@ function initDOM() {
     btnExportJson: document.getElementById('btn-export-json'),
     btnExportZip: document.getElementById('btn-export-zip'),
     btnCopyAll: document.getElementById('btn-copy-all'),
+    btnCloudExportTxt: document.getElementById('btn-cloud-export-txt'),
+    btnCloudExportMd: document.getElementById('btn-cloud-export-md'),
+    cloudExportResult: document.getElementById('cloud-export-result'),
+    cloudExportLink: document.getElementById('cloud-export-link'),
+    btnCopyCloudLink: document.getElementById('btn-copy-cloud-link'),
     btnExportDriveDoc: document.getElementById('btn-export-drive-doc'),
     btnExportDriveTxt: document.getElementById('btn-export-drive-txt'),
 
@@ -754,8 +759,10 @@ let stationReaderData = null;
 let stationReaderBookId = null;
 let stationAdminUnsubscribe = null;
 let adminChatUnsubscribe = null;
+let adminExportsUnsubscribe = null;
 let adminStationDocs = [];
 let adminChatDocs = [];
+let adminExportsDocs = [];
 let writerRouteInitialized = false;
 let stationFloatingMenuCleanup = null;
 let stationPageObserver = null;
@@ -3268,7 +3275,7 @@ function setupStationAdminFloatingMenu() {
   };
 }
 
-function renderStationAdmin(snapshotDocs = [], chatSnapshotDocs = []) {
+function renderStationAdmin(snapshotDocs = [], chatSnapshotDocs = [], exportDocs = []) {
   if (!DOM.stationContent || !getAdminRoute()) return;
   if (stationFloatingMenuCleanup) stationFloatingMenuCleanup();
   if (stationPageObserver) stationPageObserver.disconnect();
@@ -3571,6 +3578,66 @@ function renderStationAdmin(snapshotDocs = [], chatSnapshotDocs = []) {
   }
 
   DOM.stationContent.appendChild(chatSection);
+
+  // ── Cloud exports section ──
+  const exportsSection = document.createElement('section');
+  exportsSection.className = 'station-admin-section';
+  const exportsTitle = document.createElement('h2');
+  exportsTitle.textContent = `Cloud exports — ${exportDocs.length} file${exportDocs.length === 1 ? '' : 's'}`;
+  exportsSection.appendChild(exportsTitle);
+  if (exportDocs.length === 0) {
+    const empty = document.createElement('p');
+    empty.className = 'station-admin-empty';
+    empty.textContent = 'No cloud exports yet. Create one from Export → Cloud Export in the writer.';
+    exportsSection.appendChild(empty);
+  } else {
+    exportDocs.forEach(doc => {
+      const data = doc.data();
+      const row = document.createElement('div');
+      row.className = 'station-admin-row';
+      const info = document.createElement('div');
+      info.className = 'station-admin-row-info';
+      const identity = document.createElement('strong');
+      identity.textContent = data.fileName || data.bookTitle || 'Untitled export';
+      const meta = document.createElement('span');
+      const sizeKb = typeof data.sizeBytes === 'number' ? `${(data.sizeBytes / 1024).toFixed(1)} KB` : 'unknown size';
+      meta.textContent = `${data.bookTitle || 'Untitled'} · .${data.format || 'txt'} · ${sizeKb} · ${formatStationDate(data.createdAt)} · ${String(data.ownerUid || '').slice(0, 8)}`;
+      info.append(identity, meta);
+      const actions = document.createElement('div');
+      actions.className = 'station-admin-actions';
+      const download = document.createElement('a');
+      download.href = data.downloadUrl || '#';
+      download.textContent = 'Download';
+      download.target = '_blank';
+      download.rel = 'noopener';
+      const copyLink = document.createElement('button');
+      copyLink.textContent = 'Copy link';
+      copyLink.onclick = () => {
+        if (!data.downloadUrl) return;
+        navigator.clipboard.writeText(data.downloadUrl).then(() => showToast('Download link copied!')).catch(() => showToast('Copy failed.'));
+      };
+      const del = document.createElement('button');
+      del.textContent = 'Delete';
+      del.onclick = async () => {
+        if (!confirm(`Delete cloud export "${data.fileName || data.bookTitle || 'Untitled'}"? The download link will stop working.`)) return;
+        try {
+          if (data.storagePath && typeof firebase !== 'undefined' && firebase.storage) {
+            await firebase.storage().ref().child(data.storagePath).delete();
+          }
+          await doc.ref.delete();
+          showToast('Cloud export deleted.');
+        } catch (err) {
+          console.error('Cloud export delete failed:', err);
+          showToast('Delete failed: ' + (err.message || 'Unknown error'));
+        }
+      };
+      actions.append(download, copyLink, del);
+      row.append(info, actions);
+      exportsSection.appendChild(row);
+    });
+  }
+  DOM.stationContent.appendChild(exportsSection);
+
   setupStationAdminFloatingMenu();
 }
 
@@ -3584,16 +3651,20 @@ function subscribeToStationAdmin() {
     adminChatUnsubscribe();
     adminChatUnsubscribe = null;
   }
+  if (adminExportsUnsubscribe) {
+    adminExportsUnsubscribe();
+    adminExportsUnsubscribe = null;
+  }
   if (!currentUser || !STATION_ADMIN_UIDS.includes(currentUser.uid)) {
-    renderStationAdmin([], []);
+    renderStationAdmin([], [], []);
     return;
   }
   stationAdminUnsubscribe = db.collection('station').onSnapshot(snapshot => {
     adminStationDocs = snapshot.docs;
-    renderStationAdmin(adminStationDocs, adminChatDocs);
+    renderStationAdmin(adminStationDocs, adminChatDocs, adminExportsDocs);
   }, () => {
     adminStationDocs = [];
-    renderStationAdmin(adminStationDocs, adminChatDocs);
+    renderStationAdmin(adminStationDocs, adminChatDocs, adminExportsDocs);
   });
 
   adminChatUnsubscribe = db.collection('chatrooms').doc('main').collection('messages')
@@ -3601,10 +3672,21 @@ function subscribeToStationAdmin() {
     .limit(200)
     .onSnapshot(snapshot => {
       adminChatDocs = snapshot.docs;
-      renderStationAdmin(adminStationDocs, adminChatDocs);
+      renderStationAdmin(adminStationDocs, adminChatDocs, adminExportsDocs);
     }, () => {
       adminChatDocs = [];
-      renderStationAdmin(adminStationDocs, adminChatDocs);
+      renderStationAdmin(adminStationDocs, adminChatDocs, adminExportsDocs);
+    });
+
+  adminExportsUnsubscribe = db.collection('exports')
+    .orderBy('createdAt', 'desc')
+    .limit(50)
+    .onSnapshot(snapshot => {
+      adminExportsDocs = snapshot.docs;
+      renderStationAdmin(adminStationDocs, adminChatDocs, adminExportsDocs);
+    }, () => {
+      adminExportsDocs = [];
+      renderStationAdmin(adminStationDocs, adminChatDocs, adminExportsDocs);
     });
 }
 
@@ -8569,6 +8651,96 @@ function copyManuscriptToClipboard() {
   });
 }
 
+// ─── CLOUD EXPORT (SHAREABLE DOWNLOAD LINK) ─────────────────
+// Uploads the compiled manuscript to Firebase Storage under
+// exports/{uid}/, records it in the `exports` Firestore collection,
+// and surfaces a download URL anyone can open — no admin request,
+// so signed-in writers (human or AI agent) can pull their own books
+// out of the app directly. Entries are disposable: deleting one from
+// the Admin page removes the file and retires the link.
+
+let cloudExportBusy = false;
+
+async function exportManuscriptToCloud(format) {
+  if (cloudExportBusy) return;
+  const book = getActiveBook();
+  if (!book) {
+    showToast('No active book to export.');
+    return;
+  }
+  if (!currentUser || isAnonymousUser()) {
+    showToast('Sign in with a verified account to use cloud export.');
+    return;
+  }
+  if (!db || typeof firebase === 'undefined' || !firebase.storage) {
+    showToast('Cloud export is unavailable right now.');
+    return;
+  }
+  cloudExportBusy = true;
+  const buttons = [DOM.btnCloudExportTxt, DOM.btnCloudExportMd].filter(Boolean);
+  buttons.forEach(btn => { btn.disabled = true; });
+  showToast('Uploading manuscript…');
+  try {
+    let content = '';
+    if (TextWorkerBridge && TextWorkerBridge.worker) {
+      try {
+        content = await TextWorkerBridge.compileExport(book, format);
+      } catch (e) {
+        content = compileManuscriptText(format);
+      }
+    } else {
+      content = compileManuscriptText(format);
+    }
+    const ext = format === 'md' ? 'md' : 'txt';
+    const cleanTitle = (book.title || 'manuscript').replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const fileName = `${cleanTitle}_${new Date().toISOString().slice(0, 10)}.${ext}`;
+    const storagePath = `exports/${currentUser.uid}/${Date.now()}-${fileName}`;
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
+    const storageRef = firebase.storage().ref().child(storagePath);
+    await storageRef.put(blob);
+    const downloadUrl = await storageRef.getDownloadURL();
+    await db.collection('exports').add({
+      ownerUid: currentUser.uid,
+      bookId: book.id || '',
+      bookTitle: book.title || 'Untitled',
+      format: ext,
+      fileName: fileName,
+      sizeBytes: blob.size,
+      storagePath: storagePath,
+      downloadUrl: downloadUrl,
+      createdAt: firebase.firestore.FieldValue.serverTimestamp()
+    });
+    if (DOM.cloudExportResult) DOM.cloudExportResult.classList.remove('hidden');
+    if (DOM.cloudExportLink) {
+      DOM.cloudExportLink.value = downloadUrl;
+      DOM.cloudExportLink.select();
+    }
+    try { await navigator.clipboard.writeText(downloadUrl); } catch (e) { /* link stays visible for manual copy */ }
+    showToast('Cloud export ready — download link copied!');
+    playCarriageReturnBell();
+  } catch (err) {
+    console.error('Cloud export failed:', err);
+    showToast('Cloud export failed: ' + (err.message || 'Unknown error'));
+  } finally {
+    cloudExportBusy = false;
+    buttons.forEach(btn => { btn.disabled = false; });
+  }
+}
+
+function copyCloudExportLink() {
+  const link = DOM.cloudExportLink ? DOM.cloudExportLink.value : '';
+  if (!link) {
+    showToast('No cloud export link yet.');
+    return;
+  }
+  if (DOM.cloudExportLink) DOM.cloudExportLink.select();
+  navigator.clipboard.writeText(link).then(() => {
+    showToast('Download link copied!');
+  }).catch(() => {
+    showToast('Copy failed — select the link and copy it manually.');
+  });
+}
+
 // ─── GOOGLE DRIVE REST API INTEGRATION ───────────────────────
 
 async function uploadToGoogleDrive({ name, content, mimeType = 'text/plain', isDoc = false }) {
@@ -10021,6 +10193,9 @@ function setupEventListeners() {
   if (DOM.btnExportJson) DOM.btnExportJson.onclick = () => exportManuscript('json');
   if (DOM.btnExportZip) DOM.btnExportZip.onclick = () => exportManuscript('zip');
   if (DOM.btnCopyAll) DOM.btnCopyAll.onclick = copyManuscriptToClipboard;
+  if (DOM.btnCloudExportTxt) DOM.btnCloudExportTxt.onclick = () => exportManuscriptToCloud('txt');
+  if (DOM.btnCloudExportMd) DOM.btnCloudExportMd.onclick = () => exportManuscriptToCloud('md');
+  if (DOM.btnCopyCloudLink) DOM.btnCopyCloudLink.onclick = copyCloudExportLink;
 
   // Import Manuscript Picker Modal
   if (DOM.btnCloseImportManuscript) DOM.btnCloseImportManuscript.onclick = closeImportManuscriptModal;
