@@ -28,6 +28,7 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-storage-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-database-compat.js"></script>
 </head>
 <body class="theme-cream font-courier">
@@ -799,6 +800,31 @@
             <span>Quick paste full manuscript into any document editor</span>
           </div>
         </button>
+      </div>
+
+      <div class="modal-section-divider-label" style="margin-top:16px;">Cloud Export (Shareable Link)</div>
+      <div class="export-options-grid">
+        <button id="btn-cloud-export-txt" class="export-card-btn">
+          <span class="export-icon">☁️</span>
+          <div class="export-info">
+            <strong>Upload Text &amp; Get Link (.txt)</strong>
+            <span>Store in the cloud and get a download link anyone can open</span>
+          </div>
+        </button>
+        <button id="btn-cloud-export-md" class="export-card-btn">
+          <span class="export-icon">☁️</span>
+          <div class="export-info">
+            <strong>Upload Markdown &amp; Get Link (.md)</strong>
+            <span>Store in the cloud and get a download link anyone can open</span>
+          </div>
+        </button>
+      </div>
+      <div id="cloud-export-result" class="hidden" style="margin-top:12px;">
+        <label for="cloud-export-link" style="display:block; font-size:11px; color:#888; margin-bottom:6px;">Download link (also listed on the Admin page):</label>
+        <div style="display:flex; gap:8px; align-items:stretch;">
+          <input id="cloud-export-link" type="text" readonly style="flex:1; min-width:0;">
+          <button id="btn-copy-cloud-link" class="export-card-btn" type="button" style="flex:0 0 auto; width:auto;">Copy Link</button>
+        </div>
       </div>
     </div>
   </div>

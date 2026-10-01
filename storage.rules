@@ -12,5 +12,22 @@ service firebase.storage {
         && (request.auth.uid == userId
             || request.auth.uid in ['vW2BVmvIxQap7mYBhzUU1l7P0VH3', 'HQe2aRANHoOFFPofQyfPTUV4LXB2']);
     }
+
+    // Cloud exports: compiled manuscripts a writer uploaded for a
+    // shareable download link. Files are fetched through Firebase
+    // download URLs, so public read matches the link-anyone-can-grab
+    // design; the Firestore /exports entry is the managed record and
+    // deleting the file retires the link.
+    match /exports/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.auth.token.firebase.sign_in_provider != 'anonymous'
+        && request.auth.token.email_verified == true
+        && request.auth.uid == userId
+        && request.resource.size < 50 * 1024 * 1024;
+      allow delete: if request.auth != null
+        && (request.auth.uid == userId
+            || request.auth.uid in ['vW2BVmvIxQap7mYBhzUU1l7P0VH3', 'HQe2aRANHoOFFPofQyfPTUV4LXB2']);
+    }
   }
 }
