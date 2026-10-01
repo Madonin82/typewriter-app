@@ -104,7 +104,7 @@
 import * as THREE from 'three';
 import { VRButton } from 'three/addons/webxr/VRButton.js';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-import { SkeletonUtils } from 'three/addons/utils/SkeletonUtils.js';
+import { clone as cloneSkinned } from 'three/addons/utils/SkeletonUtils.js';
 import {
   CELL, ROOM_CELLS, ROT_SNAP_DEG, PLAYER_RADIUS_M, PLAYER_HEIGHT_CELLS,
   ITEMS, WALLS, LayoutStore, cellToWorld, worldToCell, footprintCenterWorld,
@@ -264,10 +264,10 @@ function loadModel(url) {
   }
   return modelCache.get(url).then(scene => {
     // Plain .clone() shares the source skeleton between clones, which
-    // collapses skinned models (e.g. woman.glb) into a heap — SkeletonUtils
-    // re-binds the clone to its own bones.
+    // collapses skinned models (e.g. woman.glb) into a heap — cloneSkinned
+    // (three/addons/utils/SkeletonUtils.js) re-binds the clone to its own bones.
     return scene.getObjectByProperty('isSkinnedMesh', true)
-      ? SkeletonUtils.clone(scene)
+      ? cloneSkinned(scene)
       : scene.clone(true);
   });
 }
