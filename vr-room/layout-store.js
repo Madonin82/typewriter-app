@@ -59,10 +59,13 @@ export const ITEMS = {
   // unless the item sets `turntable: false` — for pieces meant to stay still.
   'pedestal-beacon': {
     kind: 'pedestal', label: 'Beacon', plaque: 'Beacon',
+    exhibitId: 'art-1790710878607', // galleryExhibits "Beacon" — placard reads the catalogue
     asset: 'vr-assets/beacon.glb', assetKind: 'glb',
     footprint: { x: 2, z: 2 }, heightCells: 4, surfaceY: 1.0,
     modelHeight: 0.85, modelYawDeg: 0,
   },
+  // pedestal-corgi and pedestal-woman have NO matching galleryExhibits title —
+  // left unlinked on purpose (hardcoded plaques). See PR for Jimmy to identify.
   'pedestal-corgi': {
     kind: 'pedestal', label: 'Corgi', plaque: 'Corgi',
     asset: 'vr-assets/corgi.glb', assetKind: 'glb',
@@ -77,6 +80,7 @@ export const ITEMS = {
   },
   'pedestal-firstdraft': {
     kind: 'pedestal', label: 'First Draft', plaque: 'First Draft',
+    exhibitId: 'art-1790518109908', // galleryExhibits "First Draft"
     asset: 'vr-assets/firstdraft.glb', assetKind: 'glb',
     footprint: { x: 2, z: 2 }, heightCells: 4, surfaceY: 1.0,
     modelHeight: 0.7, modelYawDeg: 0,
@@ -102,18 +106,21 @@ export const ITEMS = {
   },
   'print-nightdesk': {
     kind: 'glb', label: 'Night Desk', plaque: 'Night Desk',
+    exhibitId: 'art-1790530560445', // galleryExhibits "Night Desk" (not "Night Desk II")
     asset: 'vr-assets/nightdesk.jpg', assetKind: 'print',
     wall: 'back', footprint: { x: 3, z: 1 }, heightCells: 2,
     printSize: { w: 1.5, h: 1.0 },
   },
   'print-eyesclosed': {
     kind: 'glb', label: 'Eyes Closed', plaque: 'Eyes Closed',
+    exhibitId: 'art-1790683807975', // galleryExhibits "Eyes Closed"
     asset: 'vr-assets/eyesclosed.jpg', assetKind: 'print',
     wall: 'back', footprint: { x: 3, z: 1 }, heightCells: 3,
     printSize: { w: 1.1, h: 1.4 },
   },
   'wall-murmuration': {
     kind: 'glb', label: 'Murmuration (self-portrait)', plaque: 'Murmuration (self-portrait) — Jessika, 2026',
+    exhibitId: 'art-1790770615376', // galleryExhibits "Murmuration (self-portrait)"
     asset: 'vr-assets/murmuration.html', assetKind: 'html',
     wall: 'back', footprint: { x: 4, z: 1 }, heightCells: 3,
     printSize: { w: 2.0, h: 1.25 },
