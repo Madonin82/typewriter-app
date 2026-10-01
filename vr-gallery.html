@@ -256,19 +256,21 @@ scene.add(hoverBox);
 
 /* ================= assets (URL-loaded from vr-assets/) ================= */
 const gltfLoader = new GLTFLoader();
-const modelCache = new Map(); // url -> Promise<cloned scene>
+const modelCache = new Map(); // url -> Promise<{ scene, animations }>
 function loadModel(url) {
   if (!modelCache.has(url)) {
     modelCache.set(url, new Promise((res, rej) =>
-      gltfLoader.load(url, gltf => res(gltf.scene), undefined, rej)));
+      gltfLoader.load(url, gltf => res({ scene: gltf.scene, animations: gltf.animations || [] }), undefined, rej)));
   }
-  return modelCache.get(url).then(scene => {
+  return modelCache.get(url).then(({ scene, animations }) => {
     // Plain .clone() shares the source skeleton between clones, which
     // collapses skinned models (e.g. woman.glb) into a heap — cloneSkinned
     // (three/addons/utils/SkeletonUtils.js) re-binds the clone to its own bones.
-    return scene.getObjectByProperty('isSkinnedMesh', true)
+    const model = scene.getObjectByProperty('isSkinnedMesh', true)
       ? cloneSkinned(scene)
       : scene.clone(true);
+    // Clips bind by node name, which clones preserve — so the mixer drives the clone.
+    return { model, animations };
   });
 }
 const texLoader = new THREE.TextureLoader();
@@ -312,6 +314,15 @@ const furDark = new THREE.MeshStandardMaterial({ color:0x8a4f1c, roughness:0.9 }
 const pinkMat = new THREE.MeshStandardMaterial({ color:0xd98a8a, roughness:0.8 });
 const darkMat = new THREE.MeshStandardMaterial({ color:0x241a12, roughness:0.8 });
 const live = { catBody:null, catHead:null, tailTip:null, heart:null, catGroup:null };
+// GLB animation playback + pedestal turntable (mirrors gallery.html).
+// Entries: { mixer, model, placementId, turntable }. Rebuilt with the layout.
+const animatedPieces = [];
+function playModelAnimations(model, animations, placementId, turntable) {
+  if (!animations.length) return;
+  const mixer = new THREE.AnimationMixer(model);
+  animations.forEach(clip => mixer.clipAction(clip).play());
+  animatedPieces.push({ mixer, model, placementId, turntable });
+}
 const headBaseY = 0.125, headBaseRX = 0.35;
 const tailTipBase = new THREE.Vector3(0.155, 0.045, 0.075);
 function buildCatMesh() {
@@ -395,10 +406,11 @@ async function buildItem(itemId, placement) {
     p.position.y = 0.5;
     g.add(p);
     try {
-      const model = await loadModel(item.asset);
+      const { model, animations } = await loadModel(item.asset);
       mountOnPedestal(model, item.modelHeight, item.surfaceY);
       model.rotation.y = (item.modelYawDeg || 0) * Math.PI / 180;
       g.add(model);
+      playModelAnimations(model, animations, placement.id, true);
     } catch (e) { console.warn('[room] model failed:', item.asset, e); }
     const pl = plaque(item.plaque, 0.5);
     pl.position.set(0, 0.62, 0.45);
@@ -429,9 +441,10 @@ async function buildItem(itemId, placement) {
     g.position.set(c.x, baseY, c.z);
   } else if (itemId === 'sofa') {
     try {
-      const sofa = await loadModel(item.asset);
+      const { model: sofa, animations } = await loadModel(item.asset);
       sofa.scale.setScalar(item.modelScale);
       g.add(sofa);
+      playModelAnimations(sofa, animations, placement.id, false);
     } catch (e) { console.warn('[room] sofa failed to load:', e); }
     g.position.set(c.x, c.y, c.z);
   } else if (item.assetKind === 'print') {
@@ -484,6 +497,7 @@ async function applyLayout(placements) {
   if (sig === layoutSignature) return;
   layoutSignature = sig;
   while (roomGroup.children.length) roomGroup.remove(roomGroup.children[0]);
+  animatedPieces.length = 0; // mixers reference removed models; rebuilt below
   const occ = new Map(); // cube key -> id, as we place
   for (const [id, p] of placements) {
     const item = ITEMS[p.item];
@@ -1294,6 +1308,15 @@ function animate() {
   if (live.heart && live.heart.visible) {
     live.heart.position.y += dt * 0.25;
     live.heart.material.opacity = Math.max(0, 1 - petTime / 3.2);
+  }
+  // GLB animation playback + pedestal turntable (mirrors gallery.html).
+  // Turntable pauses on the piece being grabbed, like the gallery pauses
+  // on the inspected piece.
+  for (const a of animatedPieces) {
+    if (a.mixer) a.mixer.update(dt);
+    if (a.turntable && !(grabbing && grabbing.id === a.placementId)) {
+      a.model.rotation.y += dt * 0.45;
+    }
   }
   renderer.render(scene, camera);
 }
