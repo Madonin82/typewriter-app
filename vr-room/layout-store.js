@@ -112,6 +112,12 @@ export const ITEMS = {
     wall: 'back', footprint: { x: 3, z: 1 }, heightCells: 3,
     printSize: { w: 1.1, h: 1.4 },
   },
+  'wall-murmuration': {
+    kind: 'glb', label: 'Murmuration (self-portrait)', plaque: 'Murmuration (self-portrait) — Jessika, 2026',
+    asset: 'vr-assets/murmuration.html', assetKind: 'html',
+    wall: 'back', footprint: { x: 4, z: 1 }, heightCells: 3,
+    printSize: { w: 2.0, h: 1.25 },
+  },
 };
 
 /* ------------------------------------------------------------------ */
@@ -292,6 +298,8 @@ export function seedLayout() {
     P('print-nightdesk', { x: 7, y: 3, z: 0 }, 0, { wall: 'back' }));
   placements.set('print-eyesclosed',
     P('print-eyesclosed', { x: 18, y: 3, z: 0 }, 0, { wall: 'back' }));
+  placements.set('wall-murmuration',
+    P('wall-murmuration', { x: 12, y: 3, z: 0 }, 0, { wall: 'back' }));
   return placements;
 }
 
