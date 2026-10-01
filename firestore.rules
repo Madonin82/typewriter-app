@@ -127,7 +127,7 @@ service cloud.firestore {
                     && request.resource.data.bookId is string
                     && request.resource.data.bookTitle is string
                     && request.resource.data.bookTitle.size() <= 500
-                    && request.resource.data.format in ['txt', 'md']
+                    && request.resource.data.format in ['txt', 'md', 'json']
                     && request.resource.data.fileName is string
                     && request.resource.data.fileName.size() <= 200
                     && request.resource.data.sizeBytes is number
