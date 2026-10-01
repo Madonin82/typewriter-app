@@ -318,8 +318,14 @@ const live = { catBody:null, catHead:null, tailTip:null, heart:null, catGroup:nu
 // Entries: { mixer, model, placementId, turntable }. Rebuilt with the layout.
 const animatedPieces = [];
 // Live HTML wall pieces (mirrors the 2D gallery's wall scenes).
-// Entries: { iframe, tex }. Rebuilt with the layout.
+// Entries: { iframe, tex, cap, capCtx, piece, mesh }. Rebuilt with the layout.
 const liveCanvases = [];
+// Texture refresh throttle: re-uploading the capture canvas to the GPU every
+// frame costs hundreds of MB/s at VR refresh rates. ~12 Hz is plenty —
+// murmurations read perfectly smooth at that rate.
+let liveCanvasTimer = 0;
+const liveCanvasFrustum = new THREE.Frustum();
+const liveCanvasProjMat = new THREE.Matrix4();
 function playModelAnimations(model, animations, placementId, turntable) {
   // Mixer only when the GLB actually has clips — but the turntable entry is
   // always registered, mirroring gallery.html: pedestal pieces rotate even
@@ -495,23 +501,29 @@ async function buildItem(itemId, placement) {
     g.add(p);
     // Offscreen but still rendered: display:none would flip the piece's
     // document to hidden and pause its own animation loop.
+    // Capture at 640x400 — a full-size every-frame GPU upload was killing fps.
     const iframe = document.createElement('iframe');
-    iframe.width = 1280; iframe.height = 800; // matches printSize aspect
-    iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:1280px;height:800px;border:0;';
+    iframe.width = 640; iframe.height = 400; // matches printSize aspect
+    iframe.style.cssText = 'position:fixed;left:-10000px;top:0;width:640px;height:400px;border:0;';
     iframe.src = item.asset;
     document.body.appendChild(iframe);
-    const entry = { iframe, tex: null };
+    const entry = { iframe, tex: null, cap: null, capCtx: null, piece: null, mesh: p };
     liveCanvases.push(entry);
     iframe.addEventListener('load', () => {
       if (!liveCanvases.includes(entry)) return; // layout rebuilt meanwhile
       try {
-        const canvas = iframe.contentDocument.querySelector('canvas');
-        if (canvas) {
-          const tex = new THREE.CanvasTexture(canvas);
+        const piece = iframe.contentDocument.querySelector('canvas');
+        if (piece) {
+          // Blit through a fixed 640x400 canvas so the GPU upload stays small
+          // no matter what DPR the piece itself renders at.
+          const cap = document.createElement('canvas');
+          cap.width = 640; cap.height = 400;
+          const tex = new THREE.CanvasTexture(cap);
           tex.colorSpace = THREE.SRGBColorSpace;
           p.material.map = tex;
           p.material.needsUpdate = true;
-          entry.tex = tex;
+          entry.cap = cap; entry.capCtx = cap.getContext('2d');
+          entry.piece = piece; entry.tex = tex;
         }
       } catch (e) { console.warn('[room] live canvas unreachable:', item.asset, e); }
     });
@@ -1374,8 +1386,20 @@ function animate() {
       a.model.rotation.y += dt * 0.45;
     }
   }
-  // Stream live HTML wall pieces onto their wall textures.
-  for (const c of liveCanvases) if (c.tex) c.tex.needsUpdate = true;
+  // Stream live HTML wall pieces onto their wall textures: throttled to
+  // ~12 Hz and only while the piece is actually in view.
+  liveCanvasTimer += dt;
+  if (liveCanvasTimer >= 1 / 12) {
+    liveCanvasTimer = 0;
+    liveCanvasFrustum.setFromProjectionMatrix(
+      liveCanvasProjMat.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse));
+    for (const c of liveCanvases) {
+      if (!c.tex) continue;
+      if (!liveCanvasFrustum.intersectsObject(c.mesh)) continue;
+      c.capCtx.drawImage(c.piece, 0, 0, 640, 400);
+      c.tex.needsUpdate = true;
+    }
+  }
   renderer.render(scene, camera);
 }
 
