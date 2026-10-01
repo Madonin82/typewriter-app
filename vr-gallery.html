@@ -318,9 +318,14 @@ const live = { catBody:null, catHead:null, tailTip:null, heart:null, catGroup:nu
 // Entries: { mixer, model, placementId, turntable }. Rebuilt with the layout.
 const animatedPieces = [];
 function playModelAnimations(model, animations, placementId, turntable) {
-  if (!animations.length) return;
-  const mixer = new THREE.AnimationMixer(model);
-  animations.forEach(clip => mixer.clipAction(clip).play());
+  // Mixer only when the GLB actually has clips — but the turntable entry is
+  // always registered, mirroring gallery.html: pedestal pieces rotate even
+  // with no animation clips (currently true of every GLB in the room).
+  let mixer = null;
+  if (animations.length) {
+    mixer = new THREE.AnimationMixer(model);
+    animations.forEach(clip => mixer.clipAction(clip).play());
+  }
   animatedPieces.push({ mixer, model, placementId, turntable });
 }
 const headBaseY = 0.125, headBaseRX = 0.35;
