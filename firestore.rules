@@ -108,6 +108,32 @@ service cloud.firestore {
       allow write: if request.auth != null && request.auth.uid == uid;
     }
 
+    // VR room layouts: public to read, room admins only to write.
+    // Room admins are the station admins for now; if that ever needs to
+    // differ, add a separate isRoomAdmin() with its own UID list here.
+    // NOTE: overlap/collision is enforced by the shared layout-store code —
+    // security rules cannot do 3D math, so every editor must use it.
+    match /vrRooms/{roomId} {
+      allow read: if true;
+
+      match /placements/{placementId} {
+        allow read: if true;
+
+        allow create, update: if isStationAdmin()
+          && request.resource.data.keys().hasOnly(
+               ['item', 'cell', 'rotY', 'wall', 'parent', 'version'])
+          && request.resource.data.item is string
+          && request.resource.data.cell is map
+          && request.resource.data.cell.keys().hasOnly(['x', 'y', 'z'])
+          && request.resource.data.cell.x is int
+          && request.resource.data.cell.y is int
+          && request.resource.data.cell.z is int
+          && request.resource.data.rotY is number;
+
+        allow delete: if isStationAdmin();
+      }
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
