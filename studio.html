@@ -1451,7 +1451,15 @@
                 const medium = art.medium || 'Exhibit';
                 const yearStr = art.year ? ` (${art.year})` : '';
                 const desc = art.description || '';
-                const thumb = art.thumbnailUrl || (art.type === 'image' ? art.url : '');
+                const thumb = art.poster || art.thumbnailUrl || (art.type === 'image' ? art.url : '');
+
+                // Per-exhibit poster capture, mirroring the gallery Curate modal:
+                // HTML and 3D-model pieces get their thumbnail from a captured
+                // poster instead of a placeholder glyph.
+                const posterBtn = (art.type === 'html' || art.type === 'model') ? `
+                                <button type="button" onclick="captureStudioPosterFor('${escapeHtml(art.id)}', this)" class="text-sky-400 hover:text-sky-300 px-2 py-1 rounded bg-sky-500/10 border border-sky-500/20 transition cursor-pointer" title="Capture a thumbnail poster from this piece">
+                                    Poster 📸
+                                </button>` : '';
 
                 const uploaderLabel = getUploaderLabel(art);
 
@@ -1484,6 +1492,7 @@
                                 Go to ↗
                             </a>
                             <div class="flex items-center gap-2">
+                                ${posterBtn}
                                 <button type="button" onclick="openEditModal('${escapeHtml(art.id)}')" class="text-zinc-400 hover:text-zinc-200 px-2 py-1 rounded bg-zinc-900 border border-zinc-800 transition cursor-pointer" title="Edit Exhibit">
                                     Edit ✏️
                                 </button>
@@ -1727,6 +1736,232 @@
                 }
             }
         }
+        function posterFrameHasContent(ctx, W, H) {
+            const FILL = [23, 20, 18];
+            try {
+                const px = ctx.getImageData(0, 0, W, H).data;
+                let lit = 0;
+                for (let y = 0; y < H; y += 32) {
+                    for (let x = 0; x < W; x += 32) {
+                        const o = (y * W + x) * 4;
+                        const d = Math.max(
+                            Math.abs(px[o] - FILL[0]),
+                            Math.abs(px[o + 1] - FILL[1]),
+                            Math.abs(px[o + 2] - FILL[2]));
+                        if (d > 40 && ++lit >= 8) return true;
+                    }
+                }
+                return false;
+            } catch (e) { return false; }
+        }
+
+        // Snapshot one frame of a live HTML piece. The piece HTML is fetched
+        // and injected via srcdoc — so the iframe stays same-origin and its
+        // <canvas> is reachable no matter where the file is hosted — then its
+        // largest canvas is blitted to a 2D capture canvas, sampling on the
+        // piece's own rAF ticks (mirrors the VR room's live-wall streaming,
+        // minus the GPU texture). The iframe sits at on-screen geometry with
+        // opacity:0 — never display:none, visibility:hidden, or parked
+        // offscreen. Anything that takes it out of the painted area
+        // throttles/pauses its rAF loop, its canvas never draws, and every
+        // sampled frame comes out black.
+
+        function captureHtmlPoster(url) {
+            return new Promise((resolve, reject) => {
+                if (!url) { reject(new Error('This exhibit has no piece URL.')); return; }
+                fetch(url, { mode: 'cors' }).then((res) => {
+                    if (!res.ok) throw new Error('HTTP ' + res.status);
+                    return res.text();
+                }).then((htmlText) => {
+                    const W = 960, H = 600;
+                    if (!/<canvas/i.test(htmlText)) {
+                        // Still-HTML fallback: no <canvas> to sample, so the
+                        // poster comes from the page's largest image instead
+                        // (still lifes, illustrated pages, typographic pieces
+                        // like The Landlord) rather than giving up.
+                        captureStillImagePoster(htmlText, url, W, H).then(resolve, reject);
+                        return;
+                    }
+                    const iframe = document.createElement('iframe');
+                    iframe.style.cssText = 'position:fixed;left:0;top:0;width:' + W + 'px;height:' + H + 'px;border:0;opacity:0;pointer-events:none;z-index:-1;';
+                    iframe.setAttribute('aria-hidden', 'true');
+                    iframe.srcdoc = htmlText;
+                    const cleanup = () => { try { iframe.remove(); } catch (e) {} };
+                    const timer = setTimeout(() => { cleanup(); reject(new Error('Piece timed out while loading.')); }, 30000);
+                    iframe.addEventListener('load', () => {
+                        let win = null;
+                        try { win = iframe.contentWindow; } catch (e) { win = null; }
+                        if (!win || typeof win.requestAnimationFrame !== 'function') {
+                            clearTimeout(timer); cleanup();
+                            reject(new Error('Piece frame is not reachable.')); return;
+                        }
+                        // Drive sampling off the piece's own rAF ticks so we
+                        // draw after it has actually rendered a frame — the
+                        // page's rAF and the iframe's are not the same clock.
+                        const raf = win.requestAnimationFrame.bind(win);
+                        const cap = document.createElement('canvas');
+                        cap.width = W; cap.height = H;
+                        const ctx = cap.getContext('2d');
+                        // Warm-up: let the piece's loop run a few ticks so its
+                        // canvas holds a real frame before we start sampling.
+                        let warm = 0;
+                        const warmup = () => { if (++warm >= 20) sample(); else raf(warmup); };
+                        let ticks = 0, sawCanvas = false;
+                        const MAX_TICKS = 600; // ~10s at 60fps, then fail loudly
+                        const sample = () => {
+                            let piece = null;
+                            try {
+                                const all = Array.from(iframe.contentDocument.querySelectorAll('canvas'));
+                                if (all.length) {
+                                    // Largest canvas = the main stage (skips tiny overlays).
+                                    piece = all.sort((a, b) => (b.width * b.height) - (a.width * a.height))[0];
+                                }
+                            } catch (e) {}
+                            try {
+                                if (piece && piece.width > 0 && piece.height > 0) {
+                                    sawCanvas = true;
+                                    ctx.fillStyle = '#171412'; ctx.fillRect(0, 0, W, H);
+                                    const s = Math.max(W / piece.width, H / piece.height);
+                                    const dw = piece.width * s, dh = piece.height * s;
+                                    ctx.drawImage(piece, (W - dw) / 2, (H - dh) / 2, dw, dh);
+                                }
+                            } catch (e) {}
+                            if (++ticks % 5 === 0 && posterFrameHasContent(ctx, W, H)) {
+                                clearTimeout(timer); cleanup();
+                                resolve(cap.toDataURL('image/jpeg', 0.85));
+                                return;
+                            }
+                            if (ticks >= MAX_TICKS) {
+                                clearTimeout(timer); cleanup();
+                                reject(new Error(sawCanvas
+                                    ? 'Piece rendered only blank frames — poster not saved.'
+                                    : 'No drawable canvas found in the piece.'));
+                                return;
+                            }
+                            raf(sample);
+                        };
+                        raf(warmup);
+                    });
+                    iframe.addEventListener('error', () => { clearTimeout(timer); cleanup(); reject(new Error('Piece iframe failed to load.')); });
+                    document.body.appendChild(iframe);
+                }).catch((e) => reject(new Error('Could not fetch the piece HTML (' + (e && e.message ? e.message : e) + ').')));
+            });
+        }
+
+        // Fallback poster path for "still" HTML exhibits: pages with no
+        // <canvas> to sample (still lifes, illustrated pages, typographic
+        // pieces). Loads the page in a hidden srcdoc iframe like the canvas
+        // path, takes its largest successfully-loaded image, re-fetches that
+        // image as a blob so the poster canvas stays untainted (a raw
+        // cross-origin <img> draw would break toDataURL), and draws it
+        // cover-fit on the gallery's poster background. Tries candidates
+        // largest-first; rejects only when nothing drawable is found.
+        function captureStillImagePoster(htmlText, pageUrl, W, H) {
+            return new Promise((resolve, reject) => {
+                const iframe = document.createElement('iframe');
+                iframe.style.cssText = 'position:fixed;left:0;top:0;width:' + W + 'px;height:' + H + 'px;border:0;opacity:0;pointer-events:none;z-index:-1;';
+                iframe.setAttribute('aria-hidden', 'true');
+                iframe.srcdoc = htmlText;
+                const cleanup = () => { try { iframe.remove(); } catch (e) {} };
+                const timer = setTimeout(() => { cleanup(); reject(new Error('Piece timed out while loading.')); }, 30000);
+                const fail = (msg) => { clearTimeout(timer); cleanup(); reject(new Error(msg)); };
+                iframe.addEventListener('load', () => {
+                    // Brief settle so lazy images have a chance to load
+                    // before we measure them.
+                    setTimeout(() => {
+                        let candidates = [];
+                        try {
+                            candidates = Array.from(iframe.contentDocument.querySelectorAll('img'))
+                                .filter((im) => im.naturalWidth > 0 && im.naturalHeight > 0)
+                                .sort((a, b) => (b.naturalWidth * b.naturalHeight) - (a.naturalWidth * a.naturalHeight));
+                        } catch (e) { candidates = []; }
+                        if (!candidates.length) { fail('No canvas or image found in the piece — poster not saved.'); return; }
+                        let i = 0;
+                        const tryNext = () => {
+                            if (i >= candidates.length) { fail('No drawable image found in the piece — poster not saved.'); return; }
+                            const el = candidates[i++];
+                            const src = el.currentSrc || el.src;
+                            let abs;
+                            try { abs = new URL(src, pageUrl).toString(); } catch (e) { abs = src; }
+                            fetch(abs, { mode: 'cors' }).then((res) => {
+                                if (!res.ok) throw new Error('HTTP ' + res.status);
+                                return res.blob();
+                            }).then((blob) => {
+                                const objUrl = URL.createObjectURL(blob);
+                                const picture = new Image();
+                                picture.onload = () => {
+                                    URL.revokeObjectURL(objUrl);
+                                    try {
+                                        const cap = document.createElement('canvas');
+                                        cap.width = W; cap.height = H;
+                                        const ctx = cap.getContext('2d');
+                                        ctx.fillStyle = '#171412'; ctx.fillRect(0, 0, W, H);
+                                        const s = Math.max(W / picture.naturalWidth, H / picture.naturalHeight);
+                                        const dw = picture.naturalWidth * s, dh = picture.naturalHeight * s;
+                                        ctx.drawImage(picture, (W - dw) / 2, (H - dh) / 2, dw, dh);
+                                        if (posterFrameHasContent(ctx, W, H)) {
+                                            clearTimeout(timer); cleanup();
+                                            resolve(cap.toDataURL('image/jpeg', 0.85));
+                                        } else {
+                                            tryNext();
+                                        }
+                                    } catch (e) { tryNext(); }
+                                };
+                                picture.onerror = () => { URL.revokeObjectURL(objUrl); tryNext(); };
+                                picture.src = objUrl;
+                            }).catch(() => tryNext());
+                        };
+                        tryNext();
+                    }, 1500);
+                });
+                iframe.addEventListener('error', () => fail('Piece iframe failed to load.'));
+                document.body.appendChild(iframe);
+            });
+        }
+
+
+        // Per-exhibit poster capture for the studio's admin curate cards —
+        // mirrors the gallery Curate modal's Poster button. HTML pieces go
+        // through the canvas/still-image capture; 3D models reuse the
+        // studio's existing model snapshot. Writes the gallery-standard
+        // `poster` field so both pages show the same thumbnail.
+        async function captureStudioPosterFor(artId, btn) {
+            const art = (typeof allCurateExhibits !== 'undefined' ? allCurateExhibits : []).find(a => a && a.id === artId);
+            if (!art) return;
+            if (!isStudioAdmin(currentUser)) return;
+            if (btn) { btn.disabled = true; btn.dataset.label = btn.textContent.trim(); btn.textContent = 'Working…'; }
+            const done = (ok, msg) => {
+                if (btn) { btn.disabled = false; btn.textContent = ok ? 'Poster ✓ ↻' : (btn.dataset.label || 'Poster 📸'); }
+                if (!ok && msg) alert(msg);
+            };
+            try {
+                if (btn) btn.textContent = 'Capturing…';
+                let blob = null;
+                if (art.type === 'model') {
+                    blob = await captureModelThumbnail(art.url);
+                } else {
+                    const dataUrl = await captureHtmlPoster(art.url);
+                    if (!dataUrl) throw new Error('No frame could be grabbed from this piece.');
+                    blob = await (await fetch(dataUrl)).blob();
+                }
+                if (!blob) throw new Error('Nothing was captured from this piece.');
+                if (btn) btn.textContent = 'Uploading…';
+                if (!studioStorage) throw new Error('Storage is not available.');
+                const thumbRef = studioStorage.ref().child(`gallery/${currentUser.uid}/posters/${artId}_${Date.now()}.jpg`);
+                const task = await thumbRef.put(blob, { contentType: 'image/jpeg' });
+                const posterUrl = await task.ref.getDownloadURL();
+                if (studioDb) {
+                    await studioDb.collection('galleryExhibits').doc(artId).set({ poster: posterUrl }, { merge: true });
+                }
+                art.poster = posterUrl;
+                await loadAllCurateExhibits();
+                done(true);
+            } catch (err) {
+                console.warn('Studio poster capture failed:', err);
+                done(false, 'Poster capture failed: ' + (err && err.message ? err.message : err));
+            }
+        }
+
 
         async function backfillMissingThumbnails() {
             if (!isStudioAdmin(currentUser)) return;
@@ -1764,8 +1999,10 @@
                 }
             }
 
-            // Filter client-side to exhibits with no thumbnailUrl (excluding html)
-            const missing = exhibits.filter(a => !a.thumbnailUrl && a.type !== 'html');
+            // Exhibits with no usable thumbnail yet. HTML pieces are included:
+            // they get a captured poster (canvas sampling, or the still-image
+            // fallback) instead of being skipped the way they used to be.
+            const missing = exhibits.filter(a => !a.poster && !a.thumbnailUrl);
 
             if (missing.length === 0) {
                 if (statusText) statusText.textContent = 'All exhibits already have thumbnails!';
@@ -1788,9 +2025,26 @@
                 if (statusProgress) statusProgress.textContent = progressStr;
 
                 let thumbUrl = null;
+                let thumbField = 'thumbnailUrl';
                 try {
                     if (art.type === 'image') {
                         thumbUrl = art.url;
+                    } else if (art.type === 'html') {
+                        // Posters for HTML pieces: canvas sampling, falling back
+                        // to the page's largest image for still pages. Stored on
+                        // the gallery-standard `poster` field, like Curate does.
+                        try {
+                            const dataUrl = await captureHtmlPoster(art.url);
+                            if (dataUrl && studioStorage) {
+                                const blob = await (await fetch(dataUrl)).blob();
+                                const thumbRef = studioStorage.ref().child(`gallery/${currentUser.uid}/posters/${art.id}_${Date.now()}.jpg`);
+                                const task = await thumbRef.put(blob, { contentType: 'image/jpeg' });
+                                thumbUrl = await task.ref.getDownloadURL();
+                                thumbField = 'poster';
+                            }
+                        } catch (htmlErr) {
+                            console.warn('HTML poster capture failed for exhibit:', art.title || art.id, htmlErr);
+                        }
                     } else if (art.type === 'video') {
                         thumbUrl = await new Promise((resolve) => {
                             const video = document.createElement('video');
@@ -1858,9 +2112,9 @@
 
                     if (thumbUrl) {
                         if (studioDb) {
-                            await studioDb.collection('galleryExhibits').doc(art.id).update({ thumbnailUrl: thumbUrl });
+                            await studioDb.collection('galleryExhibits').doc(art.id).update({ [thumbField]: thumbUrl });
                         }
-                        art.thumbnailUrl = thumbUrl;
+                        art[thumbField] = thumbUrl;
                         successCount++;
                     }
                 } catch (err) {
