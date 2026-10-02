@@ -7255,6 +7255,18 @@ function commitDraft() {
   if (!rawText) return;
   if (rawText.length === 0) return;
 
+  // Whitespace-only drafts (a lone space or line break) must not become chunks:
+  // they change nothing visible but still re-stamp the page's newest commit time
+  // (the "ghost timestamp"). Clear the draft and bail, mirroring the post-commit
+  // clear-down. Matches the mobile tap path, which already trim-guards.
+  if (rawText.trim().length === 0) {
+    DOM.draftInput.value = '';
+    state.buffer = '';
+    if (DOM.draftInputBackdrop) DOM.draftInputBackdrop.innerHTML = '';
+    adjustDraftInputHeight();
+    return;
+  }
+
   if (rawText.length > state.settings.maxChars) {
     showToast(`Draft exceeds maximum character limit (${state.settings.maxChars}).`);
     return;
