@@ -882,6 +882,11 @@ function vrLocomotion(dt) {
     if (grabbing && teleAim) clearTeleportAim(); // a grab cancels teleport aim
     const gp = src.gamepad;
     const ax = gp.axes, btn = gp.buttons;
+    // Quest Touch thumbsticks report on axes 2/3; axes 0/1 are the legacy
+    // (nonexistent) touchpad and always read zero. Fall back to 0/1 for
+    // gamepads that only expose two axes.
+    const sx = ax[2] !== undefined ? ax[2] : (ax[0] || 0);
+    const sy = ax[3] !== undefined ? ax[3] : (ax[1] || 0);
     // both grips together toggles build mode (admin only)
     if (isAdmin && btn[1]) {
       if (btn[1].pressed) gripDown.add(src.handedness);
@@ -889,20 +894,22 @@ function vrLocomotion(dt) {
     }
     // right stick X: in build mode with a grab -> rotate the item, else
     // snap-turn in the flick direction (edge-triggered; suppressed while aiming)
-    const rx = ax[2] !== undefined ? ax[2] : ax[0];
+    const rx = sx;
     const hand = src.handedness || 'none';
     if (grabbing && grabbing.hand === src.handedness) {
       if (rx > 0.7 && grabbing.lastRx <= 0.7) rotateGrabbed(1);
       else if (rx < -0.7 && grabbing.lastRx >= -0.7) rotateGrabbed(-1);
       grabbing.lastRx = rx;
-    } else {
+    } else if (src.handedness === 'right' || !src.handedness) {
+      // snap-turn is right-stick-only (any stick if handedness is unknown);
+      // the left stick must never snap — it walks/strafes
       const lastRx = snapEdge[hand] || 0;
       if (!teleAim && rx > 0.7 && lastRx <= 0.7) handleSnapTurn(-1); // flick right -> turn right
       else if (!teleAim && rx < -0.7 && lastRx >= -0.7) handleSnapTurn(1); // flick left -> turn left
       snapEdge[hand] = rx;
     }
     // right stick up: teleport arc — aim with the controller, release to go
-    const ry = ax[1] || 0;
+    const ry = sy;
     if (src.handedness === 'right' && !(grabbing && grabbing.hand === 'right') && !seated) {
       if (ry < -0.7) {
         const rc = rightController();
@@ -916,7 +923,7 @@ function vrLocomotion(dt) {
       clearTeleportAim();
     }
     // left stick walks (smooth locomotion); the right stick never walks
-    const walkX = ax[0] || 0, walkZ = ax[1] || 0;
+    const walkX = sx, walkZ = sy;
     const doWalk = src.handedness !== 'right';
     if (doWalk && (Math.abs(walkX) > 0.15 || Math.abs(walkZ) > 0.15) && !seated) {
       const speed = 1.6;
