@@ -260,6 +260,51 @@
                     <textarea id="exhibit-desc" rows="2" placeholder="Description of the work..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition"></textarea>
                 </div>
 
+                <!-- 🖼️ Framing -->
+                <div class="pt-2 border-t border-zinc-800 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs font-semibold uppercase tracking-wider text-amber-400/90 flex items-center gap-1.5">
+                            <span>🖼️</span> Framing
+                        </label>
+                    </div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Shape</label>
+                        <div class="flex gap-2 flex-wrap" id="frame-shape-btns">
+                            <button type="button" data-shape="rect" onclick="setFrameShape('rect')" class="frame-shape-btn px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer">Rectangle</button>
+                            <button type="button" data-shape="circle" onclick="setFrameShape('circle')" class="frame-shape-btn px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer">Circle</button>
+                            <button type="button" data-shape="none" onclick="setFrameShape('none')" class="frame-shape-btn px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer" title="No gallery frame — for dioramas and pieces that frame themselves">None</button>
+                        </div>
+                        <p class="text-[11px] text-zinc-500 mt-1">None = no gallery frame. Use for dioramas and portal pieces that build their own frame.</p>
+                    </div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Size</label>
+                        <div class="flex gap-2" id="frame-size-btns">
+                            <button type="button" data-size="S" onclick="setFrameSize('S')" class="frame-size-btn px-4 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer">S</button>
+                            <button type="button" data-size="M" onclick="setFrameSize('M')" class="frame-size-btn px-4 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer">M</button>
+                            <button type="button" data-size="L" onclick="setFrameSize('L')" class="frame-size-btn px-4 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer">L</button>
+                        </div>
+                        <p class="text-[11px] text-zinc-500 mt-1">M is the classic gallery size. S for intimate pieces, L for statement pieces.</p>
+                    </div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Ratio</label>
+                        <select id="frame-ratio" onchange="setFrameRatio(this.value)" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                            <option value="1:1">1:1 — Square</option>
+                            <option value="4:3">4:3 — Classic</option>
+                            <option value="3:2" selected>3:2 — Photo (gallery default)</option>
+                            <option value="16:9">16:9 — Widescreen</option>
+                            <option value="3:4">3:4 — Portrait classic</option>
+                            <option value="2:3">2:3 — Portrait photo</option>
+                            <option value="9:16">9:16 — Vertical film</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Zoom <span id="frame-zoom-val" class="text-amber-400 font-mono">1.00×</span></label>
+                        <input type="range" id="frame-zoom" min="0.5" max="2" step="0.05" value="1" oninput="setFrameZoom(parseFloat(this.value))" class="w-full accent-amber-500">
+                        <p class="text-[11px] text-zinc-500 mt-1">Scale the artwork inside the frame — fit it by eye in the preview.</p>
+                    </div>
+                    <div id="frame-size-warning" class="hidden text-xs text-amber-400 bg-amber-500/10 border border-amber-500/20 p-2 rounded-xl"></div>
+                </div>
+
                 <!-- 🚪 Portal doorway (optional) -->
                 <div class="pt-2 border-t border-zinc-800 space-y-3">
                     <div class="flex items-center justify-between">
@@ -308,7 +353,12 @@
                         <span class="text-[10px] text-zinc-400">Interactive Studio Viewport</span>
                     </div>
                     <div id="preview-viewport" class="h-64 sm:h-80 rounded-xl bg-[#0a0908] border border-zinc-800 overflow-hidden relative flex items-center justify-center cursor-grab active:cursor-grabbing">
-                        <iframe id="preview-iframe" class="hidden absolute inset-0 w-full h-full border-0 z-20"></iframe>
+                        <div id="preview-frame-wrap" class="hidden absolute inset-0 z-20 items-center justify-center">
+                            <div id="preview-frame" style="position:relative; overflow:hidden;">
+                                <iframe id="preview-iframe" class="border-0" style="width:100%;height:100%;display:block;"></iframe>
+                                <img id="preview-frame-img" class="hidden" style="width:100%;height:100%;object-fit:cover;display:block;" alt="framing preview">
+                            </div>
+                        </div>
                         <div id="preview-placeholder" class="text-center p-4 text-zinc-500 text-xs z-10">
                             <span class="text-3xl block mb-2">🖼️</span>
                             Load or select an artwork file above to preview it in the gallery environment
@@ -402,6 +452,45 @@
                     <textarea id="edit-art-desc" rows="3" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition"></textarea>
                 </div>
 
+                <!-- 🖼️ Framing -->
+                <div class="border-t border-zinc-800/80 pt-3 space-y-3">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-amber-500 flex items-center gap-1.5">
+                        <span>🖼️</span> Framing
+                    </label>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Shape</label>
+                        <div class="flex gap-2 flex-wrap" id="edit-frame-shape-btns">
+                            <button type="button" data-shape="rect" onclick="setEditFrameShape('rect')" class="edit-frame-shape-btn px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer">Rectangle</button>
+                            <button type="button" data-shape="circle" onclick="setEditFrameShape('circle')" class="edit-frame-shape-btn px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer">Circle</button>
+                            <button type="button" data-shape="none" onclick="setEditFrameShape('none')" class="edit-frame-shape-btn px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer" title="No gallery frame — for dioramas and pieces that frame themselves">None</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Size</label>
+                        <div class="flex gap-2" id="edit-frame-size-btns">
+                            <button type="button" data-size="S" onclick="setEditFrameSize('S')" class="edit-frame-size-btn px-4 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer">S</button>
+                            <button type="button" data-size="M" onclick="setEditFrameSize('M')" class="edit-frame-size-btn px-4 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer">M</button>
+                            <button type="button" data-size="L" onclick="setEditFrameSize('L')" class="edit-frame-size-btn px-4 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer">L</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Ratio</label>
+                        <select id="edit-frame-ratio" onchange="editFrame.ratio=this.value" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                            <option value="1:1">1:1 — Square</option>
+                            <option value="4:3">4:3 — Classic</option>
+                            <option value="3:2">3:2 — Photo (gallery default)</option>
+                            <option value="16:9">16:9 — Widescreen</option>
+                            <option value="3:4">3:4 — Portrait classic</option>
+                            <option value="2:3">2:3 — Portrait photo</option>
+                            <option value="9:16">9:16 — Vertical film</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Zoom <span id="edit-frame-zoom-val" class="text-amber-400 font-mono">1.00×</span></label>
+                        <input type="range" id="edit-frame-zoom" min="0.5" max="2" step="0.05" value="1" oninput="setEditFrameZoom(parseFloat(this.value))" class="w-full accent-amber-500">
+                    </div>
+                </div>
+
                 <!-- Portal Doorway Section -->
                 <div class="border-t border-zinc-800/80 pt-3 space-y-3">
                     <label class="block text-xs font-semibold uppercase tracking-wider text-amber-500 flex items-center gap-1.5">
@@ -474,6 +563,7 @@
             initFirebaseStudio();
             initThreePreview();
             setDefaultYear();
+            paintFrameButtons();
         });
 
         function setDefaultYear() {
@@ -1002,25 +1092,115 @@
             previewMixer = null;
             previewLoadedObject = null;
             const placeholder = document.getElementById('preview-placeholder');
+            const frameWrap = document.getElementById('preview-frame-wrap');
             const iframe = document.getElementById('preview-iframe');
+            const frameImg = document.getElementById('preview-frame-img');
             if (placeholder) placeholder.classList.remove('hidden');
-            if (iframe) {
-                iframe.src = '';
-                iframe.classList.add('hidden');
+            if (frameWrap) {
+                frameWrap.classList.add('hidden');
+                frameWrap.classList.remove('flex');
+            }
+            if (iframe) iframe.src = '';
+            if (frameImg) { frameImg.src = ''; frameImg.classList.add('hidden'); }
+        }
+
+        // ─── FRAMING STATE & CONTROLS ─────────────────────────
+        let selectedFrame = { shape: 'rect', ratio: '3:2', size: 'M', zoom: 1 };
+        const FRAME_RATIO_VALS = { '1:1': 1, '4:3': 4/3, '3:2': 3/2, '16:9': 16/9, '3:4': 3/4, '2:3': 2/3, '9:16': 9/16 };
+        const FRAME_WORLD_LONG = { S: 2.02, M: 3.02, L: 4.52 }; // world units, for the wall-height warning
+
+        function paintFrameButtons() {
+            document.querySelectorAll('.frame-shape-btn').forEach(b => {
+                const active = b.dataset.shape === selectedFrame.shape;
+                b.className = 'frame-shape-btn px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ' +
+                    (active ? 'bg-amber-500 text-zinc-950 border-amber-500' : 'bg-zinc-950 text-zinc-300 border-zinc-800 hover:border-amber-500');
+            });
+            document.querySelectorAll('.frame-size-btn').forEach(b => {
+                const active = b.dataset.size === selectedFrame.size;
+                b.className = 'frame-size-btn px-4 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ' +
+                    (active ? 'bg-amber-500 text-zinc-950 border-amber-500' : 'bg-zinc-950 text-zinc-300 border-zinc-800 hover:border-amber-500');
+            });
+        }
+
+        function setFrameShape(shape) { selectedFrame.shape = shape; paintFrameButtons(); updateFramePreview(); }
+        function setFrameSize(size) { selectedFrame.size = size; paintFrameButtons(); updateFramePreview(); }
+        function setFrameRatio(ratio) { selectedFrame.ratio = ratio; updateFramePreview(); }
+        function setFrameZoom(zoom) {
+            selectedFrame.zoom = zoom;
+            const val = document.getElementById('frame-zoom-val');
+            if (val) val.textContent = zoom.toFixed(2) + '×';
+            updateFramePreview();
+        }
+
+        function updateFramePreview() {
+            const wrap = document.getElementById('preview-frame-wrap');
+            const frame = document.getElementById('preview-frame');
+            const iframe = document.getElementById('preview-iframe');
+            const frameImg = document.getElementById('preview-frame-img');
+            if (!wrap || !frame || wrap.classList.contains('hidden')) return;
+            const viewport = document.getElementById('preview-viewport');
+            const vw = viewport.clientWidth, vh = viewport.clientHeight;
+            const r = FRAME_RATIO_VALS[selectedFrame.ratio] || 1.5;
+            const sizeScale = { S: 0.68, M: 0.85, L: 1.0 }[selectedFrame.size] || 0.85;
+            const maxW = vw * 0.94 * sizeScale, maxH = vh * 0.94 * sizeScale;
+            let w, h;
+            if (selectedFrame.shape === 'circle') {
+                const d = Math.min(maxW, maxH);
+                w = d; h = d;
+            } else if (r >= 1) {
+                w = maxW; h = maxW / r;
+                if (h > maxH) { h = maxH; w = maxH * r; }
+            } else {
+                h = maxH; w = maxH * r;
+                if (w > maxW) { w = maxW; h = maxW / r; }
+            }
+            frame.style.width = Math.round(w) + 'px';
+            frame.style.height = Math.round(h) + 'px';
+            frame.style.borderRadius = selectedFrame.shape === 'circle' ? '50%' : '6px';
+            frame.style.border = selectedFrame.shape === 'none' ? 'none' : '10px solid #1c1a18';
+            frame.style.boxShadow = selectedFrame.shape === 'none' ? 'none' : '0 20px 25px -5px rgba(0,0,0,0.6)';
+            const z = selectedFrame.zoom;
+            [iframe, frameImg].forEach(el => {
+                if (!el) return;
+                el.style.transform = z !== 1 ? `scale(${z})` : '';
+                el.style.transformOrigin = 'center center';
+            });
+            // Wall-height guard: warn when the frame would hang too low/tall
+            const warn = document.getElementById('frame-size-warning');
+            if (warn) {
+                const longEdge = FRAME_WORLD_LONG[selectedFrame.size] || 3.02;
+                const worldH = selectedFrame.shape === 'circle' ? longEdge : (r >= 1 ? longEdge / r : longEdge);
+                if (worldH > 6.0) {
+                    warn.textContent = `⚠️ This frame is ~${worldH.toFixed(1)} units tall — it will hang very close to the floor. Consider a smaller size.`;
+                    warn.classList.remove('hidden');
+                } else {
+                    warn.classList.add('hidden');
+                }
             }
         }
 
         function updateThreePreview(src, type, filename) {
             resetThreePreview();
             const placeholder = document.getElementById('preview-placeholder');
+            const frameWrap = document.getElementById('preview-frame-wrap');
             const iframe = document.getElementById('preview-iframe');
+            const frameImg = document.getElementById('preview-frame-img');
 
-            if (type === 'html') {
+            if (type === 'html' || type === 'image') {
                 if (placeholder) placeholder.classList.add('hidden');
-                if (iframe) {
-                    iframe.src = src;
-                    iframe.classList.remove('hidden');
+                if (frameWrap) {
+                    frameWrap.classList.remove('hidden');
+                    frameWrap.classList.add('flex');
                 }
+                if (type === 'html' && iframe) {
+                    if (frameImg) frameImg.classList.add('hidden');
+                    iframe.src = src;
+                } else if (type === 'image' && frameImg) {
+                    if (iframe) iframe.src = '';
+                    frameImg.src = src;
+                    frameImg.classList.remove('hidden');
+                }
+                updateFramePreview();
                 return;
             }
 
@@ -1348,6 +1528,11 @@
 
             if (portalData) {
                 newExhibit.portal = portalData;
+            }
+
+            // Per-exhibit framing (shape/size/ratio/zoom); gallery defaults apply when absent
+            if (selectedFileType !== 'model') {
+                newExhibit.frame = { ...selectedFrame };
             }
 
             try {
@@ -1705,6 +1890,39 @@
             return storagePath;
         }
 
+        // ─── EDIT-FORM FRAMING ──────────────────────────────
+        let editFrame = { shape: 'rect', ratio: '3:2', size: 'M', zoom: 1 };
+
+        function paintEditFrameButtons() {
+            document.querySelectorAll('.edit-frame-shape-btn').forEach(b => {
+                const active = b.dataset.shape === editFrame.shape;
+                b.className = 'edit-frame-shape-btn px-3 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ' +
+                    (active ? 'bg-amber-500 text-zinc-950 border-amber-500' : 'bg-zinc-950 text-zinc-300 border-zinc-800 hover:border-amber-500');
+            });
+            document.querySelectorAll('.edit-frame-size-btn').forEach(b => {
+                const active = b.dataset.size === editFrame.size;
+                b.className = 'edit-frame-size-btn px-4 py-1.5 rounded-lg text-xs font-medium border transition cursor-pointer ' +
+                    (active ? 'bg-amber-500 text-zinc-950 border-amber-500' : 'bg-zinc-950 text-zinc-300 border-zinc-800 hover:border-amber-500');
+            });
+        }
+
+        function setEditFrameShape(shape) { editFrame.shape = shape; paintEditFrameButtons(); }
+        function setEditFrameSize(size) { editFrame.size = size; paintEditFrameButtons(); }
+        function setEditFrameZoom(zoom) {
+            editFrame.zoom = zoom;
+            const val = document.getElementById('edit-frame-zoom-val');
+            if (val) val.textContent = zoom.toFixed(2) + '×';
+        }
+
+        function syncEditFrameUI() {
+            paintEditFrameButtons();
+            const ratioSel = document.getElementById('edit-frame-ratio');
+            if (ratioSel) ratioSel.value = editFrame.ratio;
+            const zoomSlider = document.getElementById('edit-frame-zoom');
+            if (zoomSlider) zoomSlider.value = editFrame.zoom;
+            setEditFrameZoom(editFrame.zoom);
+        }
+
         async function openEditModal(artId) {
             const art = allCurateExhibits.find(a => a.id === artId);
             if (!art) return;
@@ -1721,6 +1939,10 @@
             if (portalTitleEl) portalTitleEl.value = (art.portal && art.portal.title) ? art.portal.title : '';
             const portalFileEl = document.getElementById('edit-art-portal-file');
             if (portalFileEl) portalFileEl.value = '';
+
+            // Pre-fill framing from the exhibit (defaults = current gallery look)
+            editFrame = Object.assign({ shape: 'rect', ratio: '3:2', size: 'M', zoom: 1 }, art.frame || {});
+            syncEditFrameUI();
 
             const portalErr = document.getElementById('studio-edit-portal-error');
             if (portalErr) {
@@ -1861,6 +2083,12 @@
                     updateData.portal = portalData;
                 } else if (firebase.firestore.FieldValue) {
                     updateData.portal = firebase.firestore.FieldValue.delete();
+                }
+
+                // Framing (not applicable to 3D models on pedestals)
+                const editArt = allCurateExhibits.find(a => a.id === artId);
+                if (!editArt || editArt.type !== 'model') {
+                    updateData.frame = { ...editFrame };
                 }
 
                 if (studioDb) {
