@@ -271,12 +271,17 @@
                     <div>
                         <label class="block text-zinc-400 font-medium mb-1">Room URL</label>
                         <div class="flex gap-2">
-                            <input type="text" id="add-art-portal-url" placeholder="Paste Firebase Storage URL or gallery/... path" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                            <input type="text" id="add-art-portal-url" placeholder="Paste Firebase Storage URL or gallery/... path" oninput="document.getElementById('add-art-portal-file').value='';" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
                             <button type="button" onclick="testStudioPortalUrl('add-art-portal-url')" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-medium transition shrink-0 cursor-pointer" title="Test room in new tab">
                                 Test ↗
                             </button>
                         </div>
                         <p class="text-[11px] text-zinc-500 mt-1">Where this piece leads. Opens as its own page; the wall piece itself is unchanged.</p>
+                    </div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Or upload room file</label>
+                        <input type="file" id="add-art-portal-file" accept=".html,text/html" onchange="if(this.files.length){document.getElementById('add-art-portal-url').value='';}" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-zinc-800 file:text-zinc-200 file:text-xs file:cursor-pointer">
+                        <p class="text-[11px] text-zinc-500 mt-1">Upload the room's .html file here and it will be stored for you — no need to paste a URL above.</p>
                     </div>
                     <div>
                         <label class="block text-zinc-400 font-medium mb-1">Room title</label>
@@ -406,12 +411,17 @@
                     <div>
                         <label class="block text-zinc-400 font-medium mb-1">Room URL</label>
                         <div class="flex gap-2">
-                            <input type="text" id="edit-art-portal-url" placeholder="Paste Firebase Storage URL or gallery/... path" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                            <input type="text" id="edit-art-portal-url" placeholder="Paste Firebase Storage URL or gallery/... path" oninput="document.getElementById('edit-art-portal-file').value='';" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
                             <button type="button" onclick="testStudioPortalUrl('edit-art-portal-url')" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-medium transition shrink-0 cursor-pointer" title="Test room in new tab">
                                 Test ↗
                             </button>
                         </div>
                         <p class="text-[11px] text-zinc-500 mt-1">Where this piece leads. Opens as its own page; the wall piece itself is unchanged.</p>
+                    </div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Or upload room file</label>
+                        <input type="file" id="edit-art-portal-file" accept=".html,text/html" onchange="if(this.files.length){document.getElementById('edit-art-portal-url').value='';}" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border-0 file:bg-zinc-800 file:text-zinc-200 file:text-xs file:cursor-pointer">
+                        <p class="text-[11px] text-zinc-500 mt-1">Upload a new room .html to replace where this doorway leads.</p>
                     </div>
                     <div>
                         <label class="block text-zinc-400 font-medium mb-1">Room title</label>
@@ -1174,6 +1184,41 @@
                 };
             }
 
+            // Room file alternative: upload the room's .html now and use its
+            // Storage path as the portal path. Takes precedence over a pasted URL.
+            const portalFileInput = document.getElementById('add-art-portal-file');
+            const portalFile = (portalFileInput && portalFileInput.files && portalFileInput.files[0]) ? portalFileInput.files[0] : null;
+            if (portalFile) {
+                const showPortalErr = (msg) => {
+                    if (portalErr) {
+                        portalErr.textContent = msg;
+                        portalErr.classList.remove('hidden');
+                    } else {
+                        alert(msg);
+                    }
+                };
+                if (!portalTitleRaw) {
+                    showPortalErr('Please provide a Room title for the doorway.');
+                    if (document.getElementById('add-art-portal-title')) document.getElementById('add-art-portal-title').focus();
+                    return;
+                }
+                if (!(portalFile.name || '').toLowerCase().endsWith('.html')) {
+                    showPortalErr('Room file must be an .html file.');
+                    return;
+                }
+                try {
+                    const roomPath = await uploadPortalRoomFile(portalFile);
+                    portalData = {
+                        path: roomPath,
+                        title: portalTitleRaw
+                    };
+                } catch (e) {
+                    console.warn('Room file upload failed:', e);
+                    showPortalErr('Room file upload failed: ' + (e.message || e.code || e) + ' — exhibit was not published.');
+                    return;
+                }
+            }
+
             if (!selectedFileBase64) {
                 if (errEl) {
                     errEl.textContent = 'Please select or upload an artwork file first.';
@@ -1640,6 +1685,26 @@
             window.open(val, '_blank');
         }
 
+        // Upload a portal room .html file to Storage and return its storage path.
+        // Mirrors the artwork upload naming: gallery/<uid>/<timestamp>_<sanitized>.html
+        async function uploadPortalRoomFile(file) {
+            if (!studioStorage) {
+                throw new Error('Storage is unavailable.');
+            }
+            if (!currentUser) {
+                throw new Error('You must be signed in to upload a room file.');
+            }
+            const rawName = file.name || 'room';
+            const lastDotIndex = rawName.lastIndexOf('.');
+            const base = lastDotIndex !== -1 ? rawName.slice(0, lastDotIndex) : rawName;
+            const sanitizedBase = base.replace(/[^a-z0-9_-]/gi, '_').toLowerCase() || 'room';
+            const storagePath = `gallery/${currentUser.uid}/${Date.now()}_${sanitizedBase}.html`;
+            const uploadTask = await studioStorage.ref().child(storagePath).put(file);
+            // Touch the ref so a failed getDownloadURL surfaces early; path is what we store.
+            await uploadTask.ref.getDownloadURL().catch(() => {});
+            return storagePath;
+        }
+
         async function openEditModal(artId) {
             const art = allCurateExhibits.find(a => a.id === artId);
             if (!art) return;
@@ -1654,6 +1719,8 @@
             const portalTitleEl = document.getElementById('edit-art-portal-title');
             if (portalUrlEl) portalUrlEl.value = (art.portal && art.portal.path) ? art.portal.path : '';
             if (portalTitleEl) portalTitleEl.value = (art.portal && art.portal.title) ? art.portal.title : '';
+            const portalFileEl = document.getElementById('edit-art-portal-file');
+            if (portalFileEl) portalFileEl.value = '';
 
             const portalErr = document.getElementById('studio-edit-portal-error');
             if (portalErr) {
@@ -1738,6 +1805,41 @@
                     path: parsedPath,
                     title: portalTitleRaw
                 };
+            }
+
+            // Room file alternative: upload the room's .html now and use its
+            // Storage path as the portal path. Takes precedence over a pasted URL.
+            const editPortalFileInput = document.getElementById('edit-art-portal-file');
+            const editPortalFile = (editPortalFileInput && editPortalFileInput.files && editPortalFileInput.files[0]) ? editPortalFileInput.files[0] : null;
+            if (editPortalFile) {
+                const showEditPortalErr = (msg) => {
+                    if (portalErr) {
+                        portalErr.textContent = msg;
+                        portalErr.classList.remove('hidden');
+                    } else {
+                        alert(msg);
+                    }
+                };
+                if (!portalTitleRaw) {
+                    showEditPortalErr('Please provide a Room title for the doorway.');
+                    document.getElementById('edit-art-portal-title').focus();
+                    return;
+                }
+                if (!(editPortalFile.name || '').toLowerCase().endsWith('.html')) {
+                    showEditPortalErr('Room file must be an .html file.');
+                    return;
+                }
+                try {
+                    const roomPath = await uploadPortalRoomFile(editPortalFile);
+                    portalData = {
+                        path: roomPath,
+                        title: portalTitleRaw
+                    };
+                } catch (e) {
+                    console.warn('Room file upload failed:', e);
+                    showEditPortalErr('Room file upload failed: ' + (e.message || e.code || e) + ' — exhibit was not updated.');
+                    return;
+                }
             }
 
             const saveBtn = document.getElementById('btn-save-exhibit-edit');
