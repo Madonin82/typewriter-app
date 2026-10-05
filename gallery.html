@@ -828,7 +828,7 @@
 
         window.addEventListener('message', (event) => {
             const data = event.data;
-            if (!data || data.type !== 'GLASSHOUSE_ENTER' || typeof data.roomUrl !== 'string') return;
+            if (!data || (data.type !== 'GLASSHOUSE_ENTER' && data.type !== 'PORTAL_ENTER')) return;
             // Only honor requests that come from a currently mounted exhibit iframe.
             const fromExhibit = frameObjects.find(item => {
                 if (!item.containerDiv) return false;
@@ -836,13 +836,31 @@
                 return iframe && iframe.contentWindow === event.source;
             });
             if (!fromExhibit || !fromExhibit.art) return;
-            try {
-                const url = new URL(data.roomUrl, window.location.href);
+
+            const go = (roomUrl) => {
+                const url = new URL(roomUrl, window.location.href);
                 url.searchParams.set('entered', '1'); // skip the room's greeting overlay
                 const returnUrl = `https://madonin82.github.io/typewriter-app/gallery.html#exhibit=${encodeURIComponent(fromExhibit.art.id)}`;
                 url.searchParams.set('return', returnUrl);
                 portalNavigate(url.toString());
-            } catch (e) { /* malformed roomUrl — stay in the gallery */ }
+            };
+
+            // The exhibit's own portal data is the source of truth for where the
+            // doorway leads — pieces no longer need to hardcode the room URL.
+            // A supplied roomUrl is still honored for legacy pieces.
+            const portalPath = fromExhibit.art.portal && fromExhibit.art.portal.path;
+            if (portalPath && typeof firebase !== 'undefined' && firebase.storage) {
+                let urlPromise = portalUrlCache.get(portalPath);
+                if (!urlPromise) {
+                    urlPromise = firebase.storage().ref(portalPath).getDownloadURL();
+                    portalUrlCache.set(portalPath, urlPromise);
+                }
+                urlPromise.then(go).catch(() => {
+                    try { if (typeof data.roomUrl === 'string') go(data.roomUrl); } catch (e) { /* stay in the gallery */ }
+                });
+            } else {
+                try { if (typeof data.roomUrl === 'string') go(data.roomUrl); } catch (e) { /* malformed roomUrl — stay in the gallery */ }
+            }
         });
 
         // Active form state for adding artwork
