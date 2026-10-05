@@ -1605,6 +1605,8 @@
         }
 
         let lastLazyCamX = null;
+        let lazySettledSince = -1000;
+        const LAZY_SETTLE_MS = 500;
         function updateLazyArtworks(forceAllNear = false) {
             const camX = currentCameraX;
             // During fast camera travel (e.g. sweeping the hall on a directory
@@ -1614,10 +1616,20 @@
             const camSpeed = lastLazyCamX === null ? 0 : Math.abs(camX - lastLazyCamX);
             lastLazyCamX = camX;
             const settled = camSpeed <= 1.2;
-            frameObjects.forEach(item => {
+            if (!settled) lazySettledSince = performance.now();
+            // Wait a beat after the camera settles before hydrating: destroyed
+            // iframes don't release their WebGL contexts synchronously, and
+            // hydrating into uncollected corpses re-triggers the race.
+            const readyToHydrate = forceAllNear ||
+                (settled && (performance.now() - lazySettledSince >= LAZY_SETTLE_MS));
+            // Hydrate nearest-first, so the exhibit you jumped to wins any
+            // remaining contention and its heavy neighbors follow in order.
+            const byDistance = [...frameObjects].sort((a, b) =>
+                Math.abs(camX - a.xPos) - Math.abs(camX - b.xPos));
+            byDistance.forEach(item => {
                 const dist = Math.abs(camX - item.xPos);
                 if (dist <= LAZY_LOAD_RADIUS || forceAllNear) {
-                    if (settled || forceAllNear) hydrateArtwork(item);
+                    if (readyToHydrate) hydrateArtwork(item);
                 } else if (dist > LAZY_LOAD_RADIUS + 3.0) { // Hysteresis buffer to prevent thrashing
                     dehydrateArtwork(item);
                 }
