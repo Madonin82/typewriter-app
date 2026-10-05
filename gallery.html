@@ -692,11 +692,11 @@
         // An HTML exhibit can offer a portal into its own standalone room.
         // Pieces mount in sandboxed iframes (allow-scripts only), so a piece
         // cannot navigate the top frame itself; it posts
-        //   { type: 'STEP_INSIDE', roomUrl: '<absolute room page URL>' }
+        //   { type: 'GLASSHOUSE_ENTER', roomUrl: '<absolute room page URL>' }
         // to the parent, and the gallery walks the visitor through.
         window.addEventListener('message', (event) => {
             const data = event.data;
-            if (!data || data.type !== 'STEP_INSIDE' || typeof data.roomUrl !== 'string') return;
+            if (!data || data.type !== 'GLASSHOUSE_ENTER' || typeof data.roomUrl !== 'string') return;
             // Only honor requests that come from a currently mounted exhibit iframe.
             const fromExhibit = frameObjects.some(item => {
                 if (!item.containerDiv) return false;
