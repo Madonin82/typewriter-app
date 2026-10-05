@@ -140,10 +140,10 @@
                 <span>Curate</span>
             </button>
 
-            <!-- Return to Start Button -->
-            <button onclick="resetCamera()" class="bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800/80 text-zinc-300 px-2.5 py-1.5 rounded-xl text-xs font-medium transition shadow-lg flex items-center gap-1.5 cursor-pointer" title="Return to first exhibit">
+            <!-- Gallery Directory / Lobby Button -->
+            <button onclick="openDirectory()" class="bg-zinc-900/80 hover:bg-zinc-800 border border-zinc-800/80 text-zinc-300 px-2.5 py-1.5 rounded-xl text-xs font-medium transition shadow-lg flex items-center gap-1.5 cursor-pointer" title="Open gallery directory & lobby">
                 <svg class="w-3.5 h-3.5 text-zinc-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
-                <span class="hidden md:inline">Start</span>
+                <span class="hidden md:inline">Directory</span>
             </button>
 
             <!-- Auth Status Chip / Log In Button -->
@@ -1041,26 +1041,51 @@
             hideLoader();
         }
 
+        function openDirectory() {
+            const overlay = document.getElementById('directory-overlay');
+            if (overlay) overlay.classList.remove('hidden');
+            const hud = document.getElementById('hall-hud');
+            if (hud) hud.classList.add('hidden');
+            renderDirectory();
+            try {
+                history.replaceState(null, '', window.location.pathname + window.location.search);
+            } catch (e) {}
+        }
+
         function enterHall() {
-            if (hallStarted) return;
-            hallStarted = true;
             const overlay = document.getElementById('directory-overlay');
             if (overlay) overlay.classList.add('hidden');
             const hud = document.getElementById('hall-hud');
             if (hud) hud.classList.remove('hidden');
-            startHall();
+            if (!hallStarted) {
+                hallStarted = true;
+                startHall();
+            }
         }
 
         function enterHallAt(artId) {
-            if (hallStarted || !artId) return;
+            if (!artId) return;
+            const idx = ARTWORKS.findIndex(a => a && a.id === artId);
+            if (idx === -1) return;
             window.location.hash = '#exhibit=' + encodeURIComponent(artId);
             enterHall();
+            if (hallStarted) {
+                gotoExhibit(idx);
+            }
         }
 
         function walkHall() {
-            if (hallStarted) return;
-            try { history.replaceState(null, '', window.location.pathname + window.location.search); } catch (e) {}
+            try {
+                if (ARTWORKS.length > 0 && ARTWORKS[0].id) {
+                    history.replaceState(null, '', '#exhibit=' + encodeURIComponent(ARTWORKS[0].id));
+                } else {
+                    history.replaceState(null, '', window.location.pathname + window.location.search);
+                }
+            } catch (e) {}
             enterHall();
+            if (hallStarted) {
+                gotoExhibit(0);
+            }
         }
 
         function exhibitTypeBadge(type) {
@@ -1163,9 +1188,12 @@
         }
 
         async function startHall() {
-            // Deterministic camera state: reproduces today's cold-load entry
-            // even if lobby-side curator actions nudged the targets earlier.
-            targetCameraX = 0; currentCameraX = 0;
+            // Determine initial camera position based on deep link (or first exhibit)
+            startXOffset = ARTWORKS.length > 0 ? -((ARTWORKS.length - 1) * SPACING_X) / 2 : 0;
+            const deepIdx = getDeepLinkIndex();
+            const initIdx = deepIdx >= 0 ? deepIdx : 0;
+            targetCameraX = ARTWORKS.length > 0 ? (startXOffset + (initIdx * SPACING_X)) : 0;
+            currentCameraX = targetCameraX;
             targetCameraZ = 2.93; currentCameraZ = 2.93;
 
             const containerWebGL = document.getElementById('canvas-container');
@@ -1178,7 +1206,7 @@
 
             // Camera setup
             camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 0, 2.93);
+            camera.position.set(currentCameraX, 0, 2.93);
 
             // WebGL Renderer
             webGLRenderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
@@ -1202,14 +1230,6 @@
 
             // Setup Navigation Listeners
             setupInteractions();
-
-            // Handle exhibit deep link (#exhibit=<id>)
-            const deepIdx = getDeepLinkIndex();
-            if (deepIdx >= 0) {
-                targetCameraX = startXOffset + (deepIdx * SPACING_X);
-                currentCameraX = targetCameraX;
-                clampCameraX();
-            }
 
             // Hide Loader
             hideLoader();
@@ -2239,7 +2259,7 @@
         // context race): tear its frame down and hydrate it fresh. With only a
         // handful of nearby exhibits hydrated, the retry almost always wins.
         function reloadCurrentExhibit() {
-            const idx = nearestExhibitIndex();
+            const idx = getNearestExhibitIndex();
             const item = frameObjects[idx];
             if (!item) return;
             dehydrateArtwork(item);
