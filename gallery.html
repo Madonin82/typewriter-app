@@ -186,6 +186,10 @@
             <button onclick="panRight()" class="hover:text-amber-400 transition flex items-center gap-1 cursor-pointer">
                 Next <span>▶</span>
             </button>
+            <span class="text-zinc-600">|</span>
+            <button onclick="reloadCurrentExhibit()" title="Reload this exhibit (use if a piece didn't load)" class="hover:text-amber-400 transition cursor-pointer">
+                ↻
+            </button>
         </div>
 
         <!-- Inspect-mode hint pill -->
@@ -1380,8 +1384,10 @@
                 }
             });
 
-            // Run initial lazy hydration check
-            updateLazyArtworks(true);
+            // Run initial lazy hydration check (nearby exhibits only — hydrating
+            // everything at once races the browser's WebGL context limit and
+            // leaves some pieces with dead canvases)
+            updateLazyArtworks(false);
             updateGalleryMetaUI();
         }
 
@@ -1598,12 +1604,20 @@
             item.isLoaded = false;
         }
 
+        let lastLazyCamX = null;
         function updateLazyArtworks(forceAllNear = false) {
             const camX = currentCameraX;
+            // During fast camera travel (e.g. sweeping the hall on a directory
+            // jump), skip hydration: rapid hydrate/dehydrate churn races WebGL
+            // context creation and leaves pieces with dead canvases. Dehydrate
+            // still runs so distant pieces release their contexts.
+            const camSpeed = lastLazyCamX === null ? 0 : Math.abs(camX - lastLazyCamX);
+            lastLazyCamX = camX;
+            const settled = camSpeed <= 1.2;
             frameObjects.forEach(item => {
                 const dist = Math.abs(camX - item.xPos);
                 if (dist <= LAZY_LOAD_RADIUS || forceAllNear) {
-                    hydrateArtwork(item);
+                    if (settled || forceAllNear) hydrateArtwork(item);
                 } else if (dist > LAZY_LOAD_RADIUS + 3.0) { // Hysteresis buffer to prevent thrashing
                     dehydrateArtwork(item);
                 }
@@ -2043,6 +2057,17 @@
             targetCameraZ = 2.93;
             clampCameraX();
             closeGotoMenu();
+        }
+
+        // Manual recovery for a piece that blank-loaded (e.g. lost the WebGL
+        // context race): tear its frame down and hydrate it fresh. With only a
+        // handful of nearby exhibits hydrated, the retry almost always wins.
+        function reloadCurrentExhibit() {
+            const idx = nearestExhibitIndex();
+            const item = frameObjects[idx];
+            if (!item) return;
+            dehydrateArtwork(item);
+            hydrateArtwork(item);
         }
 
         function toggleGotoMenu(event) {
