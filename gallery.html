@@ -432,6 +432,33 @@
                     <label class="block text-xs font-medium text-zinc-300 mb-1">Placard Note / Description</label>
                     <textarea id="artwork-desc" rows="2" placeholder="" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition"></textarea>
                 </div>
+
+                <!-- Portal Doorway Section -->
+                <div class="border-t border-zinc-800/80 pt-3 mt-1 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <label class="block text-xs font-semibold uppercase tracking-wider text-amber-500 flex items-center gap-1.5">
+                            <span>🚪</span> Portal doorway (optional)
+                        </label>
+                    </div>
+                    <div id="add-portal-error" class="hidden text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 p-2 rounded-xl"></div>
+                    
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-300 mb-1">Room URL</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="add-art-portal-url" placeholder="Paste Firebase Storage URL or gallery/... path" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                            <button type="button" onclick="testPortalUrl('add-art-portal-url')" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-medium transition shrink-0 cursor-pointer" title="Test room in new tab">
+                                Test ↗
+                            </button>
+                        </div>
+                        <p class="text-[11px] text-zinc-500 mt-1">Where this piece leads. Opens as its own page; the wall piece itself is unchanged.</p>
+                    </div>
+
+                    <div>
+                        <label class="block text-xs font-medium text-zinc-300 mb-1">Room title</label>
+                        <input type="text" id="add-art-portal-title" placeholder="e.g. The Glasshouse Room" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                        <p class="text-[11px] text-zinc-500 mt-1">The name guests see on the doorway.</p>
+                    </div>
+                </div>
             </div>
 
             <!-- Footer Actions -->
@@ -803,15 +830,17 @@
             const data = event.data;
             if (!data || data.type !== 'GLASSHOUSE_ENTER' || typeof data.roomUrl !== 'string') return;
             // Only honor requests that come from a currently mounted exhibit iframe.
-            const fromExhibit = frameObjects.some(item => {
+            const fromExhibit = frameObjects.find(item => {
                 if (!item.containerDiv) return false;
                 const iframe = item.containerDiv.querySelector('iframe');
                 return iframe && iframe.contentWindow === event.source;
             });
-            if (!fromExhibit) return;
+            if (!fromExhibit || !fromExhibit.art) return;
             try {
                 const url = new URL(data.roomUrl, window.location.href);
                 url.searchParams.set('entered', '1'); // skip the room's greeting overlay
+                const returnUrl = `https://madonin82.github.io/typewriter-app/gallery.html#exhibit=${encodeURIComponent(fromExhibit.art.id)}`;
+                url.searchParams.set('return', returnUrl);
                 portalNavigate(url.toString());
             } catch (e) { /* malformed roomUrl — stay in the gallery */ }
         });
@@ -1067,7 +1096,9 @@
             if (!artId) return;
             const idx = ARTWORKS.findIndex(a => a && a.id === artId);
             if (idx === -1) return;
-            window.location.hash = '#exhibit=' + encodeURIComponent(artId);
+            try {
+                history.replaceState(null, '', '#exhibit=' + encodeURIComponent(artId));
+            } catch (e) {}
             enterHall();
             if (hallStarted) {
                 gotoExhibit(idx);
@@ -1356,6 +1387,11 @@
                 }
             });
             frameObjects.length = 0;
+
+            placardMeshes.forEach(mesh => {
+                if (mesh.parent) mesh.parent.remove(mesh);
+                disposeThreeHierarchy(mesh);
+            });
             placardMeshes.length = 0;
 
             spotLights.forEach(light => {
@@ -1419,12 +1455,13 @@
                     scene.add(spotLight);
                     spotLights.push(spotLight);
 
-                    // Museum Placard attached to the pedestal mount
+                    // Museum Placard mounted on the wall to the right of the artwork, vertically centered
                     const placardMesh = createPlacardMesh(art.title, art.artist, art.medium, art.year);
-                    placardMesh.position.set(0, -1.45, 0.35);
+                    placardMesh.position.set(xPos + 2.25, 0, -1.95);
                     placardMesh.userData.placardFor = art;
+                    placardMesh.userData.xPos = xPos;
                     placardMeshes.push(placardMesh);
-                    pedestalGroup.add(placardMesh);
+                    scene.add(placardMesh);
 
                     scene.add(pedestalGroup);
 
@@ -1484,10 +1521,11 @@
                     scene.add(spotLight);
                     spotLights.push(spotLight);
 
-                    // 4. Museum Placard underneath
+                    // 4. Museum Placard mounted on the wall to the right of the frame, vertically centered
                     const placardMesh = createPlacardMesh(art.title, art.artist, art.medium, art.year);
-                    placardMesh.position.set(0, -1.45, 0.05);
+                    placardMesh.position.set(2.25, 0, 0.05);
                     placardMesh.userData.placardFor = art;
+                    placardMesh.userData.xPos = xPos;
                     placardMeshes.push(placardMesh);
                     frameGroup.add(placardMesh);
 
@@ -1776,8 +1814,10 @@
                         const active = frameObjects[nearestIndex].art;
                         hud.textContent = `${active.title} (${nearestIndex + 1} of ${ARTWORKS.length})`;
 
-                        // Update hash via history.replaceState without adding history entries
-                        if (active && active.id) {
+                        // Update hash via history.replaceState without adding history entries (skip while directory overlay is open)
+                        const dirOverlay = document.getElementById('directory-overlay');
+                        const isDirHidden = !dirOverlay || dirOverlay.classList.contains('hidden');
+                        if (isDirHidden && active && active.id) {
                             const targetHash = `#exhibit=${encodeURIComponent(active.id)}`;
                             if (window.location.hash !== targetHash) {
                                 try {
@@ -1839,7 +1879,11 @@
 
             const texture = new THREE.CanvasTexture(canvas);
             const planeGeo = new THREE.PlaneGeometry(0.85, 0.425);
-            const planeMat = new THREE.MeshBasicMaterial({ map: texture });
+            const planeMat = new THREE.MeshBasicMaterial({
+                map: texture,
+                transparent: true,
+                opacity: 1.0
+            });
             return new THREE.Mesh(planeGeo, planeMat);
         }
 
@@ -1871,7 +1915,9 @@
             modelPointerNDC.x = (clientX / window.innerWidth) * 2 - 1;
             modelPointerNDC.y = -(clientY / window.innerHeight) * 2 + 1;
             modelRaycaster.setFromCamera(modelPointerNDC, camera);
-            const hits = modelRaycaster.intersectObjects(placardMeshes, false);
+            const targets = placardMeshes.filter(m => m.visible && (!m.material || m.material.opacity > 0.15));
+            if (targets.length === 0) return null;
+            const hits = modelRaycaster.intersectObjects(targets, false);
             if (hits.length === 0) return null;
             return hits[0].object.userData.placardFor || null;
         }
@@ -1972,18 +2018,36 @@
             overlay.classList.remove('hidden');
         }
 
+        function showGalleryToast(message, duration = 3200) {
+            let toast = document.getElementById('gallery-toast');
+            if (!toast) {
+                toast = document.createElement('div');
+                toast.id = 'gallery-toast';
+                toast.className = 'fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-zinc-900/95 text-zinc-100 text-xs font-medium px-4 py-2.5 rounded-xl border border-zinc-700/80 shadow-2xl backdrop-blur-md transition-all duration-300 pointer-events-none opacity-0 translate-y-2';
+                document.body.appendChild(toast);
+            }
+            toast.textContent = message;
+            toast.classList.remove('opacity-0', 'translate-y-2');
+            toast.classList.add('opacity-100', 'translate-y-0');
+            clearTimeout(toast._timer);
+            toast._timer = setTimeout(() => {
+                toast.classList.remove('opacity-100', 'translate-y-0');
+                toast.classList.add('opacity-0', 'translate-y-2');
+            }, duration);
+        }
+
         async function enterPortalDoorway(art) {
             if (!art || !art.portal || !art.portal.path) return;
             const EXPECTED_PREFIX = "https://firebasestorage.googleapis.com/v0/b/typewriter-app-6e624.firebasestorage.app/o/gallery%2F";
             try {
                 if (typeof firebase === 'undefined' || !firebase.storage) {
-                    alert('This doorway is unavailable');
+                    showGalleryToast('This doorway is unavailable');
                     return;
                 }
                 const storageRef = firebase.storage().ref(art.portal.path);
                 const resolvedUrl = await storageRef.getDownloadURL();
                 if (!resolvedUrl || !resolvedUrl.startsWith(EXPECTED_PREFIX)) {
-                    alert('This doorway is unavailable');
+                    showGalleryToast('This doorway is unavailable');
                     return;
                 }
                 const returnUrl = `https://madonin82.github.io/typewriter-app/gallery.html#exhibit=${encodeURIComponent(art.id)}`;
@@ -1993,7 +2057,7 @@
                 portalNavigate(dest.toString());
             } catch (err) {
                 console.error('Doorway navigation failed:', err);
-                alert('This doorway is unavailable');
+                showGalleryToast('This doorway is unavailable');
             }
         }
 
@@ -2436,6 +2500,29 @@
             // Trigger lazy loader check
             updateLazyArtworks();
 
+            // Distance-based placard fading: only the nearest exhibit's placard is fully visible
+            const camX = currentCameraX;
+            placardMeshes.forEach(mesh => {
+                const xPos = mesh.userData.xPos !== undefined ? mesh.userData.xPos : (mesh.parent ? mesh.parent.position.x : 0);
+                const dist = Math.abs(camX - xPos);
+                // Fully visible when nearby (dist <= 1.2), fades smoothly towards 0 as distance increases up to halfway point
+                const fadeStart = 1.2;
+                const fadeEnd = SPACING_X * 0.55;
+                let opacity = 0;
+                if (dist <= fadeStart) {
+                    opacity = 1;
+                } else if (dist < fadeEnd) {
+                    const t = (dist - fadeStart) / (fadeEnd - fadeStart);
+                    opacity = 1 - (t * t * (3 - 2 * t));
+                } else {
+                    opacity = 0;
+                }
+                if (mesh.material) {
+                    mesh.material.opacity = opacity;
+                }
+                mesh.visible = opacity > 0.01;
+            });
+
             // Broadcast real-time 3D parallax to loaded diorama iframes
             broadcastCameraParallax();
 
@@ -2620,6 +2707,15 @@
             document.getElementById('artwork-year').value = '';
             document.getElementById('artwork-medium').value = '';
             document.getElementById('artwork-desc').value = '';
+            const portalUrlEl = document.getElementById('add-art-portal-url');
+            const portalTitleEl = document.getElementById('add-art-portal-title');
+            if (portalUrlEl) portalUrlEl.value = '';
+            if (portalTitleEl) portalTitleEl.value = '';
+            const portalErr = document.getElementById('add-portal-error');
+            if (portalErr) {
+                portalErr.textContent = '';
+                portalErr.classList.add('hidden');
+            }
         }
 
         function handleFileSelected(event) {
@@ -2746,6 +2842,55 @@
             const directUrl = document.getElementById('artwork-url').value.trim();
 
             const isUrlFetchMode = (activeSourceTab === 'url') && (!document.getElementById('url-mode-link') || !document.getElementById('url-mode-link').checked);
+
+            const portalErr = document.getElementById('add-portal-error');
+            if (portalErr) {
+                portalErr.textContent = '';
+                portalErr.classList.add('hidden');
+            }
+
+            const portalUrlRaw = (document.getElementById('add-art-portal-url') ? document.getElementById('add-art-portal-url').value : '').trim();
+            const portalTitleRaw = (document.getElementById('add-art-portal-title') ? document.getElementById('add-art-portal-title').value : '').trim();
+
+            let portalData = null;
+            if (portalUrlRaw) {
+                let parsedPath = null;
+                if (portalUrlRaw.includes('/o/')) {
+                    try {
+                        parsedPath = decodeURIComponent(portalUrlRaw.split('/o/')[1].split('?')[0]);
+                    } catch (e) {
+                        parsedPath = null;
+                    }
+                } else if (portalUrlRaw.startsWith('gallery/')) {
+                    parsedPath = portalUrlRaw;
+                }
+
+                if (!parsedPath || !parsedPath.startsWith('gallery/')) {
+                    if (portalErr) {
+                        portalErr.textContent = 'Room URL must be a Firebase Storage URL or path starting with gallery/';
+                        portalErr.classList.remove('hidden');
+                    } else {
+                        showAddError('Room URL must be a Firebase Storage URL or path starting with gallery/');
+                    }
+                    return;
+                }
+
+                if (!portalTitleRaw) {
+                    if (portalErr) {
+                        portalErr.textContent = 'Please provide a Room title for the doorway.';
+                        portalErr.classList.remove('hidden');
+                    } else {
+                        showAddError('Please provide a Room title for the doorway.');
+                    }
+                    if (document.getElementById('add-art-portal-title')) document.getElementById('add-art-portal-title').focus();
+                    return;
+                }
+
+                portalData = {
+                    path: parsedPath,
+                    title: portalTitleRaw
+                };
+            }
 
             if (activeSourceTab === 'upload' && !selectedFileObject && !selectedFileBase64) {
                 showAddError('Please select a file to upload.');
@@ -2895,7 +3040,8 @@
                     type: determinedType,
                     fileBase64: isFileIngest ? selectedFileBase64 : null,
                     fileName: isFileIngest ? selectedFileName : null,
-                    directUrl: (!isFileIngest && activeSourceTab === 'url') ? directUrl : null
+                    directUrl: (!isFileIngest && activeSourceTab === 'url') ? directUrl : null,
+                    portal: portalData || undefined
                 };
 
                 try {
@@ -2983,6 +3129,10 @@
                         uploaderUid: uploaderUid,
                         uploaderName: uploaderName
                     };
+
+                    if (portalData) {
+                        newArtwork.portal = portalData;
+                    }
 
                     await firebase.firestore().collection('galleryExhibits').doc(newArtId).set(newArtwork);
                     if (uploaderUid) {

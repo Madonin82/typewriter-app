@@ -259,6 +259,13 @@ const server = http.createServer((req, res) => {
             isCustom: true
           };
 
+          if (payload.portal && payload.portal.path) {
+            newArtwork.portal = {
+              path: payload.portal.path.trim(),
+              title: (payload.portal.title || '').trim()
+            };
+          }
+
           currentList.push(newArtwork);
           saveStoredArtworks(currentList);
 

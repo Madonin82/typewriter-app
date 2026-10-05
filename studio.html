@@ -260,6 +260,31 @@
                     <textarea id="exhibit-desc" rows="2" placeholder="Description of the work..." class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition"></textarea>
                 </div>
 
+                <!-- 🚪 Portal doorway (optional) -->
+                <div class="pt-2 border-t border-zinc-800 space-y-3">
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs font-semibold uppercase tracking-wider text-amber-400/90 flex items-center gap-1.5">
+                            <span>🚪</span> Portal doorway (optional)
+                        </label>
+                    </div>
+                    <div id="add-portal-error" class="hidden text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 p-2 rounded-xl"></div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Room URL</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="add-art-portal-url" placeholder="Paste Firebase Storage URL or gallery/... path" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                            <button type="button" onclick="testStudioPortalUrl('add-art-portal-url')" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-medium transition shrink-0 cursor-pointer" title="Test room in new tab">
+                                Test ↗
+                            </button>
+                        </div>
+                        <p class="text-[11px] text-zinc-500 mt-1">Where this piece leads. Opens as its own page; the wall piece itself is unchanged.</p>
+                    </div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Room title</label>
+                        <input type="text" id="add-art-portal-title" placeholder="e.g. The Glasshouse Room" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                        <p class="text-[11px] text-zinc-500 mt-1">The name guests see on the doorway.</p>
+                    </div>
+                </div>
+
                 <div class="pt-2 flex justify-end">
                     <button type="button" onclick="publishExhibit()" class="bg-amber-500 hover:bg-amber-400 text-zinc-950 font-semibold px-6 py-2.5 rounded-xl text-xs transition shadow-lg flex items-center gap-2 cursor-pointer">
                         <span>Mount Exhibit to Gallery</span>
@@ -1100,6 +1125,55 @@
             const desc = document.getElementById('exhibit-desc').value.trim();
             const errEl = document.getElementById('studio-error');
 
+            const portalErr = document.getElementById('add-portal-error');
+            if (portalErr) {
+                portalErr.textContent = '';
+                portalErr.classList.add('hidden');
+            }
+
+            const portalUrlRaw = (document.getElementById('add-art-portal-url') ? document.getElementById('add-art-portal-url').value : '').trim();
+            const portalTitleRaw = (document.getElementById('add-art-portal-title') ? document.getElementById('add-art-portal-title').value : '').trim();
+
+            let portalData = null;
+            if (portalUrlRaw) {
+                let parsedPath = null;
+                if (portalUrlRaw.includes('/o/')) {
+                    try {
+                        parsedPath = decodeURIComponent(portalUrlRaw.split('/o/')[1].split('?')[0]);
+                    } catch (e) {
+                        parsedPath = null;
+                    }
+                } else if (portalUrlRaw.startsWith('gallery/')) {
+                    parsedPath = portalUrlRaw;
+                }
+
+                if (!parsedPath || !parsedPath.startsWith('gallery/')) {
+                    if (portalErr) {
+                        portalErr.textContent = 'Room URL must be a Firebase Storage URL or path starting with gallery/';
+                        portalErr.classList.remove('hidden');
+                    } else {
+                        alert('Room URL must be a Firebase Storage URL or path starting with gallery/');
+                    }
+                    return;
+                }
+
+                if (!portalTitleRaw) {
+                    if (portalErr) {
+                        portalErr.textContent = 'Please provide a Room title for the doorway.';
+                        portalErr.classList.remove('hidden');
+                    } else {
+                        alert('Please provide a Room title for the doorway.');
+                    }
+                    if (document.getElementById('add-art-portal-title')) document.getElementById('add-art-portal-title').focus();
+                    return;
+                }
+
+                portalData = {
+                    path: parsedPath,
+                    title: portalTitleRaw
+                };
+            }
+
             if (!selectedFileBase64) {
                 if (errEl) {
                     errEl.textContent = 'Please select or upload an artwork file first.';
@@ -1227,6 +1301,10 @@
                 newExhibit.thumbnailUrl = thumbnailUrl;
             }
 
+            if (portalData) {
+                newExhibit.portal = portalData;
+            }
+
             try {
                 if (studioDb) {
                     await studioDb.collection('galleryExhibits').doc(exhibitId).set(newExhibit);
@@ -1254,6 +1332,11 @@
                 clearStudioFile();
                 document.getElementById('exhibit-title').value = '';
                 document.getElementById('exhibit-desc').value = '';
+                const pUrlEl = document.getElementById('add-art-portal-url');
+                const pTitleEl = document.getElementById('add-art-portal-title');
+                if (pUrlEl) pUrlEl.value = '';
+                if (pTitleEl) pTitleEl.value = '';
+                if (portalErr) portalErr.classList.add('hidden');
                 if (errEl) errEl.classList.add('hidden');
             } catch (e) {
                 if (errEl) {
