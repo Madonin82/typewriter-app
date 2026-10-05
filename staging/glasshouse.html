@@ -1,0 +1,652 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <link rel="icon" href="data:," />
+  <title>Glasshouse — step inside</title>
+  <style>
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0a0f1e; }
+    body {
+      font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      color: #f1e9db; overscroll-behavior: none; user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    .grain {
+      position: fixed; inset: 0; pointer-events: none; opacity: .09; mix-blend-mode: soft-light; z-index: 3;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+    }
+    .top-note {
+      position: fixed; top: max(18px, env(safe-area-inset-top)); left: clamp(18px, 4vw, 52px); z-index: 4;
+      max-width: min(470px, calc(100vw - 36px)); color: #f4ebdf; text-shadow: 0 2px 16px rgba(0,0,0,.62);
+      pointer-events: none; transition: opacity .6s ease;
+    }
+    .time { margin: 0 0 7px; font: 600 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; opacity: .68; }
+    .thought { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(20px, 2.8vw, 32px); font-weight: 400; line-height: 1.15; }
+    .thought span { display: block; font-size: .58em; margin-top: 7px; font-style: italic; opacity: .72; }
+    .controls {
+      position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%); z-index: 4;
+      display: flex; align-items: center; gap: 8px; width: max-content; max-width: calc(100vw - 24px);
+      padding: 8px; border: 1px solid rgba(241,233,219,.16); background: rgba(24,27,39,.92); color: #f1e9db;
+      box-shadow: 0 12px 35px rgba(0,0,0,.42); border-radius: 16px;
+    }
+    button {
+      appearance: none; border: 0; color: inherit; background: transparent; min-height: 42px; padding: 0 14px;
+      border-radius: 10px; font: 650 13px/1 "Avenir Next", Avenir, "Segoe UI", sans-serif; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+    }
+    button:hover { background: rgba(241,233,219,.08); }
+    button:focus-visible { outline: 2px solid #df8b5d; outline-offset: 2px; }
+    button[aria-pressed="true"] { background: #df8b5d; color: #21130f; }
+    button.primary { background: #df8b5d; color: #21130f; font-weight: 700; }
+    button.primary:hover { background: #e89a6b; }
+    .glyph { width: 17px; height: 17px; display: block; }
+    .divider { width: 1px; height: 24px; background: rgba(241,233,219,.16); }
+    .hint {
+      position: fixed; right: clamp(18px, 3vw, 38px); top: max(22px, env(safe-area-inset-top)); z-index: 4;
+      color: #f4ebdf; font: 500 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      opacity: .56; text-align: right; pointer-events: none; transition: opacity .6s ease;
+    }
+      position: fixed; left: 50%; top: max(18px, env(safe-area-inset-top)); transform: translateX(-50%); z-index: 4;
+      color: #f4ebdf; font: 500 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; opacity: 0;
+      text-align: center; pointer-events: none; transition: opacity .6s ease; text-shadow: 0 2px 12px rgba(0,0,0,.6);
+    }
+    .toast {
+      position: fixed; left: 50%; bottom: 86px; transform: translate(-50%, 8px); opacity: 0; z-index: 5;
+      background: #1b1e2a; border: 1px solid rgba(241,233,219,.16); color: #f1e9db; padding: 9px 13px;
+      border-radius: 9px; font-size: 12px; box-shadow: 0 8px 22px rgba(0,0,0,.42); pointer-events: none;
+      transition: opacity .2s ease, transform .2s ease;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .fallback {
+      position: fixed; inset: 0; display: none; place-items: center; padding: 30px; background: #101423; color: #f4ebdf;
+      text-align: center; font: 18px/1.5 Georgia, serif; z-index: 10;
+    }
+    .vignette {
+      position: fixed; inset: 0; pointer-events: none; z-index: 2; opacity: 0; transition: opacity 1.2s ease;
+      background: radial-gradient(ellipse at center, transparent 52%, rgba(4,6,14,.55) 100%);
+    }
+    @media (max-width: 620px) {
+      .hint { display: none; }
+      .controls { width: calc(100vw - 24px); justify-content: space-between; border-radius: 14px; }
+      button { flex: 1; justify-content: center; padding: 0 8px; font-size: 12px; }
+      .divider { display: none; }
+    }
+  
+    #insideUI { display:none; }
+    body.inside #insideUI {
+      display:flex; flex-direction:column; align-items:center; gap:10px;
+      position:absolute; bottom:24px; left:50%; transform:translateX(-50%); z-index:5;
+    }
+    body.inside #insideUI button {
+      display:flex; align-items:center; gap:8px;
+      background:rgba(18,16,22,0.72); color:#f0e6d2; border:1px solid rgba(255,255,255,0.14);
+      padding:11px 22px; border-radius:999px; font:500 14px/1 system-ui,sans-serif;
+      cursor:pointer; backdrop-filter:blur(8px);
+    }
+    body.inside #insideUI .inside-hint {
+      font:400 12px/1.5 system-ui,sans-serif; color:rgba(240,230,210,0.55);
+      letter-spacing:0.04em;
+    }
+    body.inside nav.controls, body.inside .masthead, body.inside .hint { display:none; }
+
+  </style>
+</head>
+<body>
+  <canvas id="scene" aria-label="A glass greenhouse at dusk. You can step inside it."></canvas>
+  <div class="vignette" aria-hidden="true"></div>
+  <div class="grain" aria-hidden="true"></div>
+
+  <section class="top-note" aria-label="Gallery note">
+    <p class="time">DUSK · THE GLASSHOUSE</p>
+    <p class="thought">Everything in there is still growing.<span>Step inside and stand among it.</span></p>
+  </section>
+
+  <div class="hint" aria-hidden="true">drag to look around<br>scroll to move closer</div>
+
+  <nav class="controls" aria-label="Glasshouse controls">
+    <button id="enterExit" type="button" class="primary">
+      <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M9 5H5a1 1 0 0 0-1 1v13a1 1 0 0 0 1 1h13a1 1 0 0 0 1-1v-4"/></svg>
+      <span>Step inside</span>
+    </button>
+    <div class="divider" aria-hidden="true"></div>
+    <button id="lights" type="button" aria-pressed="true" aria-label="Toggle string lights">
+      <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 18h6M10 22h4M8.6 15.4A7 7 0 1 1 15.4 15.4c-.8.7-1.3 1.5-1.4 2.6h-4c-.1-1.1-.6-1.9-1.4-2.6Z"/></svg>
+      <span>Lights</span>
+    </button>
+    <div class="divider" aria-hidden="true"></div>
+    <button id="reset" type="button" aria-label="Reset the view">
+      <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.6"/><path d="M4 4v4.6h4.6"/></svg>
+      <span>Center</span>
+    </button>
+  </nav>
+  <div id="insideUI">
+    <button id="stepOut" type="button"><span>&larr;</span> Step outside</button>
+    <div class="inside-hint">wasd / arrows to wander &middot; drag to look</div>
+  </div>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="fallback" id="fallback">The glasshouse didn&rsquo;t finish growing.</div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    var canvas = document.getElementById('scene');
+    var fallback = document.getElementById('fallback');
+    var enterBtn = document.getElementById('enterExit');
+    var lightsBtn = document.getElementById('lights');
+    var resetBtn = document.getElementById('reset');
+    var toast = document.getElementById('toast');
+    var reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!window.THREE) { fallback.style.display = 'grid'; return; }
+
+    var renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false, powerPreference: 'high-performance' });
+    } catch (e) {
+      fallback.textContent = 'This glasshouse needs WebGL to grow.';
+      fallback.style.display = 'grid'; return;
+    }
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
+    renderer.setSize(innerWidth, innerHeight, false);
+    renderer.shadowMap.enabled = false;
+    if ('outputColorSpace' in renderer && THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
+    else renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.setClearColor(0x0a0f1e, 1);
+
+    var scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x0d1322, 0.016);
+    var camera = new THREE.PerspectiveCamera(46, innerWidth / innerHeight, 0.1, 120);
+
+    // ---------- materials ----------
+    function M(color, opts) {
+      var o = opts || {};
+      var m = new THREE.MeshLambertMaterial({ color: color });
+      if (o.emissive !== undefined) { m.emissive = new THREE.Color(o.emissive); m.emissiveIntensity = o.ei || 1; }
+      if (o.transparent) { m.transparent = true; m.opacity = o.opacity !== undefined ? o.opacity : 1; }
+      if (o.side) m.side = o.side;
+      return m;
+    }
+    var MAT = {
+      frame:   M(0x232a33),
+      glass:   M(0x9fc4d8, { transparent: true, opacity: 0.10, side: THREE.DoubleSide }),
+      stone:   M(0x3a3f45),
+      stoneDk: M(0x2b2f34),
+      soil:    M(0x2e2119),
+      terra:   M(0x9a5f43),
+      leaf:    M(0x2e5d33),
+      leafLt:  M(0x4a7d43),
+      leafDk:  M(0x1f4225),
+      wood:    M(0x4a3423),
+      woodDk:  M(0x33241a),
+      water:   M(0x3f6f8f, { transparent: true, opacity: 0.75 }),
+      bulb:    M(0xffd9a0, { emissive: 0xffb35c, ei: 2.2 }),
+      bulbOff: M(0x4a4238),
+      wire:    M(0x1a1d22),
+      grass:   M(0x1c2b1e),
+      petal:   M(0xc97f9a),
+      trunk:   M(0x3d2c1e)
+    };
+
+    function mesh(geo, material, x, y, z) {
+      var m = new THREE.Mesh(geo, material);
+      m.position.set(x || 0, y || 0, z || 0);
+      scene.add(m); return m;
+    }
+    function box(w, h, d, material, x, y, z) { return mesh(new THREE.BoxGeometry(w, h, d), material, x, y, z); }
+    function cyl(rt, rb, h, seg, material, x, y, z) { return mesh(new THREE.CylinderGeometry(rt, rb, h, seg), material, x, y, z); }
+    function sph(r, material, x, y, z, sx, sy, sz) {
+      var m = mesh(new THREE.SphereGeometry(r, 20, 14), material, x, y, z);
+      m.scale.set(sx || 1, sy || 1, sz || 1); return m;
+    }
+
+    // ---------- ground outside ----------
+    var ground = mesh(new THREE.CircleGeometry(60, 48), MAT.grass, 0, -0.02, 0);
+    ground.rotation.x = -Math.PI / 2;
+
+    // distant tree silhouettes
+    for (var ti = 0; ti < 14; ti++) {
+      var a = (ti / 14) * Math.PI * 2 + 0.3;
+      var tr = 26 + (ti % 4) * 7;
+      var tx = Math.cos(a) * tr, tz = Math.sin(a) * tr;
+      var th = 6 + (ti % 3) * 2.5;
+      cyl(0.28, 0.4, th * 0.45, 7, MAT.trunk, tx, th * 0.22, tz);
+      var crown = sph(2.2 + (ti % 3), M(0x14231a), tx, th * 0.62, tz, 1, 0.75, 1);
+      crown.material = M(0x14231a);
+    }
+
+    // ---------- the glasshouse ----------
+    var GH = { w: 10, d: 8, wallH: 4.2, roofH: 2.2 };
+    var hw = GH.w / 2, hd = GH.d / 2;
+
+    // stone floor
+    box(GH.w + 0.6, 0.24, GH.d + 0.6, MAT.stoneDk, 0, -0.12, 0);
+    // tile seams
+    for (var gx = -4; gx <= 4; gx += 2) box(0.05, 0.02, GH.d, MAT.stone, gx, 0.005, 0);
+    for (var gz = -3; gz <= 3; gz += 2) box(GH.w, 0.02, 0.05, MAT.stone, 0, 0.005, gz);
+
+    // corner posts + wall posts
+    function post(x, z, h) { box(0.22, h, 0.22, MAT.frame, x, h / 2, z); }
+    for (var px = -hw; px <= hw; px += 2.5) { post(px, -hd, GH.wallH); post(px, hd, GH.wallH); }
+    for (var pz = -hd + 2; pz <= hd - 2; pz += 2) { post(-hw, pz, GH.wallH); post(hw, pz, GH.wallH); }
+    // top beams
+    box(GH.w + 0.3, 0.22, 0.22, MAT.frame, 0, GH.wallH, -hd);
+    box(GH.w + 0.3, 0.22, 0.22, MAT.frame, 0, GH.wallH, hd);
+    box(0.22, 0.22, GH.d + 0.3, MAT.frame, -hw, GH.wallH, 0);
+    box(0.22, 0.22, GH.d + 0.3, MAT.frame, hw, GH.wallH, 0);
+
+    // glass walls (front wall has a door gap)
+    function glassPane(w, h, x, y, z, ry) {
+      var p = mesh(new THREE.PlaneGeometry(w, h), MAT.glass, x, y, z);
+      if (ry) p.rotation.y = ry;
+      return p;
+    }
+    glassPane(GH.w, GH.wallH, 0, GH.wallH / 2, -hd);                       // back
+    glassPane(hw - 0.7, GH.wallH, -(hw + 0.7) / 2 - 0.35 + 0.7, GH.wallH / 2, hd); // front left of door
+    glassPane(hw - 0.7, GH.wallH, (hw + 0.7) / 2 + 0.35 - 0.7, GH.wallH / 2, hd);  // front right of door
+    // door frame
+    box(0.18, 2.6, 0.18, MAT.frame, -0.7, 1.3, hd);
+    box(0.18, 2.6, 0.18, MAT.frame, 0.7, 1.3, hd);
+    box(1.58, 0.18, 0.18, MAT.frame, 0, 2.69, hd);
+    glassPane(GH.d, GH.wallH, -hw, GH.wallH / 2, 0, Math.PI / 2);          // left
+    glassPane(GH.d, GH.wallH, hw, GH.wallH / 2, 0, Math.PI / 2);           // right
+
+    // pitched glass roof
+    var roofLen = Math.sqrt(hw * hw + GH.roofH * GH.roofH) + 0.35;
+    var roofAng = Math.atan2(GH.roofH, hw);
+    [-1, 1].forEach(function (s) {
+      var rp = mesh(new THREE.PlaneGeometry(roofLen, GH.d + 0.4), MAT.glass, s * hw / 2, GH.wallH + GH.roofH / 2, 0);
+      rp.rotation.z = s * (Math.PI / 2 - roofAng);
+      rp.rotation.y = Math.PI / 2;
+      // ridge + rafters
+      var rafter = box(0.14, 0.14, GH.d + 0.4, MAT.frame, s * hw / 2, GH.wallH + GH.roofH / 2 + 0.06, 0);
+      rafter.rotation.z = s * (Math.PI / 2 - roofAng);
+    });
+    box(0.24, 0.24, GH.d + 0.5, MAT.frame, 0, GH.wallH + GH.roofH, 0); // ridge beam
+
+    // ---------- plants ----------
+    var leafMats = [MAT.leaf, MAT.leafLt, MAT.leafDk];
+    function foliage(x, y, z, s, seed) {
+      var g = new THREE.Group();
+      for (var i = 0; i < 7; i++) {
+        var lm = leafMats[(i + seed) % 3];
+        var b = new THREE.Mesh(new THREE.SphereGeometry(s * (0.5 + ((i * 37 + seed * 11) % 40) / 90), 12, 9), lm);
+        b.position.set(x + Math.sin(i * 2.4 + seed) * s * 0.75, y + ((i * 53) % 50) / 50 * s * 0.9, z + Math.cos(i * 1.7 + seed) * s * 0.75);
+        b.scale.y = 0.72;
+        g.add(b);
+      }
+      scene.add(g); return g;
+    }
+    function potted(x, z, s, seed) {
+      cyl(s * 0.42, s * 0.32, s * 0.5, 14, MAT.terra, x, s * 0.25, z);
+      cyl(s * 0.38, s * 0.38, s * 0.1, 14, MAT.soil, x, s * 0.5, z);
+      cyl(s * 0.05, s * 0.07, s * 0.7, 8, MAT.trunk, x, s * 0.8, z);
+      return foliage(x, s * 1.35, z, s * 0.55, seed);
+    }
+    var plantSpots = [
+      [-3.9, -2.9, 1.15, 3], [3.9, -2.9, 0.95, 7], [-3.9, 2.9, 1.0, 11],
+      [3.9, 2.9, 1.2, 5], [-2.2, -3.1, 0.8, 13], [2.3, -3.1, 0.85, 2],
+      [-4.2, 0.4, 0.9, 17], [4.2, -0.6, 1.05, 23]
+    ];
+    plantSpots.forEach(function (p) { potted(p[0], p[1], p[2], p[3]); });
+
+    // central tall planter
+    box(2.4, 0.9, 1.6, MAT.woodDk, -1.6, 0.45, -1.2);
+    box(2.2, 0.12, 1.4, MAT.soil, -1.6, 0.92, -1.2);
+    cyl(0.09, 0.13, 2.6, 8, MAT.trunk, -1.6, 2.2, -1.2);
+    foliage(-1.6, 3.6, -1.2, 1.15, 31);
+    foliage(-2.4, 2.9, -0.7, 0.8, 37);
+    foliage(-0.9, 3.0, -1.7, 0.85, 41);
+
+    // hanging plants from roof beams
+    var hangers = [];
+    [[-2.5, 1.5], [1.8, -1.8], [0.4, 2.4], [-3.4, -1.4]].forEach(function (h, hi) {
+      var hx = h[0], hz = h[1];
+      var drop = 1.1 + (hi % 3) * 0.35;
+      cyl(0.02, 0.02, drop, 6, MAT.wire, hx, GH.wallH - drop / 2, hz);
+      cyl(0.3, 0.22, 0.34, 12, MAT.terra, hx, GH.wallH - drop - 0.1, hz);
+      var fg = foliage(hx, GH.wallH - drop - 0.55, hz, 0.5, 50 + hi * 7);
+      hangers.push({ group: fg, baseY: GH.wallH - drop - 0.55, ph: hi * 1.7 });
+    });
+
+    // flower pops of color
+    [[2.9, 1.4], [-2.9, 2.2], [1.2, -2.6]].forEach(function (f, fi) {
+      for (var k = 0; k < 5; k++) {
+        var fx = f[0] + Math.sin(k * 2.1 + fi) * 0.5, fz = f[1] + Math.cos(k * 1.3 + fi) * 0.5;
+        cyl(0.02, 0.02, 0.5 + (k % 3) * 0.14, 6, MAT.leafDk, fx, 0.35, fz);
+        sph(0.11, MAT.petal, fx, 0.62 + (k % 3) * 0.14, fz, 1, 0.8, 1);
+      }
+    });
+
+    // ---------- bench ----------
+    (function () {
+      var bx = 3.1, bz = 0.9;
+      for (var i = 0; i < 4; i++) box(0.32, 0.09, 2.2, MAT.wood, bx - 0.6 + i * 0.4, 0.62, bz);
+      [[-0.6], [0.6]].forEach(function (o) {
+        box(0.14, 0.62, 0.14, MAT.woodDk, bx + o[0], 0.31, bz - 0.9);
+        box(0.14, 0.62, 0.14, MAT.woodDk, bx + o[0], 0.31, bz + 0.9);
+      });
+      box(0.14, 1.1, 2.2, MAT.wood, bx + 0.75, 1.0, bz); // backrest
+    })();
+
+    // ---------- fountain ----------
+    var fountain = new THREE.Group();
+    (function () {
+      var ring = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.15, 0.55, 24), MAT.stone);
+      ring.position.set(1.9, 0.28, 1.9); fountain.add(ring);
+      var basin = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 0.95, 0.1, 24), MAT.water);
+      basin.position.set(1.9, 0.52, 1.9); fountain.add(basin);
+      var stem = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.16, 0.8, 12), MAT.stoneDk);
+      stem.position.set(1.9, 0.9, 1.9); fountain.add(stem);
+      var top = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.3, 0.14, 16), MAT.stone);
+      top.position.set(1.9, 1.32, 1.9); fountain.add(top);
+      scene.add(fountain);
+    })();
+    var waterTop = mesh(new THREE.CircleGeometry(0.4, 20), M(0x7fa8c4, { transparent: true, opacity: 0.8 }), 1.9, 1.4, 1.9);
+    waterTop.rotation.x = -Math.PI / 2;
+    // droplets
+    var dropN = 46, dropPos = new Float32Array(dropN * 3), dropVel = [];
+    for (var di = 0; di < dropN; di++) {
+      dropPos[di * 3] = 1.9; dropPos[di * 3 + 1] = 1.35; dropPos[di * 3 + 2] = 1.9;
+      dropVel.push({ a: Math.random() * Math.PI * 2, r: 0.12 + Math.random() * 0.3, vy: 0.9 + Math.random() * 0.9, t: Math.random() });
+    }
+    var dropGeo = new THREE.BufferGeometry();
+    dropGeo.setAttribute('position', new THREE.BufferAttribute(dropPos, 3));
+    var drops = new THREE.Points(dropGeo, new THREE.PointsMaterial({ color: 0xbfe0f2, size: 0.05, transparent: true, opacity: 0.85 }));
+    scene.add(drops);
+
+    // ---------- string lights ----------
+    var bulbMeshes = [];
+    var lightGroup = new THREE.Group(); scene.add(lightGroup);
+    function strand(x1, z1, x2, z2, sag, n) {
+      var pts = [];
+      for (var i = 0; i <= 20; i++) {
+        var t = i / 20;
+        pts.push(new THREE.Vector3(
+          x1 + (x2 - x1) * t,
+          GH.wallH - 0.25 - Math.sin(t * Math.PI) * sag,
+          z1 + (z2 - z1) * t
+        ));
+      }
+      var curve = new THREE.CatmullRomCurve3(pts);
+      lightGroup.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 32, 0.022, 6, false), MAT.wire));
+      for (var b = 1; b < n; b++) {
+        var bt = b / n;
+        var bp = curve.getPoint(bt);
+        var bulb = new THREE.Mesh(new THREE.SphereGeometry(0.075, 12, 10), MAT.bulb);
+        bulb.position.copy(bp); bulb.position.y -= 0.12;
+        lightGroup.add(bulb); bulbMeshes.push(bulb);
+        var cord = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.1, 6), MAT.wire);
+        cord.position.copy(bp); cord.position.y -= 0.05;
+        lightGroup.add(cord);
+      }
+    }
+    strand(-hw + 0.4, -2.2, hw - 0.4, -2.2, 0.55, 13);
+    strand(-hw + 0.4, 0.4, hw - 0.4, 0.4, 0.7, 13);
+    strand(-hw + 0.4, 2.8, hw - 0.4, 2.8, 0.55, 13);
+
+    // ---------- fireflies / dust ----------
+    var flyN = 42, flyPos = new Float32Array(flyN * 3), flySeed = [];
+    for (var fi2 = 0; fi2 < flyN; fi2++) {
+      flyPos[fi2 * 3] = (Math.random() - 0.5) * 9;
+      flyPos[fi2 * 3 + 1] = 0.5 + Math.random() * 3.4;
+      flyPos[fi2 * 3 + 2] = (Math.random() - 0.5) * 7;
+      flySeed.push(Math.random() * 100);
+    }
+    var flyGeo = new THREE.BufferGeometry();
+    flyGeo.setAttribute('position', new THREE.BufferAttribute(flyPos, 3));
+    var flies = new THREE.Points(flyGeo, new THREE.PointsMaterial({ color: 0xffe2a8, size: 0.07, transparent: true, opacity: 0.9 }));
+    scene.add(flies);
+
+    // ---------- dusk sky glow ----------
+    var sunGlow = mesh(new THREE.CircleGeometry(7, 40),
+      new THREE.MeshBasicMaterial({ color: 0xe8915a, transparent: true, opacity: 0.5, fog: false }),
+      -34, 4.5, -30);
+    sunGlow.lookAt(0, 3, 0);
+    var sunCore = mesh(new THREE.CircleGeometry(2.6, 40),
+      new THREE.MeshBasicMaterial({ color: 0xffd9a3, transparent: true, opacity: 0.85, fog: false }),
+      -34, 4.2, -29.8);
+    sunCore.lookAt(0, 3, 0);
+
+    // ---------- lights ----------
+    scene.add(new THREE.HemisphereLight(0x5a7396, 0x1c1a12, 0.85));
+    var duskSun = new THREE.DirectionalLight(0xe89a5e, 0.85);
+    duskSun.position.set(-18, 7, -14); scene.add(duskSun);
+    var glow1 = new THREE.PointLight(0xffbe78, 1.15, 13, 1.6); glow1.position.set(0, 3.4, 0.4); scene.add(glow1);
+    var glow2 = new THREE.PointLight(0xffbe78, 0.7, 10, 1.6); glow2.position.set(-2.5, 3.0, -2.0); scene.add(glow2);
+    var fountainGlow = new THREE.PointLight(0x9fd4e8, 0.5, 5, 1.8); fountainGlow.position.set(1.9, 1.6, 1.9); scene.add(fountainGlow);
+
+    var lightsOn = true;
+
+
+    // ---------- camera: the window view ----------
+    // This piece is a window. The room itself lives elsewhere;
+    // "Step inside" takes you through.
+    var ROOM_URL = "https://firebasestorage.googleapis.com/v0/b/typewriter-app-6e624.firebasestorage.app/o/gallery%2FDq4l0vvqvXVCqgcqbw8G4airUyA2%2F1791197177586_glasshouse-room.html?alt=media&token=4ce58f5e-9443-4a1f-af54-bc235f6c3c25"; // replaced at mount time
+
+    var target = new THREE.Vector3(0, 2.1, 0);
+    var yaw = 0.55, pitch = 0.10, dist = 17.5;
+    var tYaw = yaw, tPitch = pitch, tDist = dist;
+
+    // gallery parallax: gentle look-offset so the diorama feels alive on the wall
+    var parYaw = 0, parPitch = 0, parYawT = 0, parPitchT = 0, parActive = false;
+    addEventListener('message', function (e) {
+      var d = e && e.data;
+      if (!d || d.type !== 'GALLERY_CAMERA_PARALLAX') return;
+      parActive = true;
+      parYawT = Math.max(-0.3, Math.min(0.3, (d.normX || 0) * 0.3));
+      parPitchT = Math.max(-0.18, Math.min(0.18, -(d.normY || 0) * 0.2));
+    }, { passive: true });
+
+    function positionCamera() {
+      var ey = yaw + (parActive ? parYaw : 0), ep = pitch + (parActive ? parPitch : 0);
+      camera.position.set(
+        Math.sin(ey) * dist * Math.cos(ep) + target.x,
+        target.y + Math.sin(ep) * dist + 1.4,
+        Math.cos(ey) * dist * Math.cos(ep) + target.z
+      );
+      camera.lookAt(target);
+    }
+
+    // ---------- controls ----------
+    var dragging = false, lastX = 0, lastY = 0, toastTimer = null;
+
+    canvas.addEventListener('pointerdown', function (e) {
+      dragging = true; lastX = e.clientX; lastY = e.clientY;
+      try { canvas.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var dx = e.clientX - lastX, dy = e.clientY - lastY;
+      lastX = e.clientX; lastY = e.clientY;
+      if (inside) {
+        inYawT -= dx * 0.0032;
+        inPitchT = Math.max(-1.2, Math.min(1.2, inPitchT - dy * 0.0032));
+      } else {
+        tYaw = Math.max(-1.1, Math.min(1.1, tYaw - dx * 0.005));
+        tPitch = Math.max(-0.05, Math.min(0.45, tPitch + dy * 0.004));
+      }
+    });
+    canvas.addEventListener('pointerup', function () { dragging = false; });
+    canvas.addEventListener('pointercancel', function () { dragging = false; });
+    canvas.addEventListener('wheel', function (e) {
+      e.preventDefault();
+      tDist = Math.max(11, Math.min(24, tDist + e.deltaY * 0.01));
+    }, { passive: false });
+
+    function showToast(msg) {
+      toast.textContent = msg; toast.classList.add('show');
+      clearTimeout(toastTimer);
+      toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 2000);
+    }
+
+    // ---------- interior mode: step inside the piece itself ----------
+    var inside = false, transitioning = false, steppingOut = false, transT = 0;
+    var transFromPos = new THREE.Vector3(), transFromQuat = new THREE.Quaternion();
+    var inPos = new THREE.Vector3(0, 1.6, 2.2), inPosT = inPos.clone();
+    var inYaw = 0, inPitch = 0, inYawT = 0, inPitchT = 0;
+    var stepOutBtn = document.getElementById('stepOut');
+    function easeIO(x) { return x < 0.5 ? 2*x*x : 1 - Math.pow(-2*x + 2, 2)/2; }
+    function interiorQuat(yaw, pitch) {
+      return new THREE.Quaternion().setFromEuler(new THREE.Euler(pitch, yaw, 0, 'YXZ'));
+    }
+
+    enterBtn.addEventListener('click', function () {
+      if (inside || transitioning) return;
+      transitioning = true; steppingOut = false; transT = 0;
+      transFromPos.copy(camera.position);
+      transFromQuat.copy(camera.quaternion);
+      document.body.classList.add('inside');
+      showToast('Stepping inside…');
+    });
+    stepOutBtn.addEventListener('click', function () {
+      if (!inside || transitioning) return;
+      transitioning = true; steppingOut = true; transT = 0;
+      transFromPos.copy(camera.position);
+      transFromQuat.copy(camera.quaternion);
+      document.body.classList.remove('inside');
+      showToast('Back outside.');
+    });
+    lightsBtn.addEventListener('click', function () {
+      lightsOn = !lightsOn;
+      bulbMeshes.forEach(function (b) { b.material = lightsOn ? MAT.bulb : MAT.bulbOff; });
+      glow1.visible = lightsOn; glow2.visible = lightsOn;
+      lightsBtn.setAttribute('aria-pressed', String(lightsOn));
+      showToast(lightsOn ? 'Lights on.' : 'Dusk only.');
+    });
+    resetBtn.addEventListener('click', function () {
+      tYaw = 0.55; tPitch = 0.10; tDist = 17.5;
+      showToast('Back to the window.');
+    });
+    var keysDown = {};
+    addEventListener('keydown', function (e) {
+      keysDown[e.key.toLowerCase()] = true;
+      if (!inside) {
+        if (e.key === 'ArrowLeft') tYaw = Math.min(1.1, tYaw + 0.08);
+        if (e.key === 'ArrowRight') tYaw = Math.max(-1.1, tYaw - 0.08);
+        if (e.key === 'ArrowUp') tPitch = Math.min(0.45, tPitch + 0.05);
+        if (e.key === 'ArrowDown') tPitch = Math.max(-0.05, tPitch - 0.05);
+      }
+      if (e.key === 'Enter' && document.activeElement === enterBtn) enterBtn.click();
+      if (e.key === 'Escape' && inside) stepOutBtn.click();
+    });
+    addEventListener('keyup', function (e) { keysDown[e.key.toLowerCase()] = false; });
+    addEventListener('resize', function () {
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.5));
+      renderer.setSize(innerWidth, innerHeight, false);
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+    }, { passive: true });
+
+    // ---------- animation ----------
+    var clock = new THREE.Clock();
+    function animate() {
+      var dt = Math.min(clock.getDelta(), 0.05);
+      var t = clock.elapsedTime;
+
+      if (transitioning) {
+        transT += dt / 1.6;
+        if (transT >= 1) {
+          transT = 1; transitioning = false;
+          if (steppingOut) { inside = false; }
+          else {
+            inside = true;
+            inPos.set(0, 1.6, 2.2); inPosT.copy(inPos);
+            inYaw = 0; inPitch = 0; inYawT = 0; inPitchT = 0;
+          }
+        }
+        var e = easeIO(Math.min(transT, 1));
+        if (steppingOut) {
+          // back to the exterior orbit position
+          yaw += (tYaw - yaw) * 0.07; pitch += (tPitch - pitch) * 0.07; dist += (tDist - dist) * 0.07;
+          var ey = yaw + parYaw, ep = pitch + parPitch;
+          var outPos = new THREE.Vector3(
+            Math.sin(ey) * dist * Math.cos(ep) + target.x,
+            target.y + Math.sin(ep) * dist + 1.4,
+            Math.cos(ey) * dist * Math.cos(ep) + target.z
+          );
+          camera.position.lerpVectors(transFromPos, outPos, e);
+          var outQuat = new THREE.Quaternion();
+          var m = new THREE.Matrix4().lookAt(outPos, target, new THREE.Vector3(0, 1, 0));
+          outQuat.setFromRotationMatrix(m);
+          camera.quaternion.slerpQuaternions(transFromQuat, outQuat, e);
+        } else {
+          // through the door into the room, facing the interior
+          var inStart = new THREE.Vector3(0, 1.6, 2.2);
+          camera.position.lerpVectors(transFromPos, inStart, e);
+          camera.quaternion.slerpQuaternions(transFromQuat, interiorQuat(0, 0), e);
+        }
+      } else if (inside) {
+        // walk mode
+        var f = (keysDown['w'] || keysDown['arrowup'] ? 1 : 0) - (keysDown['s'] || keysDown['arrowdown'] ? 1 : 0);
+        var s = (keysDown['d'] || keysDown['arrowright'] ? 1 : 0) - (keysDown['a'] || keysDown['arrowleft'] ? 1 : 0);
+        if (f || s) {
+          var ry = inYawT;
+          var fx = -Math.sin(ry), fz = -Math.cos(ry);
+          var rx = Math.cos(ry), rz = -Math.sin(ry);
+          inPosT.x = Math.max(-4.2, Math.min(4.2, inPosT.x + (fx * f + rx * s) * 2.4 * dt));
+          inPosT.z = Math.max(-3.2, Math.min(3.2, inPosT.z + (fz * f + rz * s) * 2.4 * dt));
+        }
+        inPos.lerp(inPosT, 0.12);
+        inYaw += (inYawT - inYaw) * 0.12;
+        inPitch += (inPitchT - inPitch) * 0.12;
+        camera.position.copy(inPos);
+        camera.quaternion.copy(interiorQuat(inYaw, inPitch));
+      } else {
+        yaw += (tYaw - yaw) * 0.07;
+        pitch += (tPitch - pitch) * 0.07;
+        dist += (tDist - dist) * 0.07;
+        parYaw += (parYawT - parYaw) * 0.06;
+        parPitch += (parPitchT - parPitch) * 0.06;
+        positionCamera();
+      }
+
+      if (!reduceMotion) {
+        // fountain droplets
+        var dp = dropGeo.attributes.position.array;
+        for (var i = 0; i < dropN; i++) {
+          var v = dropVel[i];
+          v.t += dt * 1.4;
+          if (v.t > 1) { v.t = 0; v.a = Math.random() * Math.PI * 2; v.r = 0.12 + Math.random() * 0.3; }
+          var rr = v.r * v.t;
+          dp[i * 3] = 1.9 + Math.cos(v.a) * rr;
+          dp[i * 3 + 1] = 1.35 + v.vy * v.t - 2.6 * v.t * v.t;
+          dp[i * 3 + 2] = 1.9 + Math.sin(v.a) * rr;
+        }
+        dropGeo.attributes.position.needsUpdate = true;
+        waterTop.rotation.z = t * 0.25;
+
+        // hanging plants sway
+        hangers.forEach(function (h) {
+          h.group.position.y = Math.sin(t * 0.7 + h.ph) * 0.05;
+          h.group.rotation.z = Math.sin(t * 0.5 + h.ph) * 0.03;
+        });
+
+        // fireflies drift
+        var fp = flyGeo.attributes.position.array;
+        for (var f2 = 0; f2 < flyN; f2++) {
+          var s2 = flySeed[f2];
+          fp[f2 * 3] += Math.sin(t * 0.4 + s2) * 0.0035;
+          fp[f2 * 3 + 1] += Math.cos(t * 0.3 + s2 * 1.7) * 0.0028;
+          fp[f2 * 3 + 2] += Math.cos(t * 0.35 + s2 * 0.6) * 0.0035;
+        }
+        flyGeo.attributes.position.needsUpdate = true;
+        flies.material.opacity = 0.65 + Math.sin(t * 1.1) * 0.25;
+
+        // string light shimmer
+        var shimmer = 1.9 + Math.sin(t * 7.3) * 0.12 + Math.sin(t * 13.7) * 0.06;
+        bulbMeshes.forEach(function (b) { if (b.material === MAT.bulb) b.material.emissiveIntensity = shimmer; });
+        glow1.intensity = (lightsOn ? 1.15 : 0) * (0.94 + Math.sin(t * 3.1) * 0.06);
+      }
+      renderer.render(scene, camera);
+      requestAnimationFrame(animate);
+    }
+    positionCamera();
+    animate();
+  })();
+  </script>
+</body>
+</html>
