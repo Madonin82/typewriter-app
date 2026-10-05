@@ -261,7 +261,7 @@
                 </div>
 
                 <!-- 🖼️ Framing -->
-                <div class="pt-2 border-t border-zinc-800 space-y-3">
+                <div id="add-framing-section" class="pt-2 border-t border-zinc-800 space-y-3">
                     <div class="flex items-center justify-between">
                         <label class="text-xs font-semibold uppercase tracking-wider text-amber-400/90 flex items-center gap-1.5">
                             <span>🖼️</span> Framing
@@ -453,7 +453,7 @@
                 </div>
 
                 <!-- 🖼️ Framing -->
-                <div class="border-t border-zinc-800/80 pt-3 space-y-3">
+                <div id="edit-framing-section" class="border-t border-zinc-800/80 pt-3 space-y-3">
                     <label class="block text-xs font-semibold uppercase tracking-wider text-amber-500 flex items-center gap-1.5">
                         <span>🖼️</span> Framing
                     </label>
@@ -816,6 +816,11 @@
             } else {
                 selectedFileType = 'image';
             }
+
+            // Framing applies to wall pieces, not 3D models on pedestals
+            document.querySelectorAll('#add-framing-section').forEach(el => {
+                el.style.display = selectedFileType === 'model' ? 'none' : '';
+            });
 
             if (selectedFileType === 'html') {
                 const reader = new FileReader();
@@ -1943,6 +1948,10 @@
             // Pre-fill framing from the exhibit (defaults = current gallery look)
             editFrame = Object.assign({ shape: 'rect', ratio: '3:2', size: 'M', zoom: 1 }, art.frame || {});
             syncEditFrameUI();
+            // Framing applies to wall pieces, not 3D models on pedestals
+            document.querySelectorAll('#edit-framing-section').forEach(el => {
+                el.style.display = art.type === 'model' ? 'none' : '';
+            });
 
             const portalErr = document.getElementById('studio-edit-portal-error');
             if (portalErr) {
