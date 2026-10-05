@@ -343,6 +343,7 @@ const server = http.createServer((req, res) => {
             description: payload.description !== undefined ? payload.description.trim() : existing.description,
             type: updatedType,
             url: updatedUrl,
+            portal: payload.portal !== undefined ? payload.portal : existing.portal,
             updatedAt: new Date().toISOString()
           };
 

@@ -95,28 +95,12 @@ service cloud.firestore {
     match /galleryExhibits/{exhibitId} {
       allow read: if true;
 
-      // Portal doorway: when present, the room must live in our own Storage
-      // gallery folder. We store the Storage *path* (tokens die on re-upload,
-      // paths don't) and resolve it to a download URL at render time.
-      function validPortal(data) {
-        return !('portal' in data) || (
-          data.portal is map
-          && data.portal.path is string
-          && data.portal.path.matches('^gallery/[^/]+/.+')
-          && (!('title' in data.portal) || data.portal.title is string)
-        );
-      }
-
       allow create: if isVerifiedUser()
                     && request.resource.data.uploaderUid == request.auth.uid
                     && request.resource.data.url is string
-                    && (!('uploaderName' in request.resource.data) || request.resource.data.uploaderName is string)
-                    && validPortal(request.resource.data);
+                    && (!('uploaderName' in request.resource.data) || request.resource.data.uploaderName is string);
 
-      allow update: if isStationAdmin()
-                    && validPortal(request.resource.data);
-
-      allow delete: if isStationAdmin();
+      allow update, delete: if isStationAdmin();
     }
 
     match /userDirectory/{uid} {

@@ -371,6 +371,29 @@
                     <label class="block text-zinc-400 font-medium mb-1">Description / Note</label>
                     <textarea id="edit-art-desc" rows="3" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition"></textarea>
                 </div>
+
+                <!-- Portal Doorway Section -->
+                <div class="border-t border-zinc-800/80 pt-3 space-y-3">
+                    <label class="block text-xs font-semibold uppercase tracking-wider text-amber-500 flex items-center gap-1.5">
+                        <span>🚪</span> Portal doorway (optional)
+                    </label>
+                    <div id="studio-edit-portal-error" class="hidden text-xs text-rose-400 bg-rose-500/10 border border-rose-500/20 p-2 rounded-xl"></div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Room URL</label>
+                        <div class="flex gap-2">
+                            <input type="text" id="edit-art-portal-url" placeholder="Paste Firebase Storage URL or gallery/... path" class="flex-1 bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                            <button type="button" onclick="testStudioPortalUrl('edit-art-portal-url')" class="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-xl text-xs font-medium transition shrink-0 cursor-pointer" title="Test room in new tab">
+                                Test ↗
+                            </button>
+                        </div>
+                        <p class="text-[11px] text-zinc-500 mt-1">Where this piece leads. Opens as its own page; the wall piece itself is unchanged.</p>
+                    </div>
+                    <div>
+                        <label class="block text-zinc-400 font-medium mb-1">Room title</label>
+                        <input type="text" id="edit-art-portal-title" placeholder="e.g. The Glasshouse Room" class="w-full bg-zinc-950 border border-zinc-800 rounded-xl px-3.5 py-2 text-xs text-zinc-200 focus:outline-none focus:border-amber-500 transition">
+                        <p class="text-[11px] text-zinc-500 mt-1">The name guests see on the doorway.</p>
+                    </div>
+                </div>
             </div>
             <div class="flex justify-end gap-2 pt-2 border-t border-zinc-800">
                 <button type="button" onclick="closeEditModal()" class="px-4 py-2 rounded-xl text-xs font-medium text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800 transition cursor-pointer">Cancel</button>
@@ -1507,6 +1530,33 @@
             });
         }
 
+        async function testStudioPortalUrl(inputId) {
+            const input = document.getElementById(inputId);
+            if (!input) return;
+            const val = input.value.trim();
+            if (!val) {
+                alert('Please enter a Room URL to test.');
+                return;
+            }
+            if (val.startsWith('http://') || val.startsWith('https://')) {
+                window.open(val, '_blank');
+                return;
+            }
+            if (val.startsWith('gallery/')) {
+                try {
+                    if (studioStorage) {
+                        const downloadUrl = await studioStorage.ref(val).getDownloadURL();
+                        window.open(downloadUrl, '_blank');
+                        return;
+                    }
+                } catch (e) {
+                    alert('Could not resolve Storage path: ' + e.message);
+                    return;
+                }
+            }
+            window.open(val, '_blank');
+        }
+
         async function openEditModal(artId) {
             const art = allCurateExhibits.find(a => a.id === artId);
             if (!art) return;
@@ -1517,6 +1567,17 @@
             document.getElementById('edit-art-medium').value = art.medium || '';
             document.getElementById('edit-art-desc').value = art.description || '';
             
+            const portalUrlEl = document.getElementById('edit-art-portal-url');
+            const portalTitleEl = document.getElementById('edit-art-portal-title');
+            if (portalUrlEl) portalUrlEl.value = (art.portal && art.portal.path) ? art.portal.path : '';
+            if (portalTitleEl) portalTitleEl.value = (art.portal && art.portal.title) ? art.portal.title : '';
+
+            const portalErr = document.getElementById('studio-edit-portal-error');
+            if (portalErr) {
+                portalErr.textContent = '';
+                portalErr.classList.add('hidden');
+            }
+
             const uploaderEl = document.getElementById('edit-art-uploader');
             if (uploaderEl) {
                 if (art.uploaderUid && !userDirectoryCache[art.uploaderUid] && studioDb) {
@@ -1540,11 +1601,61 @@
         async function saveExhibitEdit() {
             const artId = document.getElementById('edit-art-id').value;
             if (!artId) return;
+
+            const portalErr = document.getElementById('studio-edit-portal-error');
+            if (portalErr) {
+                portalErr.textContent = '';
+                portalErr.classList.add('hidden');
+            }
+
             const title = document.getElementById('edit-art-title').value.trim() || 'Untitled';
             const artist = document.getElementById('edit-art-artist').value.trim() || 'Unknown';
             const year = document.getElementById('edit-art-year').value.trim();
             const medium = document.getElementById('edit-art-medium').value.trim() || 'Exhibit';
             const desc = document.getElementById('edit-art-desc').value.trim();
+
+            const portalUrlRaw = (document.getElementById('edit-art-portal-url') ? document.getElementById('edit-art-portal-url').value : '').trim();
+            const portalTitleRaw = (document.getElementById('edit-art-portal-title') ? document.getElementById('edit-art-portal-title').value : '').trim();
+
+            let portalData = null;
+            if (portalUrlRaw) {
+                let parsedPath = null;
+                if (portalUrlRaw.includes('/o/')) {
+                    try {
+                        parsedPath = decodeURIComponent(portalUrlRaw.split('/o/')[1].split('?')[0]);
+                    } catch (e) {
+                        parsedPath = null;
+                    }
+                } else if (portalUrlRaw.startsWith('gallery/')) {
+                    parsedPath = portalUrlRaw;
+                }
+
+                if (!parsedPath || !parsedPath.startsWith('gallery/')) {
+                    if (portalErr) {
+                        portalErr.textContent = 'Room URL must be a Firebase Storage URL or path starting with gallery/';
+                        portalErr.classList.remove('hidden');
+                    } else {
+                        alert('Room URL must be a Firebase Storage URL or path starting with gallery/');
+                    }
+                    return;
+                }
+
+                if (!portalTitleRaw) {
+                    if (portalErr) {
+                        portalErr.textContent = 'Please provide a Room title for the doorway.';
+                        portalErr.classList.remove('hidden');
+                    } else {
+                        alert('Please provide a Room title for the doorway.');
+                    }
+                    document.getElementById('edit-art-portal-title').focus();
+                    return;
+                }
+
+                portalData = {
+                    path: parsedPath,
+                    title: portalTitleRaw
+                };
+            }
 
             const saveBtn = document.getElementById('btn-save-exhibit-edit');
             if (saveBtn) {
@@ -1561,8 +1672,14 @@
                     description: desc
                 };
 
+                if (portalData) {
+                    updateData.portal = portalData;
+                } else if (firebase.firestore.FieldValue) {
+                    updateData.portal = firebase.firestore.FieldValue.delete();
+                }
+
                 if (studioDb) {
-                    await studioDb.collection('galleryExhibits').doc(artId).update(updateData);
+                    await studioDb.collection('galleryExhibits').doc(artId).set(updateData, { merge: true });
                 }
 
                 const cached = localStorage.getItem('note_to_self_3d_gallery_manifest_v2');
@@ -1571,6 +1688,7 @@
                     const idx = parsed.findIndex(a => a.id === artId);
                     if (idx !== -1) {
                         parsed[idx] = { ...parsed[idx], ...updateData };
+                        if (!portalData) delete parsed[idx].portal;
                         localStorage.setItem('note_to_self_3d_gallery_manifest_v2', JSON.stringify(parsed));
                     }
                 }
