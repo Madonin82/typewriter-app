@@ -2362,21 +2362,17 @@
         }
 
         function panLeft() {
-            if (ARTWORKS.length === 0) return;
-            const fractional = (targetCameraX - startXOffset) / SPACING_X;
-            let prevIndex = Math.ceil(fractional - 0.05) - 1;
-            if (prevIndex < 0) prevIndex = 0;
-            targetCameraX = startXOffset + (prevIndex * SPACING_X);
+            if (frameObjects.length === 0) return;
+            const prevIndex = Math.max(0, getNearestExhibitIndex() - 1);
+            targetCameraX = frameObjects[prevIndex].xPos;
             targetCameraZ = 2.93;
             clampCameraX();
         }
 
         function panRight() {
-            if (ARTWORKS.length === 0) return;
-            const fractional = (targetCameraX - startXOffset) / SPACING_X;
-            let nextIndex = Math.floor(fractional + 0.05) + 1;
-            if (nextIndex >= ARTWORKS.length) nextIndex = ARTWORKS.length - 1;
-            targetCameraX = startXOffset + (nextIndex * SPACING_X);
+            if (frameObjects.length === 0) return;
+            const nextIndex = Math.min(frameObjects.length - 1, getNearestExhibitIndex() + 1);
+            targetCameraX = frameObjects[nextIndex].xPos;
             targetCameraZ = 2.93;
             clampCameraX();
         }
@@ -2400,9 +2396,9 @@
         }
 
         function gotoExhibit(index) {
-            if (ARTWORKS.length === 0) return;
-            index = Math.max(0, Math.min(ARTWORKS.length - 1, index));
-            targetCameraX = startXOffset + (index * SPACING_X);
+            if (frameObjects.length === 0) return;
+            index = Math.max(0, Math.min(frameObjects.length - 1, index));
+            targetCameraX = frameObjects[index].xPos;
             targetCameraZ = 2.93;
             clampCameraX();
             closeGotoMenu();
