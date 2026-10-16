@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="light dark" />
+  <link rel="icon" href="data:," />
+  <title>Side A, On Repeat</title>
+  <style>
+    :root {
+      color-scheme: light dark;
+      --ink: #1b1f2d;
+      --muted: #626879;
+      --panel: rgba(244, 238, 225, .93);
+      --panel-strong: #f5efe3;
+      --line: rgba(27, 31, 45, .16);
+      --accent: #c96f3a;
+      --accent-ink: #fff8ed;
+      --shadow: rgba(39, 27, 28, .22);
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --ink: #f1e9db;
+        --muted: #aaa6a8;
+        --panel: rgba(24, 27, 39, .92);
+        --panel-strong: #1b1e2a;
+        --line: rgba(241, 233, 219, .16);
+        --accent: #e08a52;
+        --accent-ink: #21130f;
+        --shadow: rgba(0, 0, 0, .42);
+      }
+    }
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0c0a14; }
+    body {
+      font-family: "Avenir Next", Avenir, "Segoe UI", sans-serif;
+      color: var(--ink);
+      overscroll-behavior: none;
+      user-select: none;
+      -webkit-tap-highlight-color: transparent;
+    }
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    .grain {
+      position: fixed; inset: 0; pointer-events: none; opacity: .09; mix-blend-mode: soft-light;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+    }
+    .top-note {
+      position: fixed; top: max(18px, env(safe-area-inset-top)); left: clamp(18px, 4vw, 52px);
+      max-width: min(470px, calc(100vw - 36px)); color: #f4ebdf; text-shadow: 0 2px 16px rgba(0,0,0,.62);
+      pointer-events: none;
+    }
+    .time { margin: 0 0 7px; font: 600 11px/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .14em; opacity: .68; }
+    .thought { margin: 0; font-family: Georgia, "Times New Roman", serif; font-size: clamp(20px, 2.8vw, 32px); font-weight: 400; line-height: 1.15; }
+    .thought span { display: block; font-size: .58em; margin-top: 7px; font-style: italic; opacity: .72; }
+    .controls {
+      position: fixed; left: 50%; bottom: max(18px, env(safe-area-inset-bottom)); transform: translateX(-50%);
+      display: flex; align-items: center; gap: 8px; width: max-content; max-width: calc(100vw - 24px);
+      padding: 8px; border: 1px solid var(--line); background: var(--panel); color: var(--ink);
+      box-shadow: 0 12px 35px var(--shadow); border-radius: 16px;
+    }
+    button {
+      appearance: none; border: 0; color: inherit; background: transparent; min-height: 42px; padding: 0 14px;
+      border-radius: 10px; font: 650 13px/1 "Avenir Next", Avenir, "Segoe UI", sans-serif; cursor: pointer;
+      display: inline-flex; align-items: center; gap: 8px; white-space: nowrap;
+    }
+    button:hover { background: color-mix(in srgb, var(--panel-strong) 72%, var(--ink) 8%); }
+    button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+    button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+    .glyph { width: 17px; height: 17px; display: block; }
+    .divider { width: 1px; height: 24px; background: var(--line); }
+    .hint {
+      position: fixed; right: clamp(18px, 3vw, 38px); top: max(22px, env(safe-area-inset-top));
+      color: #f4ebdf; font: 500 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace;
+      opacity: .56; text-align: right; pointer-events: none;
+    }
+    .toast {
+      position: fixed; left: 50%; bottom: 86px; transform: translate(-50%, 8px); opacity: 0;
+      background: var(--panel-strong); border: 1px solid var(--line); color: var(--ink); padding: 9px 13px;
+      border-radius: 9px; font-size: 12px; box-shadow: 0 8px 22px var(--shadow); pointer-events: none;
+      transition: opacity .2s ease, transform .2s ease;
+    }
+    .toast.show { opacity: 1; transform: translate(-50%, 0); }
+    .fallback {
+      position: fixed; inset: 0; display: none; place-items: center; padding: 30px; background: #101423; color: #f4ebdf;
+      text-align: center; font: 18px/1.5 Georgia, serif;
+    }
+    @media (max-width: 620px) {
+      .hint { display: none; }
+      .top-note { top: max(16px, env(safe-area-inset-top)); }
+      .thought { font-size: 22px; }
+      .controls { width: calc(100vw - 24px); justify-content: space-between; border-radius: 14px; }
+      button { flex: 1; justify-content: center; padding: 0 8px; font-size: 12px; }
+      .divider { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) { .toast { transition: none; } }
+  </style>
+</head>
+<body>
+  <canvas id="room" aria-label="A turntable on a desk at dusk, a record spinning on repeat beside a warm lamp, a window, and a stack of record sleeves"></canvas>
+  <div class="grain" aria-hidden="true"></div>
+
+  <section class="top-note" aria-label="Listening note">
+    <p class="time">SIDE A · ON REPEAT</p>
+    <p class="thought">Some albums don't end. They just start over.<span>The needle stays down. The room stays warm.</span></p>
+  </section>
+
+  <div class="hint" aria-hidden="true">drag to look around<br>scroll to move closer</div>
+
+  <nav class="controls" aria-label="Room controls">
+    <button id="flip" type="button" aria-pressed="false" aria-label="Flip the record to the other side">
+      <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><path d="M12 3.5v4M12 16.5v4"/></svg>
+      <span>Flip the record</span>
+    </button>
+    <div class="divider" aria-hidden="true"></div>
+    <button id="lamp" type="button" aria-pressed="true" aria-label="Turn the lamp off">
+      <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M9 18h6M10 22h4M8.6 15.4A7 7 0 1 1 15.4 15.4c-.8.7-1.3 1.5-1.4 2.6h-4c-.1-1.1-.6-1.9-1.4-2.6Z"/></svg>
+      <span>Lamp</span>
+    </button>
+    <div class="divider" aria-hidden="true"></div>
+    <button id="reset" type="button" aria-label="Reset the view">
+      <svg class="glyph" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M4 12a8 8 0 1 0 2.3-5.7L4 8.6"/><path d="M4 4v4.6h4.6"/></svg>
+      <span>Center</span>
+    </button>
+  </nav>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <div class="fallback" id="fallback">The 3D room didn’t finish loading.</div>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    const canvas = document.getElementById('room');
+    const fallback = document.getElementById('fallback');
+    const flipButton = document.getElementById('flip');
+    const lampButton = document.getElementById('lamp');
+    const resetButton = document.getElementById('reset');
+    const toast = document.getElementById('toast');
+    const reduceMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+    if (!window.THREE) { fallback.style.display = 'grid'; return; }
+
+    let renderer;
+    try {
+      renderer = new THREE.WebGLRenderer({canvas: canvas, antialias: false, alpha: false, powerPreference: 'high-performance'});
+    } catch (error) {
+      fallback.textContent = 'This little room needs WebGL to open.';
+      fallback.style.display = 'grid'; return;
+    }
+    renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.25));
+    renderer.setSize(innerWidth, innerHeight, false);
+    renderer.shadowMap.enabled = false;
+    if ('outputColorSpace' in renderer && THREE.SRGBColorSpace) renderer.outputColorSpace = THREE.SRGBColorSpace;
+    else renderer.outputEncoding = THREE.sRGBEncoding;
+    renderer.toneMapping = THREE.NoToneMapping;
+    renderer.setClearColor(0x0c0a14, 1);
+
+    const scene = new THREE.Scene();
+    scene.fog = new THREE.FogExp2(0x0c0a14, 0.02);
+    const camera = new THREE.PerspectiveCamera(43, innerWidth / innerHeight, 0.1, 60);
+    const target = new THREE.Vector3(0, 2.7, -0.9);
+    let yaw = 0, pitch = 0.03, distance = innerWidth < 650 ? 15.4 : 11.8;
+    // Gallery parallax: the gallery broadcasts its camera position to HTML frames;
+    // we answer with a gentle additive look-offset so the diorama feels alive on the wall.
+    let parYaw = 0, parPitch = 0, parYawT = 0, parPitchT = 0, parActive = false;
+    addEventListener('message', function (e) {
+      const d = e && e.data;
+      if (!d || d.type !== 'GALLERY_CAMERA_PARALLAX') return;
+      parActive = true;
+      parYawT = Math.max(-0.3, Math.min(0.3, (d.normX || 0) * 0.35));
+      parPitchT = Math.max(-0.18, Math.min(0.18, -(d.normY || 0) * 0.22));
+    }, {passive: true});
+    let targetYaw = yaw, targetPitch = pitch, targetDistance = distance;
+    let dragging = false, lastX = 0, lastY = 0, toastTimer = null, lampOn = true;
+
+    function mat(color, roughness) {
+      return new THREE.MeshLambertMaterial({color: color, roughness: roughness == null ? .9 : roughness});
+    }
+    const mats = {
+      wall: mat(0x2b2438, .96), sideWall: mat(0x1a1524, .98), floor: mat(0x2a1d18, .9),
+      desk: mat(0x3a2a20, .82), deskDark: mat(0x241a15, .88), plinth: mat(0x1e1a24, .6),
+      platter: mat(0x111114, .35), vinyl: mat(0x0a0a0c, .3), steel: mat(0x3a3f46, .45),
+      ceramic: mat(0xd9ccb6, .4), paper: mat(0xe4d8bf, .94), curtain: mat(0x4a3550, 1)
+    };
+
+    function mesh(geometry, material, x, y, z) {
+      const m = new THREE.Mesh(geometry, material);
+      m.position.set(x || 0, y || 0, z || 0);
+      scene.add(m); return m;
+    }
+    function box(w, h, d, material, x, y, z) { return mesh(new THREE.BoxGeometry(w, h, d), material, x, y, z); }
+    function cylinder(rt, rb, h, segments, material, x, y, z) {
+      return mesh(new THREE.CylinderGeometry(rt, rb, h, segments), material, x, y, z);
+    }
+
+    // Room shell: open front, desk against the back wall.
+    box(12.4, .22, 8.5, mats.floor, 0, -.11, 0);
+    box(12.4, 7.6, .22, mats.wall, 0, 3.69, -4.12);
+    box(.22, 7.6, 8.5, mats.sideWall, -6.1, 3.69, 0);
+    box(.22, 7.6, 8.5, mats.sideWall, 6.1, 3.69, 0);
+    for (let i = -5; i <= 5; i++) box(.018, .018, 8.2, mats.deskDark, i * 1.08, .015, 0);
+
+    // Rug.
+    const rug = box(7.4, .04, 3.6, mat(0x3a2a34, 1), .2, .045, 1.5); rug.rotation.y = -.02;
+    for (let i = -4; i <= 4; i++) box(.015, .025, 3.3, mat(0x8a5a44), .2 + i * .72, .075, 1.5);
+
+    // Dusk window, right of the desk.
+    box(4.6, 3.9, .08, new THREE.MeshBasicMaterial({color: 0x1c2a44}), 3.35, 4.7, -3.98);
+    const frameMat = mat(0x242634, .8);
+    box(4.95, .18, .22, frameMat, 3.35, 2.72, -3.74); box(4.95, .18, .22, frameMat, 3.35, 6.68, -3.74);
+    box(.18, 4.1, .22, frameMat, 1.06, 4.7, -3.74); box(.18, 4.1, .22, frameMat, 5.64, 4.7, -3.74);
+    box(.13, 3.9, .24, frameMat, 3.35, 4.7, -3.7); box(4.6, .13, .24, frameMat, 3.35, 4.7, -3.7);
+    const moon = mesh(new THREE.CircleGeometry(.42, 48), new THREE.MeshBasicMaterial({color: 0xf4e6b2}), 4.5, 5.8, -3.83);
+    const moonCut = mesh(new THREE.CircleGeometry(.4, 48), new THREE.MeshBasicMaterial({color: 0x1c2a44}), 4.68, 5.94, -3.8);
+    const starGeo = new THREE.BufferGeometry();
+    const starPos = [];
+    for (let i = 0; i < 34; i++) starPos.push(1.35 + ((i * 41) % 97) / 97 * 4.1, 3.1 + ((i * 67 + 11) % 89) / 89 * 3.2, -3.78);
+    starGeo.setAttribute('position', new THREE.Float32BufferAttribute(starPos, 3));
+    const stars = new THREE.Points(starGeo, new THREE.PointsMaterial({color: 0xe6edf3, size: .032, transparent: true, opacity: .7})); scene.add(stars);
+    // Distant rooftops under the dusk.
+    const roofMat = new THREE.MeshBasicMaterial({color: 0x131c30});
+    [[1.5, .8, .9], [2.4, 1.1, .6], [3.4, .7, 1.1], [4.4, 1.2, .7], [5.2, .6, .9]].forEach(function (b) {
+      box(b[1], b[2], .06, roofMat, b[0], 2.82 + b[2] / 2, -3.88);
+    });
+    // Curtain, left edge of the window.
+    const curtain = box(.66, 4.3, .4, mats.curtain, .72, 4.55, -3.24); curtain.rotation.z = -.03;
+
+    // Desk.
+    box(6.4, .16, 2.9, mats.desk, -.3, 2.28, -1.6);
+    [[-3.2, -2.85], [2.6, -2.85], [-3.2, -.35], [2.6, -.35]].forEach(function (p) {
+      box(.18, 2.2, .18, mats.deskDark, p[0], 1.14, p[1]);
+    });
+
+    // Turntable plinth, centered on the desk.
+    box(3.5, .34, 2.6, mats.plinth, -.3, 2.53, -1.6);
+    box(3.56, .06, 2.66, mat(0x0d0c12, .5), -.3, 2.38, -1.6);
+    // Speed switch + start knob, little details on the plinth.
+    box(.22, .1, .14, mat(0xc96f3a, .5), -1.75, 2.74, -.62);
+    cylinder(.07, .07, .12, 16, mats.steel, -1.75, 2.76, -.62);
+    box(.3, .08, .3, mat(0x8a5a44, .6), 1.05, 2.74, -.62);
+
+    // Platter + record: one spinning group.
+    const spinGroup = new THREE.Group();
+    spinGroup.position.set(-.55, 2.72, -1.6);
+    scene.add(spinGroup);
+    const platter = new THREE.Mesh(new THREE.CylinderGeometry(1.18, 1.18, .1, 48), mats.platter);
+    platter.position.y = .05; spinGroup.add(platter);
+    const platterRing = new THREE.Mesh(new THREE.TorusGeometry(1.18, .02, 8, 48), mats.steel);
+    platterRing.rotation.x = Math.PI / 2; platterRing.position.y = .1; spinGroup.add(platterRing);
+
+    // Record face: canvas texture with grooves + a warm label.
+    function recordTexture(labelColor) {
+      const c = document.createElement('canvas'); c.width = c.height = 512;
+      const g = c.getContext('2d');
+      g.fillStyle = '#0a0a0c'; g.fillRect(0, 0, 512, 512);
+      for (let r = 250; r > 60; r -= 3) {
+        g.beginPath(); g.arc(256, 256, r, 0, Math.PI * 2);
+        g.strokeStyle = 'rgba(255,255,255,' + (0.03 + (r % 9 === 0 ? 0.05 : 0)) + ')';
+        g.lineWidth = 1; g.stroke();
+      }
+      // Sheen: a soft diagonal highlight so the grooves catch the lamp.
+      const grad = g.createLinearGradient(0, 0, 512, 512);
+      grad.addColorStop(0, 'rgba(255,255,255,0)');
+      grad.addColorStop(.5, 'rgba(255,255,255,0.10)');
+      grad.addColorStop(1, 'rgba(255,255,255,0)');
+      g.fillStyle = grad; g.fillRect(0, 0, 512, 512);
+      g.beginPath(); g.arc(256, 256, 78, 0, Math.PI * 2); g.fillStyle = labelColor; g.fill();
+      g.beginPath(); g.arc(256, 256, 78, 0, Math.PI * 2); g.strokeStyle = 'rgba(0,0,0,0.35)'; g.lineWidth = 2; g.stroke();
+      g.beginPath(); g.arc(256, 256, 12, 0, Math.PI * 2); g.fillStyle = '#f4ebdf'; g.fill();
+      g.beginPath(); g.arc(256, 256, 4, 0, Math.PI * 2); g.fillStyle = '#111'; g.fill();
+      const tex = new THREE.CanvasTexture(c);
+      tex.anisotropy = 4;
+      return tex;
+    }
+    const labelA = '#c96f3a', labelB = '#2e7f86';
+    let currentLabel = labelA;
+    const recordTop = new THREE.MeshLambertMaterial({map: recordTexture(labelA), roughness: .3});
+    const recordSide = new THREE.MeshLambertMaterial({color: 0x0a0a0c, roughness: .3});
+    const record = new THREE.Mesh(new THREE.CylinderGeometry(1.06, 1.06, .035, 56), [recordSide, recordTop, recordSide]);
+    record.position.y = .13; spinGroup.add(record);
+    const spindle = new THREE.Mesh(new THREE.CylinderGeometry(.025, .025, .14, 12), mats.steel);
+    spindle.position.y = .18; spinGroup.add(spindle);
+
+    // Tonearm: pivot at the plinth's back-right, arm reaching onto the record.
+    const armStart = new THREE.Vector3(1.05, 2.98, -2.55);
+    const armEnd = new THREE.Vector3(.15, 2.94, -1.05);
+    const armDir = armEnd.clone().sub(armStart);
+    const armLen = armDir.length();
+    cylinder(.14, .16, .22, 20, mats.steel, armStart.x, armStart.y - .08, armStart.z);
+    const arm = box(armLen, .05, .09, mats.steel, (armStart.x + armEnd.x) / 2, (armStart.y + armEnd.y) / 2, (armStart.z + armEnd.z) / 2);
+    arm.rotation.y = Math.atan2(-armDir.z, armDir.x);
+    const cartridge = box(.16, .12, .14, mat(0x111114, .4), armEnd.x, armEnd.y - .05, armEnd.z);
+    cartridge.rotation.y = arm.rotation.y;
+    cylinder(.02, .02, .1, 8, mat(0xd9ccb6, .4), armEnd.x, armEnd.y - .12, armEnd.z);
+
+    // Speaker on the desk, left of the turntable.
+    box(1.05, 1.5, .85, mat(0x241d1a, .8), -2.35, 3.1, -1.7);
+    cylinder(.34, .34, .06, 28, mat(0x0f0d10, .5), -2.35, 3.25, -1.26);
+    cylinder(.14, .14, .06, 20, mat(0x2a262c, .5), -2.35, 3.62, -1.26);
+    // Books leaning on the desk, right side.
+    const bookColors = [0x844638, 0x596b78, 0x415b59, 0x925969];
+    for (let i = 0; i < 3; i++) {
+      const b = box(.16, .95, .7, mat(bookColors[i], .9), 2.05 + i * .2, 2.82, -1.5);
+      b.rotation.z = .1 + i * .02;
+    }
+    // Mug, gone a little cold.
+    const mug = cylinder(.24, .22, .5, 28, mats.ceramic, 1.75, 2.62, -2.3); mug.rotation.y = .25;
+    const handle = mesh(new THREE.TorusGeometry(.2, .05, 10, 24, Math.PI * 1.55), mats.ceramic, 2.0, 2.62, -2.28);
+    handle.rotation.y = Math.PI / 2; handle.rotation.z = .18;
+
+    // Record crate: sleeves leaning against the wall, left of the desk.
+    const sleeveColors = [0x6b4a48, 0x3f5a5e, 0x8a6a3a, 0x5b4666, 0x74503a, 0x46665a];
+    sleeveColors.forEach(function (color, i) {
+      const s = box(.08, 1.5, 1.5, mat(color, .95), -4.35 + i * .11, .85, -3.35);
+      s.rotation.x = -.22; s.rotation.z = .02 * i;
+    });
+    // One sleeve pulled out, leaning on the crate.
+    const pulled = box(.08, 1.5, 1.5, mat(0xc96f3a, .9), -3.55, 1.0, -2.95);
+    pulled.rotation.x = -.3; pulled.rotation.y = .35;
+
+    // Floor lamp, left of the desk.
+    cylinder(.4, .46, .1, 28, mats.steel, -4.35, .05, -1.2);
+    cylinder(.05, .05, 3.4, 14, mats.steel, -4.35, 1.75, -1.2);
+    const shadeMat = new THREE.MeshLambertMaterial({color: 0xe2a35e, emissive: 0x8a3f1b, emissiveIntensity: .75, side: THREE.DoubleSide});
+    const shade = mesh(new THREE.CylinderGeometry(.42, .7, .72, 36, 1, true), shadeMat, -4.35, 3.7, -1.2);
+    const bulb = mesh(new THREE.SphereGeometry(.09, 16, 12), new THREE.MeshBasicMaterial({color: 0xffe5af}), -4.35, 3.42, -1.2);
+    const lampLight = new THREE.PointLight(0xffa65f, 30, 8, 1.55);
+    lampLight.position.set(-4.35, 3.5, -1.0); scene.add(lampLight);
+
+    // Dust motes drifting in the lamplight.
+    const moteCount = 60, motePos = new Float32Array(moteCount * 3), moteSeed = [];
+    for (let i = 0; i < moteCount; i++) {
+      motePos[i * 3] = -4.35 + ((i * 37) % 53) / 53 * 3.4 - 1.2;
+      motePos[i * 3 + 1] = .4 + ((i * 61 + 7) % 89) / 89 * 3.6;
+      motePos[i * 3 + 2] = -2.6 + ((i * 29) % 47) / 47 * 2.6;
+      moteSeed.push((i * 13) % 100 / 100);
+    }
+    const moteGeo = new THREE.BufferGeometry();
+    moteGeo.setAttribute('position', new THREE.BufferAttribute(motePos, 3));
+    const motes = new THREE.Points(moteGeo, new THREE.PointsMaterial({color: 0xffe5af, size: .03, transparent: true, opacity: .55}));
+    scene.add(motes);
+
+    // Lighting.
+    const hemi = new THREE.HemisphereLight(0x5a6a94, 0x1b1011, .95); scene.add(hemi);
+    const duskLight = new THREE.DirectionalLight(0x7a90c0, 1.4); duskLight.position.set(3.5, 6, -2); scene.add(duskLight);
+
+    function positionCamera() {
+      const ey = yaw + (parActive ? parYaw : 0), ep = pitch + (parActive ? parPitch : 0);
+      camera.position.set(Math.sin(ey) * distance, target.y + Math.sin(ep) * distance + 1.0, Math.cos(ey) * distance - .05);
+      camera.position.x += .2;
+      camera.lookAt(target);
+    }
+    positionCamera();
+
+    function resize() {
+      renderer.setPixelRatio(Math.min(devicePixelRatio || 1, 1.25));
+      renderer.setSize(innerWidth, innerHeight, false);
+      camera.aspect = innerWidth / innerHeight;
+      camera.fov = innerWidth < 650 ? 48 : 43;
+      camera.updateProjectionMatrix();
+      if (!dragging && Math.abs(targetYaw) < .01 && Math.abs(targetPitch - .03) < .01) {
+        targetDistance = innerWidth < 650 ? 15.4 : 11.8;
+      }
+    }
+    addEventListener('resize', resize, {passive: true});
+
+    canvas.addEventListener('pointerdown', function (e) { dragging = true; lastX = e.clientX; lastY = e.clientY; canvas.setPointerCapture(e.pointerId); });
+    canvas.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      targetYaw = Math.max(-.58, Math.min(.58, targetYaw - (e.clientX - lastX) * .005));
+      targetPitch = Math.max(-.10, Math.min(.28, targetPitch + (e.clientY - lastY) * .004));
+      lastX = e.clientX; lastY = e.clientY;
+    });
+    canvas.addEventListener('pointerup', function () { dragging = false; });
+    canvas.addEventListener('pointercancel', function () { dragging = false; });
+    canvas.addEventListener('wheel', function (e) { e.preventDefault(); targetDistance = Math.max(9.5, Math.min(innerWidth < 650 ? 18 : 15, targetDistance + e.deltaY * .008)); }, {passive: false});
+
+    function showToast(message) { toast.textContent = message; toast.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(function () { toast.classList.remove('show'); }, 1800); }
+
+    let side = 'A', spinDir = 1;
+    flipButton.addEventListener('click', function () {
+      side = side === 'A' ? 'B' : 'A';
+      spinDir = -spinDir;
+      currentLabel = side === 'A' ? labelA : labelB;
+      recordTop.map = recordTexture(currentLabel);
+      recordTop.needsUpdate = true;
+      flipButton.setAttribute('aria-pressed', String(side === 'B'));
+      showToast(side === 'B' ? 'Side B. Same album, again.' : 'Side A. From the top, again.');
+    });
+    lampButton.addEventListener('click', function () {
+      lampOn = !lampOn; lampLight.visible = lampOn; bulb.visible = lampOn; shadeMat.emissiveIntensity = lampOn ? .75 : .04;
+      lampButton.setAttribute('aria-pressed', String(lampOn)); lampButton.setAttribute('aria-label', lampOn ? 'Turn the lamp off' : 'Turn the lamp on');
+      showToast(lampOn ? 'A little warmth.' : 'Dusk only.');
+    });
+    resetButton.addEventListener('click', function () {
+      targetYaw = 0; targetPitch = .03; targetDistance = innerWidth < 650 ? 15.4 : 11.8; showToast('Back to the turntable.');
+    });
+    addEventListener('keydown', function (e) {
+      if (e.key === 'ArrowLeft') targetYaw = Math.min(.58, targetYaw + .06); if (e.key === 'ArrowRight') targetYaw = Math.max(-.58, targetYaw - .06);
+      if (e.key === 'ArrowUp') targetPitch = Math.min(.28, targetPitch + .05); if (e.key === 'ArrowDown') targetPitch = Math.max(-.10, targetPitch - .05);
+      if (e.key === '+' || e.key === '=') targetDistance = Math.max(9.5, targetDistance - .5); if (e.key === '-') targetDistance = Math.min(15, targetDistance + .5);
+    });
+
+    const clock = new THREE.Clock();
+    function animate() {
+      const t = clock.getElapsedTime();
+      yaw += (targetYaw - yaw) * .075; pitch += (targetPitch - pitch) * .075; distance += (targetDistance - distance) * .075;
+      parYaw += (parYawT - parYaw) * .06; parPitch += (parPitchT - parPitch) * .06; positionCamera();
+      if (!reduceMotion) {
+        spinGroup.rotation.y += spinDir * 2.2 * 0.016;
+        const p = moteGeo.attributes.position.array;
+        for (let i = 0; i < moteCount; i++) {
+          p[i * 3 + 1] += Math.sin(t * .5 + moteSeed[i] * 6.28) * .0009;
+          p[i * 3] += Math.cos(t * .4 + moteSeed[i] * 6.28) * .0007;
+        }
+        moteGeo.attributes.position.needsUpdate = true;
+        stars.material.opacity = .6 + Math.sin(t * .65) * .08;
+      }
+      renderer.render(scene, camera); requestAnimationFrame(animate);
+    }
+    animate();
+  })();
+  </script>
+</body>
+</html>
