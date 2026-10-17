@@ -23,9 +23,6 @@
 
     <!-- Google Model Viewer for GLB/GLTF 3D Models with Draco Compression -->
     <script type="module" src="https://ajax.googleapis.com/ajax/libs/model-viewer/3.5.0/model-viewer.min.js"></script>
-
-    <!-- JSZip for Exhibit Archive Downloads (pinned CDN) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     
     <style>
         body, html {
@@ -491,13 +488,6 @@
                 <button onclick="closeCurateModal()" class="text-zinc-400 hover:text-zinc-100 p-1.5 rounded-lg hover:bg-zinc-800 transition">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
-            <!-- Curate notice message banner -->
-            <div id="curate-notice" class="hidden mx-6 mt-4 p-3 rounded-xl text-xs flex items-start justify-between gap-3 bg-amber-500/10 border border-amber-500/30 text-amber-200">
-                <div class="flex items-start gap-2">
-                    <span class="text-base leading-none shrink-0 mt-0.5">⚠️</span>
-                    <span id="curate-notice-text" class="break-all"></span>
-                </div>
-                <button type="button" onclick="hideCurateNotice()" class="text-amber-400 hover:text-amber-100 font-bold p-0.5 shrink-0 cursor-pointer" title="Dismiss notice">✕</button>
             </div>
 
             <div class="p-6 overflow-y-auto space-y-3" id="curate-list-container">
@@ -3276,7 +3266,6 @@
                 openAuthModal();
                 return;
             }
-            hideCurateNotice();
             const container = document.getElementById('curate-list-container');
             container.innerHTML = '';
 
@@ -3314,18 +3303,15 @@
                                 <p class="text-[11px] text-zinc-400 truncate mt-0.5">${displayArtist} · <span class="italic text-zinc-500">${displayMedium}${displayYear ? ' (' + displayYear + ')' : ''}</span></p>
                             </div>
                         </div>
-                        <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-center overflow-x-auto max-w-full pb-1" style="scrollbar-width: thin;">
-                            <button type="button" onclick="curateViewExhibit('${art.id}', ${idx})" class="px-2.5 py-1.5 shrink-0 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium transition cursor-pointer" title="Fly camera to this exhibit">
+                        <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+                            <button type="button" onclick="curateViewExhibit('${art.id}', ${idx})" class="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium transition cursor-pointer" title="Fly camera to this exhibit">
                                 View ↗
                             </button>
-                            <button type="button" onclick="downloadCurateExhibit('${art.id}', this)" class="px-2.5 py-1.5 shrink-0 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-lg text-xs font-medium transition cursor-pointer" title="Download artwork + placard as ZIP">
-                                Download ⬇️
-                            </button>
                             ${(art.type === 'model' || art.type === 'html') ? `
-                            <button type="button" onclick="capturePosterFor('${art.id}', this)" class="px-2.5 py-1.5 shrink-0 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 rounded-lg text-xs font-medium transition cursor-pointer" title="Capture a thumbnail poster from this piece for the directory">
+                            <button type="button" onclick="capturePosterFor('${art.id}', this)" class="px-2.5 py-1.5 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 border border-sky-500/30 rounded-lg text-xs font-medium transition cursor-pointer" title="Capture a thumbnail poster from this piece for the directory">
                                 ${art.poster ? 'Poster ✓ ↻' : 'Poster 📸'}
                             </button>` : ''}
-                            <button type="button" onclick="openEditModal('${art.id}')" class="px-2.5 py-1.5 shrink-0 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-lg text-xs font-medium transition cursor-pointer" title="Edit exhibit details">
+                            <button type="button" onclick="openEditModal('${art.id}')" class="px-2.5 py-1.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-200 border border-zinc-700 rounded-lg text-xs font-medium transition cursor-pointer" title="Edit exhibit details">
                                 Edit ✏️
                             </button>
                             <button type="button" onclick="requestDeleteArtwork('${art.id}', '${displayTitle.replace(/'/g, "\\'")}')" class="px-2.5 py-1.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg text-xs font-medium transition cursor-pointer" title="Remove exhibit">
@@ -3353,244 +3339,6 @@
             }
             closeCurateModal();
             enterHallAt(artId);
-        }
-
-        // ─── CURATE EXHIBIT DOWNLOAD (ZIP) ─────────────────────────
-        function showCurateNotice(message, isWarning = false) {
-            const el = document.getElementById('curate-notice');
-            const txt = document.getElementById('curate-notice-text');
-            if (el && txt) {
-                txt.textContent = message;
-                el.className = isWarning
-                    ? 'mx-6 mt-4 p-3 rounded-xl text-xs flex items-start justify-between gap-3 bg-amber-500/10 border border-amber-500/30 text-amber-200'
-                    : 'mx-6 mt-4 p-3 rounded-xl text-xs flex items-start justify-between gap-3 bg-zinc-800 border border-zinc-700 text-zinc-200';
-                el.classList.remove('hidden');
-            } else {
-                alert(message);
-            }
-        }
-
-        function hideCurateNotice() {
-            const el = document.getElementById('curate-notice');
-            if (el) el.classList.add('hidden');
-        }
-
-        async function ensureJSZipLoaded() {
-            if (typeof JSZip !== 'undefined') return true;
-            try {
-                await new Promise((resolve, reject) => {
-                    const s = document.createElement('script');
-                    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js';
-                    s.onload = resolve;
-                    s.onerror = reject;
-                    document.head.appendChild(s);
-                });
-                if (typeof JSZip !== 'undefined') return true;
-            } catch (e) {}
-
-            try {
-                await new Promise((resolve, reject) => {
-                    const s = document.createElement('script');
-                    s.src = 'jszip.min.js';
-                    s.onload = resolve;
-                    s.onerror = reject;
-                    document.head.appendChild(s);
-                });
-                if (typeof JSZip !== 'undefined') return true;
-            } catch (e) {}
-
-            return typeof JSZip !== 'undefined';
-        }
-
-        // Slug rule: lowercase the title, replace non-alphanumeric runs with a single hyphen,
-        // trim leading/trailing hyphens, cap at 40 characters. Full id goes in filename as-is.
-        function generateExhibitSlug(title) {
-            const raw = (title || 'untitled').toString().toLowerCase();
-            let slug = raw.replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
-            if (slug.length > 40) {
-                slug = slug.slice(0, 40).replace(/-+$/, '');
-            }
-            return slug || 'untitled';
-        }
-
-        // Parses filename from Firebase Storage path or URL, falling back to <slug> + type-based extension
-        function getExhibitArtworkFilename(art, slug) {
-            const typeExtMap = {
-                html: '.html',
-                model: '.glb',
-                video: '.mp4',
-                image: '.png'
-            };
-            const fallbackExt = typeExtMap[art && art.type] || '.png';
-
-            let parsedName = null;
-            if (art && art.url && typeof art.url === 'string') {
-                try {
-                    let pathPart = '';
-                    if (art.url.includes('/o/')) {
-                        const afterO = art.url.split('/o/')[1];
-                        const raw = afterO.split('?')[0].split('#')[0];
-                        pathPart = decodeURIComponent(raw);
-                    } else {
-                        pathPart = art.url.split('?')[0].split('#')[0];
-                    }
-                    const candidate = pathPart.split('/').filter(Boolean).pop();
-                    if (candidate && /\.[a-z0-9]{1,6}$/i.test(candidate)) {
-                        parsedName = candidate;
-                    }
-                } catch (e) {
-                    console.warn('Failed parsing filename from artwork URL:', e);
-                }
-            }
-
-            if (parsedName) {
-                return parsedName;
-            }
-            return `${slug}${fallbackExt}`;
-        }
-
-        // Builds placard.json containing exhibit metadata; missing fields are omitted, not null-padded.
-        // userDirectory is intentionally excluded.
-        function buildPlacardJson(art) {
-            const placard = {};
-
-            const addIfPresent = (key, val) => {
-                if (val !== undefined && val !== null) {
-                    if (typeof val === 'string') {
-                        const trimmed = val.trim();
-                        if (trimmed.length > 0) {
-                            placard[key] = trimmed;
-                        }
-                    } else {
-                        placard[key] = val;
-                    }
-                }
-            };
-
-            addIfPresent('id', art.id);
-            addIfPresent('title', art.title);
-            addIfPresent('artist', art.artist);
-            addIfPresent('year', art.year);
-            addIfPresent('medium', art.medium);
-            addIfPresent('type', art.type);
-            addIfPresent('description', art.description);
-
-            if (art.poster) {
-                addIfPresent('poster', art.poster);
-            }
-
-            if (art.portal) {
-                let roomPath = '';
-                if (typeof art.portal === 'object' && art.portal.path) {
-                    roomPath = art.portal.path;
-                } else if (typeof art.portal === 'string') {
-                    roomPath = art.portal;
-                }
-                if (roomPath) {
-                    addIfPresent('portal', roomPath);
-                }
-            }
-
-            addIfPresent('uploaderUid', art.uploaderUid);
-            addIfPresent('uploaderName', art.uploaderName);
-            addIfPresent('createdAt', art.createdAt);
-
-            return placard;
-        }
-
-        // Downloads single exhibit ZIP containing artwork file + placard.json
-        async function downloadCurateExhibit(artId, btn) {
-            if (!isGalleryAdmin(currentGalleryUser)) {
-                openAuthModal();
-                return;
-            }
-
-            const art = ARTWORKS.find(a => a && a.id === artId);
-            if (!art) {
-                showCurateNotice('Exhibit not found.', true);
-                return;
-            }
-
-            const jszipReady = await ensureJSZipLoaded();
-            if (!jszipReady) {
-                showCurateNotice('JSZip library failed to load from CDN. Cannot create ZIP archive.', true);
-                return;
-            }
-
-            hideCurateNotice();
-
-            const origHtml = btn ? btn.innerHTML : '';
-            if (btn) {
-                btn.disabled = true;
-                btn.innerHTML = '<span>Zipping…</span>';
-            }
-
-            try {
-                const slug = generateExhibitSlug(art.title);
-                const artworkFileName = getExhibitArtworkFilename(art, slug);
-                const placard = buildPlacardJson(art);
-
-                const zip = new JSZip();
-
-                let artworkFetchFailed = false;
-                let failedUrl = null;
-
-                if (art.url) {
-                    let fetchUrl = art.url;
-                    if (fetchUrl.startsWith('gallery/') && typeof firebase !== 'undefined' && firebase.storage) {
-                        try {
-                            fetchUrl = await firebase.storage().ref(fetchUrl).getDownloadURL();
-                        } catch (e) {
-                            console.warn('Storage ref getDownloadURL failed:', e);
-                        }
-                    }
-
-                    try {
-                        const response = await fetch(fetchUrl);
-                        if (!response.ok) {
-                            throw new Error(`HTTP ${response.status}`);
-                        }
-                        const blob = await response.blob();
-                        zip.file(artworkFileName, blob);
-                    } catch (fetchErr) {
-                        console.warn('Failed to fetch artwork blob:', fetchErr);
-                        artworkFetchFailed = true;
-                        failedUrl = art.url;
-                    }
-                } else {
-                    artworkFetchFailed = true;
-                    failedUrl = '(no URL specified)';
-                }
-
-                // placard.json is always added
-                zip.file('placard.json', JSON.stringify(placard, null, 2));
-
-                const zipBlob = await zip.generateAsync({ type: 'blob' });
-                const zipName = `${slug}-${art.id}.zip`;
-
-                const a = document.createElement('a');
-                const url = URL.createObjectURL(zipBlob);
-                a.href = url;
-                a.download = zipName;
-                document.body.appendChild(a);
-                a.click();
-                setTimeout(() => {
-                    URL.revokeObjectURL(url);
-                    a.remove();
-                }, 1500);
-
-                if (artworkFetchFailed) {
-                    showCurateNotice(`Could not fetch artwork file from ${failedUrl}. The ZIP archive was downloaded with placard.json only.`, true);
-                }
-            } catch (err) {
-                console.error('Error during exhibit ZIP download:', err);
-                showCurateNotice(`Failed to create exhibit ZIP: ${err.message || err}`, true);
-            } finally {
-                if (btn) {
-                    btn.disabled = false;
-                    btn.innerHTML = origHtml || '<span>Download ⬇️</span>';
-                }
-            }
         }
 
         // ─── EXHIBIT POSTERS (stored thumbnails for model / live-HTML cards) ───
