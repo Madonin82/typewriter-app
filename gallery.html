@@ -3314,7 +3314,7 @@
                                 <p class="text-[11px] text-zinc-400 truncate mt-0.5">${displayArtist} · <span class="italic text-zinc-500">${displayMedium}${displayYear ? ' (' + displayYear + ')' : ''}</span></p>
                             </div>
                         </div>
-                        <div class="flex items-center gap-1.5 shrink-0 self-end sm:self-center flex-wrap">
+                        <div class="flex items-center gap-1.5 flex-wrap justify-end max-w-full min-w-0">
                             <button type="button" onclick="curateViewExhibit('${art.id}', ${idx})" class="px-2.5 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg text-xs font-medium transition cursor-pointer" title="Fly camera to this exhibit">
                                 View ↗
                             </button>
