@@ -1,0 +1,363 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="color-scheme" content="dark" />
+  <link rel="icon" href="data:," />
+  <title>Attract Mode</title>
+  <style>
+    html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #0b0e1a; }
+    body { font-family: Georgia, "Times New Roman", serif; }
+    canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; touch-action: none; }
+    .grain {
+      position: fixed; inset: 0; pointer-events: none; opacity: .08; mix-blend-mode: soft-light;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 120 120' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.55'/%3E%3C/svg%3E");
+    }
+    .caption {
+      position: fixed; top: max(20px, env(safe-area-inset-top)); left: clamp(20px, 4vw, 54px);
+      max-width: min(440px, calc(100vw - 40px)); color: #dfe6ff;
+      text-shadow: 0 1px 12px rgba(0,0,0,.8); pointer-events: none;
+    }
+    .caption .kicker { margin: 0 0 8px; font: 600 10px/1.2 ui-monospace, Menlo, monospace; letter-spacing: .18em; opacity: .6; }
+    .caption .line { margin: 0; font-size: clamp(19px, 2.6vw, 29px); line-height: 1.25; font-style: italic; }
+    .hint {
+      position: fixed; right: clamp(18px, 3vw, 36px); bottom: max(18px, env(safe-area-inset-bottom));
+      color: #dfe6ff; font: 500 11px/1.5 ui-monospace, Menlo, monospace; opacity: .55;
+      text-align: right; pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="caption">
+    <p class="kicker">JESSIKA &mdash; AFTER MIDNIGHT</p>
+    <p class="line">the cabinet plays itself until<br />someone drops a coin in</p>
+  </div>
+  <div class="hint">tap to insert a coin &middot; drag to look around</div>
+  <div class="grain"></div>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script>
+  (function () {
+    'use strict';
+    if (!window.THREE) { return; }
+
+    var renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    var scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x0b0e1a);
+    scene.fog = new THREE.Fog(0x0b0e1a, 10, 26);
+
+    var camera = new THREE.PerspectiveCamera(46, window.innerWidth / window.innerHeight, 0.1, 120);
+    var BASE_TGT = new THREE.Vector3(0, 1.35, 0);
+    camera.position.set(0, 1.6, 4.8);
+    camera.lookAt(BASE_TGT);
+
+    scene.add(new THREE.AmbientLight(0x334, 0.55));
+    var roomLight = new THREE.DirectionalLight(0x8fa3ff, 0.25);
+    roomLight.position.set(3, 5, 4);
+    scene.add(roomLight);
+    // the screen's glow spilling onto the floor
+    var screenGlow = new THREE.PointLight(0x59f7ff, 0.9, 7, 2);
+    screenGlow.position.set(0, 1.7, 1.2);
+    scene.add(screenGlow);
+
+    function box(w, h, d, color, x, y, z) {
+      var m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d),
+        new THREE.MeshLambertMaterial({ color: color }));
+      m.position.set(x, y, z);
+      scene.add(m);
+      return m;
+    }
+
+    // ---- floor and back wall ----
+    var floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40),
+      new THREE.MeshLambertMaterial({ color: 0x141428 }));
+    floor.rotation.x = -Math.PI / 2;
+    scene.add(floor);
+    var wall = new THREE.Mesh(new THREE.PlaneGeometry(40, 14),
+      new THREE.MeshLambertMaterial({ color: 0x0e1020 }));
+    wall.position.set(0, 7, -4);
+    scene.add(wall);
+
+    // ---- the cabinet ----
+    var CAB = new THREE.Group();
+    CAB.position.set(0, 0, -0.4);
+    scene.add(CAB);
+
+    var bodyMat = new THREE.MeshLambertMaterial({ color: 0x1b1e3a });
+    var sideMat = new THREE.MeshLambertMaterial({ color: 0x232650 });
+    var body = new THREE.Mesh(new THREE.BoxGeometry(1.7, 2.7, 1.0), bodyMat);
+    body.position.set(0, 1.35, 0);
+    CAB.add(body);
+    // side art panels: slightly proud, a touch lighter, catching the dark
+    var sideL = new THREE.Mesh(new THREE.BoxGeometry(0.04, 2.5, 0.9), sideMat);
+    sideL.position.set(-0.86, 1.35, 0);
+    CAB.add(sideL);
+    var sideR = sideL.clone();
+    sideR.position.x = 0.86;
+    CAB.add(sideR);
+    // kick plate
+    var kick = new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.22, 0.06),
+      new THREE.MeshLambertMaterial({ color: 0x0c0d1c }));
+    kick.position.set(0, 0.11, 0.52);
+    CAB.add(kick);
+
+    // marquee: glowing top sign
+    var marqueeCanvas = document.createElement('canvas');
+    marqueeCanvas.width = 512; marqueeCanvas.height = 96;
+    var mc = marqueeCanvas.getContext('2d');
+    mc.fillStyle = '#12041f'; mc.fillRect(0, 0, 512, 96);
+    mc.font = 'bold 52px monospace'; mc.textAlign = 'center'; mc.textBaseline = 'middle';
+    mc.shadowColor = '#ff4fd8'; mc.shadowBlur = 22;
+    mc.fillStyle = '#ffd7f2'; mc.fillText('ATTRACT MODE', 256, 50);
+    mc.shadowBlur = 0; mc.fillStyle = '#ff4fd8';
+    mc.font = 'bold 20px monospace'; mc.fillText('★  ★  ★', 256, 84);
+    var marqueeTex = new THREE.CanvasTexture(marqueeCanvas);
+    var marquee = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.28),
+      new THREE.MeshBasicMaterial({ map: marqueeTex }));
+    marquee.position.set(0, 2.62, 0.52);
+    marquee.rotation.x = -0.12;
+    CAB.add(marquee);
+    var marqueeLight = new THREE.PointLight(0xff4fd8, 0.45, 4, 2);
+    marqueeLight.position.set(0, 2.6, 1.0);
+    CAB.add(marqueeLight);
+
+    // ---- the screen: a little pong demo playing itself ----
+    var scr = document.createElement('canvas');
+    scr.width = 256; scr.height = 192;
+    var sc = scr.getContext('2d');
+    var scrTex = new THREE.CanvasTexture(scr);
+    var screen = new THREE.Mesh(new THREE.PlaneGeometry(1.15, 0.86),
+      new THREE.MeshBasicMaterial({ map: scrTex }));
+    screen.position.set(0, 1.95, 0.51);
+    screen.rotation.x = -0.06;
+    CAB.add(screen);
+    // bezel
+    var bezel = new THREE.Mesh(new THREE.BoxGeometry(1.3, 1.0, 0.05),
+      new THREE.MeshLambertMaterial({ color: 0x0a0a18 }));
+    bezel.position.set(0, 1.95, 0.485);
+    CAB.add(bezel);
+    // re-add screen in front of bezel
+    screen.position.z = 0.52;
+
+    // ---- control deck, slanted ----
+    var deck = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.1, 0.62),
+      new THREE.MeshLambertMaterial({ color: 0x14162e }));
+    deck.position.set(0, 1.18, 0.62);
+    deck.rotation.x = 0.28;
+    CAB.add(deck);
+    // joystick
+    var stick = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.04, 0.34, 10),
+      new THREE.MeshLambertMaterial({ color: 0x888888 }));
+    stick.position.set(-0.45, 1.32, 0.66);
+    stick.rotation.x = -0.25;
+    CAB.add(stick);
+    var knob = new THREE.Mesh(new THREE.SphereGeometry(0.085, 16, 12),
+      new THREE.MeshLambertMaterial({ color: 0xe8362a }));
+    knob.position.set(-0.45, 1.5, 0.70);
+    CAB.add(knob);
+    // buttons
+    function button(x, color) {
+      var b = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.05, 14),
+        new THREE.MeshLambertMaterial({ color: color, emissive: color, emissiveIntensity: 0.35 }));
+      b.position.set(x, 1.26, 0.62);
+      b.rotation.x = 0.28;
+      CAB.add(b);
+      return b;
+    }
+    var btnA = button(0.18, 0x29d3ff);
+    var btnB = button(0.42, 0xff4fd8);
+
+    // ---- coin slot ----
+    var slotPlate = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.42, 0.04),
+      new THREE.MeshLambertMaterial({ color: 0x2a2d4d }));
+    slotPlate.position.set(0, 0.62, 0.52);
+    CAB.add(slotPlate);
+    var slot = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.02),
+      new THREE.MeshBasicMaterial({ color: 0x05050c }));
+    slot.position.set(0, 0.66, 0.545);
+    CAB.add(slot);
+    var slotLabel = new THREE.Mesh(new THREE.PlaneGeometry(0.22, 0.06),
+      new THREE.MeshBasicMaterial({ color: 0xffd34d }));
+    slotLabel.position.set(0, 0.48, 0.545);
+    CAB.add(slotLabel);
+
+    // the coin: drops in on tap
+    var coin = new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.075, 0.015, 20),
+      new THREE.MeshLambertMaterial({ color: 0xffd34d, emissive: 0x8a6a00, emissiveIntensity: 0.5 }));
+    coin.rotation.x = Math.PI / 2;
+    coin.position.set(0, 1.15, 0.62);
+    coin.visible = false;
+    CAB.add(coin);
+    // one more coin on the floor, glinting — someone left it
+    var floorCoin = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 0.012, 20),
+      new THREE.MeshLambertMaterial({ color: 0xffd34d, emissive: 0x8a6a00, emissiveIntensity: 0.4 }));
+    floorCoin.position.set(1.35, 0.012, 1.1);
+    scene.add(floorCoin);
+
+    // ---- dust motes drifting in the screen light ----
+    var motes = [];
+    var moteMat = new THREE.MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.5 });
+    for (var mi = 0; mi < 26; mi++) {
+      var mo = new THREE.Mesh(new THREE.SphereGeometry(0.012, 6, 5), moteMat.clone());
+      motes.push({ m: mo, x: -1.2 + Math.random() * 2.4, y: 0.3 + Math.random() * 2.6,
+        z: -0.2 + Math.random() * 2.2, sp: 0.05 + Math.random() * 0.12, ph: Math.random() * 6.28 });
+      scene.add(mo);
+    }
+
+    // ---- the demo on the screen ----
+    var demo = { bx: 128, by: 96, vx: 62, vy: 38, ly: 96, ry: 96, ls: 0, rs: 0, credit: 0, boost: 0 };
+    function drawScreen(t) {
+      sc.fillStyle = '#04060f'; sc.fillRect(0, 0, 256, 192);
+      // scanlines
+      sc.fillStyle = 'rgba(255,255,255,0.045)';
+      for (var y = 0; y < 192; y += 3) { sc.fillRect(0, y, 256, 1); }
+      // header
+      sc.font = 'bold 11px monospace'; sc.textAlign = 'center';
+      sc.fillStyle = '#59f7ff';
+      sc.fillText('ATTRACT MODE', 128, 16);
+      sc.font = 'bold 20px monospace'; sc.fillStyle = '#ffffff';
+      sc.fillText(demo.ls + '  -  ' + demo.rs, 128, 40);
+      // centre line
+      sc.fillStyle = 'rgba(255,255,255,0.25)';
+      for (var cy = 46; cy < 168; cy += 8) { sc.fillRect(127, cy, 2, 5); }
+      // paddles and ball
+      sc.fillStyle = '#59f7ff'; sc.fillRect(10, demo.ly - 16, 5, 32);
+      sc.fillStyle = '#ff4fd8'; sc.fillRect(241, demo.ry - 16, 5, 32);
+      sc.fillStyle = '#ffffff'; sc.fillRect(demo.bx - 3, demo.by - 3, 6, 6);
+      // footer
+      sc.font = 'bold 11px monospace';
+      if (demo.credit > 0) {
+        var blink = Math.floor(t * 2) % 2 === 0;
+        sc.fillStyle = blink ? '#ffd34d' : '#ffffff';
+        sc.fillText('CREDIT 0' + demo.credit + '  —  PRESS START', 128, 184);
+      } else {
+        var blink2 = Math.floor(t * 1.6) % 2 === 0;
+        sc.fillStyle = blink2 ? '#ffd34d' : 'rgba(255,211,77,0.35)';
+        sc.fillText('INSERT COIN', 128, 184);
+      }
+      scrTex.needsUpdate = true;
+    }
+    function stepDemo(dt) {
+      var speed = demo.boost > 0 ? 1.7 : 1;
+      demo.bx += demo.vx * speed * dt;
+      demo.by += demo.vy * speed * dt;
+      if (demo.by < 48 || demo.by > 168) { demo.vy = -demo.vy; demo.by = Math.max(48, Math.min(168, demo.by)); }
+      // paddles chase the ball, imperfectly — it's a demo, nobody's perfect at 3am
+      demo.ly += ((demo.by - demo.ly) * 2.2 - (demo.ly - demo.by) * 0) * dt * 0.9;
+      demo.ly = Math.max(62, Math.min(152, demo.ly));
+      demo.ry += ((demo.by - demo.ry) * 2.0) * dt * 0.9;
+      demo.ry = Math.max(62, Math.min(152, demo.ry));
+      if (demo.bx < 18 && Math.abs(demo.by - demo.ly) < 18) { demo.vx = Math.abs(demo.vx); demo.vx += 4; }
+      if (demo.bx > 238 && Math.abs(demo.by - demo.ry) < 18) { demo.vx = -Math.abs(demo.vx); demo.vx -= 4; }
+      if (demo.bx < 4) { demo.rs++; demo.bx = 128; demo.by = 96; demo.vx = 62; demo.vy = (Math.random() < 0.5 ? -38 : 38); }
+      if (demo.bx > 252) { demo.ls++; demo.bx = 128; demo.by = 96; demo.vx = -62; demo.vy = (Math.random() < 0.5 ? -38 : 38); }
+      demo.vx = Math.max(-140, Math.min(140, demo.vx));
+    }
+
+    // ---- parallax (gallery) + drag + tap ----
+    var parYawT = 0, parPitchT = 0, parYaw = 0, parPitch = 0;
+    window.addEventListener('message', function (e) {
+      var d = e.data;
+      if (!d || d.type !== 'GALLERY_CAMERA_PARALLAX') return;
+      parYawT = Math.max(-0.3, Math.min(0.3, (d.normX || 0) * 0.35));
+      parPitchT = Math.max(-0.18, Math.min(0.18, -(d.normY || 0) * 0.22));
+    }, { passive: true });
+
+    var yaw = 0, pitch = 0, dragging = false, lx = 0, ly = 0;
+    var el = renderer.domElement;
+    el.addEventListener('pointerdown', function (e) { dragging = true; lx = e.clientX; ly = e.clientY; });
+    window.addEventListener('pointerup', function () { dragging = false; });
+    window.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      yaw = Math.max(-0.7, Math.min(0.7, yaw + (e.clientX - lx) * 0.0035));
+      pitch = Math.max(-0.35, Math.min(0.35, pitch + (e.clientY - ly) * 0.0028));
+      lx = e.clientX; ly = e.clientY;
+    }, { passive: true });
+    var tapX = 0, tapY = 0, tapT = 0;
+    var coinDrop = -1; // -1 idle, else progress 0..1
+    el.addEventListener('pointerdown', function (e) { tapX = e.clientX; tapY = e.clientY; tapT = performance.now(); });
+    el.addEventListener('pointerup', function (e) {
+      var dx = e.clientX - tapX, dy = e.clientY - tapY;
+      if (Math.hypot(dx, dy) < 8 && performance.now() - tapT < 300 && coinDrop < 0) {
+        coinDrop = 0; // a tap drops a coin in
+      }
+    });
+
+    window.addEventListener('resize', function () {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    // ---- animate ----
+    var clock = new THREE.Clock();
+    var tmp = new THREE.Vector3();
+    function animate() {
+      requestAnimationFrame(animate);
+      var dt = Math.min(clock.getDelta(), 0.05) || 0.016;
+      var t = clock.elapsedTime;
+
+      demo.boost = Math.max(0, demo.boost - dt);
+      stepDemo(dt);
+      drawScreen(t);
+
+      // coin drop: falls, lands in the slot, screen wakes up
+      if (coinDrop >= 0) {
+        coinDrop += dt * 1.4;
+        coin.visible = true;
+        var p = Math.min(1, coinDrop);
+        coin.position.y = 1.15 - p * 0.52;
+        coin.position.z = 0.62 - p * 0.08;
+        coin.rotation.z += dt * 9;
+        if (coinDrop >= 1) {
+          coin.visible = false;
+          coinDrop = -1;
+          demo.credit = Math.min(9, demo.credit + 1);
+          demo.boost = 6;
+          screenGlow.intensity = 1.6;
+          btnA.material.emissiveIntensity = 1.2;
+          btnB.material.emissiveIntensity = 1.2;
+        }
+      }
+      screenGlow.intensity += (0.9 - screenGlow.intensity) * 0.02;
+      btnA.material.emissiveIntensity += (0.35 - btnA.material.emissiveIntensity) * 0.02;
+      btnB.material.emissiveIntensity += (0.35 - btnB.material.emissiveIntensity) * 0.02;
+      // screen glow breathes a little, like the room is alive
+      screenGlow.intensity += Math.sin(t * 1.7) * 0.03;
+      marqueeLight.intensity = 0.45 + Math.sin(t * 2.3) * 0.06;
+      // joystick idles, swaying like someone left mid-game
+      knob.position.x = -0.45 + Math.sin(t * 0.7) * 0.02;
+      stick.rotation.z = Math.sin(t * 0.7) * 0.08;
+      // dust
+      for (var k = 0; k < motes.length; k++) {
+        var M = motes[k];
+        M.y -= M.sp * dt;
+        if (M.y < 0.1) { M.y = 2.8; M.x = -1.2 + Math.random() * 2.4; }
+        M.m.position.set(M.x + Math.sin(t * 0.5 + M.ph) * 0.15, M.y, M.z);
+        M.m.material.opacity = 0.25 + Math.sin(t * 1.3 + M.ph) * 0.2;
+      }
+
+      parYaw += (parYawT - parYaw) * 0.06;
+      parPitch += (parPitchT - parPitch) * 0.06;
+      var cy = yaw + parYaw + Math.sin(t * 0.11) * 0.03;
+      var cp = pitch + parPitch + Math.sin(t * 0.13 + 1) * 0.015;
+      var dist = 4.8;
+      tmp.set(
+        BASE_TGT.x + Math.sin(cy) * Math.cos(cp) * dist,
+        BASE_TGT.y + Math.sin(cp) * dist + 0.15,
+        BASE_TGT.z + Math.cos(cy) * Math.cos(cp) * dist
+      );
+      camera.position.copy(tmp);
+      camera.lookAt(BASE_TGT);
+
+      renderer.render(scene, camera);
+    }
+    animate();
+  })();
+  </script>
+</body>
+</html>
